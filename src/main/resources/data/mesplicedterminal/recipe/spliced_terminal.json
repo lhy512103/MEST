@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:smithing_transform",
+  "template": {
+    "item": "ae2:engineering_processor"
+  },
+  "base": {
+    "item": "ae2wtlib:wireless_universal_terminal"
+  },
+  "addition": {
+    "item": "ae2:crafting_unit"
+  },
+  "result": {
+    "count": 1,
+    "id": "mesplicedterminal:spliced_terminal"
+  }
+}

@@ -1,0 +1,61 @@
+# Changelog
+
+## Unreleased
+
+### Workspace
+
+- Replaced the flat snap-based panel layout with floating recursive split trees,
+  including edge drop zones, nested joining, divider resizing and branch detach.
+- Added z-order-aware rendering and input, effective leaf visibility, panel slot
+  ownership, click-through blocking and viewport clamping.
+- Added the v2 layout format with legacy v1 migration, strict validation, atomic
+  replacement and dirty-revision saves.
+- Added a session-only layout lock, one-step undo, compact floating preset and
+  reset-to-default control.
+- Restyled the workspace with AE2-native panel backgrounds, search fields,
+  buttons, scrollbars, slots, toolbars and crafting artwork.
+- Removed repeated per-frame slot activation and geometry writes when the
+  projected layout has not changed.
+
+### Terminal Interaction
+
+- Restored AE2-style ME list actions for container fill/empty, space-click region
+  moves, shift-wheel insertion/extraction and pick-item autocrafting.
+- Added craftable-only behavior and craftable indicators for both stocked and
+  zero-stock entries while retaining view-cell filtering.
+- Added separate crafting-grid clear actions for ME storage and player inventory.
+
+### Pattern Workflows
+
+- Added crafting, processing, smithing-table and stonecutting encoding modes to
+  the floating pattern module.
+- Added scrollable processing inputs, a scrollable full stonecutting recipe
+  picker with native selection sound and an AE2-style processing amount editor.
+- Added item/fluid quantity hints, craftable indicators, fluid substitution and
+  fluid-container-aware interactions.
+- Kept the encoded output intact when clearing pattern inputs and corrected
+  processing and stonecutting scrolling.
+- Rebuilt pattern-provider synchronization around menu epochs, epoch-scoped
+  provider IDs, per-provider revisions, bounded chunks and client
+  resynchronization.
+- Added stale-action rejection, subscription cleanup, request/packet limits and
+  conserving exchange and quick-move transactions for provider slots.
+
+### Integrations And Acquisition
+
+- Added JEI and EMI transfer bridges that target the last-focused crafting or
+  pattern-encoding module. Crafting uses AE2 transfer; encoding accepts crafting,
+  smithing, stonecutting and generic processing recipes.
+- Added independent `mestRunJei` and `mestRunEmi` Gradle development-runtime
+  switches, with both viewers enabled by default.
+- Added a survival smithing upgrade from the wireless universal terminal,
+  component preservation, recipe advancement, Curios tag and dedicated 16x16
+  item texture.
+
+### Verification
+
+- Added focused tests for recursive layout editing and persistence, v1 migration,
+  ME interaction policy, recipe-transfer targeting, provider protocol state and
+  lossless inventory transfer behavior.
+- Full in-game GUI, reconnect/provider-churn and JEI/EMI combination checks remain
+  part of the release verification matrix.
