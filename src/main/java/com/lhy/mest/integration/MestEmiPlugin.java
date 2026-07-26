@@ -88,13 +88,12 @@ public class MestEmiPlugin implements EmiPlugin {
             }
             RecipeHolder<?> holder = getRecipeHolder(context, recipe);
             Recipe<?> backing = holder != null ? holder.value() : null;
-            boolean craftingPattern = MestEncodingHelper.isSupportedCraftingRecipe(backing)
-                    || recipe.getCategory().equals(VanillaEmiRecipeCategories.CRAFTING);
-            if (craftingPattern) {
-                return backing == null || backing.canCraftInDimensions(3, 3);
-            }
-            return !EmiStackHelper.ofInputs(recipe).isEmpty()
-                    && !EmiStackHelper.ofOutputs(recipe).isEmpty();
+            var kind = classifyRecipe(recipe, backing);
+            return MestEncodingHelper.validate(
+                    kind,
+                    backing,
+                    !EmiStackHelper.ofInputs(recipe).isEmpty(),
+                    !EmiStackHelper.ofOutputs(recipe).isEmpty()) == MestEncodingHelper.ValidationResult.OK;
         }
 
         @Override
@@ -105,22 +104,25 @@ public class MestEmiPlugin implements EmiPlugin {
             MESTMenu menu = context.getScreenHandler();
             RecipeHolder<?> holder = getRecipeHolder(context, recipe);
             Recipe<?> backing = holder != null ? holder.value() : null;
-            boolean craftingPattern = MestEncodingHelper.isSupportedCraftingRecipe(backing)
-                    || recipe.getCategory().equals(VanillaEmiRecipeCategories.CRAFTING);
-            if (craftingPattern) {
-                MestEncodingHelper.encodeCraftingRecipe(
-                        menu,
-                        holder,
-                        EmiStackHelper.ofInputs(recipe),
-                        stack -> true);
-            } else {
-                MestEncodingHelper.encodeProcessingRecipe(
-                        menu,
-                        EmiStackHelper.ofInputs(recipe),
-                        EmiStackHelper.ofOutputs(recipe));
-            }
+            var inputs = EmiStackHelper.ofInputs(recipe);
+            MestEncodingHelper.encode(
+                    menu,
+                    classifyRecipe(recipe, backing),
+                    holder,
+                    inputs,
+                    inputs,
+                    EmiStackHelper.ofOutputs(recipe),
+                    stack -> true);
             Minecraft.getInstance().setScreen(context.getScreen());
             return true;
+        }
+
+        private static MestEncodingHelper.RecipeKind classifyRecipe(
+                EmiRecipe recipe,
+                @Nullable Recipe<?> backing) {
+            return MestEncodingHelper.classifyRecipe(
+                    backing,
+                    recipe.getCategory().equals(VanillaEmiRecipeCategories.CRAFTING));
         }
 
         @Nullable

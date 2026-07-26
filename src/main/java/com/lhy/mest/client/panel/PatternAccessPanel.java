@@ -154,8 +154,6 @@ public class PatternAccessPanel extends ModulePanel {
         hoveredPattern = ItemStack.EMPTY;
         hoveredProviderTooltip = List.of();
 
-        int row = 1;
-        int skipped = scrollRows;
         int maxRows = visibleRows();
         if (providers.isEmpty()) {
             g.drawString(font, Component.translatable("gui.mesplicedterminal.pattern_access.empty"),
@@ -165,28 +163,12 @@ public class PatternAccessPanel extends ModulePanel {
         g.drawString(font, Component.translatable("gui.mesplicedterminal.pattern_access.click_hint"),
                 contentLeft() + 2, contentTop(), COLOR_MUTED, false);
 
-        for (var provider : providers) {
-            if (skipped > 0) {
-                skipped--;
-            } else if (row < maxRows) {
-                renderProviderHeader(g, font, provider, row, mouseX, mouseY);
-                row++;
-            }
-
-            int slotRows = (provider.inventorySize() + COLUMNS - 1) / COLUMNS;
-            for (int sr = 0; sr < slotRows; sr++) {
-                if (skipped > 0) {
-                    skipped--;
-                    continue;
-                }
-                if (row >= maxRows) {
-                    break;
-                }
-                renderProviderSlotRow(g, font, provider, sr, row, mouseX, mouseY);
-                row++;
-            }
-            if (row >= maxRows) {
-                break;
+        for (PatternAccessRowLayout.Row row : layoutRows(maxRows)) {
+            var provider = providers.get(row.providerIndex());
+            if (row.isHeader()) {
+                renderProviderHeader(g, font, provider, row.visibleRow(), mouseX, mouseY);
+            } else {
+                renderProviderSlotRow(g, font, provider, row.slotRow(), row.visibleRow(), mouseX, mouseY);
             }
         }
 
@@ -195,7 +177,7 @@ public class PatternAccessPanel extends ModulePanel {
         scrollbar.render(g,
                 contentLeft() + contentWidth() - SCROLLBAR_WIDTH, contentTop(),
                 SCROLLBAR_WIDTH, contentHeight(),
-                Math.max(1, maxRows - 1), totalRows(), maxScroll);
+                maxScroll);
     }
 
     @Override
@@ -274,6 +256,7 @@ public class PatternAccessPanel extends ModulePanel {
         return pattern;
     }
 
+    @Override
     public boolean mouseScrolled(double mx, double my, double scrollY) {
         if (!visible || !contains(mx, my) || scrollY == 0) {
             return false;
@@ -309,6 +292,7 @@ public class PatternAccessPanel extends ModulePanel {
         return Math.max(1, visibleRows() - 1);
     }
 
+    @Override
     public boolean scrollbarPressed(double mx, double my) {
         if (!visible || maxScrollRows() <= 0) {
             return false;
@@ -320,28 +304,31 @@ public class PatternAccessPanel extends ModulePanel {
         scrollbar.setScroll(scrollRows);
         boolean consumed = scrollbar.mousePressed(mx, my,
                 scrollbarTrackX(), scrollbarTrackY(), SCROLLBAR_WIDTH, scrollbarTrackH(),
-                visibleScrollRows(), totalRows(), maxScrollRows());
+                visibleScrollRows(), maxScrollRows());
         if (consumed) {
             scrollRows = scrollbar.scroll();
         }
         return consumed;
     }
 
-    public boolean scrollbarDragged(double my) {
+    @Override
+    public boolean scrollbarDragged(double mx, double my) {
         if (!scrollbar.isDragging()) {
             return false;
         }
         scrollbar.mouseDragged(my,
                 scrollbarTrackY(), scrollbarTrackH(),
-                visibleScrollRows(), totalRows(), maxScrollRows());
+                maxScrollRows());
         scrollRows = scrollbar.scroll();
         return true;
     }
 
+    @Override
     public void scrollbarReleased() {
         scrollbar.mouseReleased();
     }
 
+    @Override
     public boolean scrollbarDragging() {
         return scrollbar.isDragging();
     }
@@ -372,39 +359,31 @@ public class PatternAccessPanel extends ModulePanel {
         return false;
     }
 
-    private SlotHit slotAt(double mx, double my) {
-        int row = 1;
-        int skipped = scrollRows;
-        int maxRows = visibleRows();
-
+    /** Shared render/hit-test row traversal; see {@link PatternAccessRowLayout}. */
+    private List<PatternAccessRowLayout.Row> layoutRows(int maxRows) {
+        var slotRowCounts = new ArrayList<Integer>(providers.size());
         for (var provider : providers) {
-            if (skipped > 0) {
-                skipped--;
-            } else {
-                row++;
-            }
+            slotRowCounts.add((provider.inventorySize() + COLUMNS - 1) / COLUMNS);
+        }
+        return PatternAccessRowLayout.visibleRows(slotRowCounts, scrollRows, maxRows);
+    }
 
-            int slotRows = (provider.inventorySize() + COLUMNS - 1) / COLUMNS;
-            for (int sr = 0; sr < slotRows; sr++) {
-                if (skipped > 0) {
-                    skipped--;
-                    continue;
+    private SlotHit slotAt(double mx, double my) {
+        for (PatternAccessRowLayout.Row row : layoutRows(visibleRows())) {
+            if (row.isHeader()) {
+                continue;
+            }
+            var provider = providers.get(row.providerIndex());
+            int y = contentTop() + row.visibleRow() * ROW;
+            for (int col = 0; col < COLUMNS; col++) {
+                int providerSlot = row.slotRow() * COLUMNS + col;
+                if (providerSlot >= provider.inventorySize()) {
+                    break;
                 }
-                if (row >= maxRows) {
-                    return null;
+                int x = contentLeft() + col * SLOT;
+                if (contains(mx, my, x, y, 16, 16)) {
+                    return new SlotHit(provider.epoch(), provider.providerId(), provider.revision(), providerSlot);
                 }
-                int y = contentTop() + row * ROW;
-                for (int col = 0; col < COLUMNS; col++) {
-                    int providerSlot = sr * COLUMNS + col;
-                    if (providerSlot >= provider.inventorySize()) {
-                        break;
-                    }
-                    int x = contentLeft() + col * SLOT;
-                    if (contains(mx, my, x, y, 16, 16)) {
-                        return new SlotHit(provider.epoch(), provider.providerId(), provider.revision(), providerSlot);
-                    }
-                }
-                row++;
             }
         }
         return null;

@@ -43,6 +43,8 @@ import com.lhy.mest.terminal.MESTMenu;
  */
 public class MEListPanel extends ModulePanel implements ISortSource, IScrollSource {
     private static final int SLOT = 18;
+    /** Deduplicates renderRepoSlot failure logging so a broken key renderer cannot spam every frame. */
+    private static final Set<String> REPORTED_RENDER_FAILURES = new HashSet<>();
 
     private final MESTMenu menu;
     private final IConfigManager configSrc;
@@ -262,7 +264,7 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
         int barTop = contentTop() + SEARCH_HEIGHT;
         int barWidth = SCROLLBAR_WIDTH - 4;
         int barHeight = rows * SLOT;
-        scrollbar.render(g, barLeft, barTop, barWidth, barHeight, rows, totalRows(), maxScroll());
+        scrollbar.render(g, barLeft, barTop, barWidth, barHeight, maxScroll());
     }
 
     /**
@@ -279,7 +281,13 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
         }
         try {
             AEKeyRendering.drawInGui(Minecraft.getInstance(), g, slot.x, slot.y, entry.getWhat());
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            // Log once per key id instead of once per frame; a broken renderer would otherwise spam.
+            String keyId = entry.getWhat().getId().toString();
+            if (REPORTED_RENDER_FAILURES.add(keyId)) {
+                com.lhy.mest.MESplicedterminal.LOGGER.warn(
+                        "Failed to render ME entry {} in terminal grid", keyId, e);
+            }
             return;
         }
         long storedAmount = entry.getStoredAmount();
@@ -308,8 +316,12 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
                 && my >= gridTop && my < gridTop + rows * SLOT;
     }
 
-    public boolean mouseScrolled(double delta) {
-        scrollOffset -= (int) Math.signum(delta);
+    @Override
+    public boolean mouseScrolled(double mx, double my, double scrollY) {
+        if (!visible || scrollY == 0 || !inGrid(mx, my)) {
+            return false;
+        }
+        scrollOffset -= (int) Math.signum(scrollY);
         clampScroll();
         return true;
     }
@@ -339,6 +351,7 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
     }
 
     /** Begin a scrollbar drag (or page-jump). Returns true if consumed. */
+    @Override
     public boolean scrollbarPressed(double mx, double my) {
         if (!visible || !inScrollbar(mx, my)) {
             return false;
@@ -346,28 +359,31 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
         scrollbar.setScroll(scrollOffset);
         boolean consumed = scrollbar.mousePressed(mx, my,
                 scrollbarTrackX(), scrollbarTrackY(), scrollbarTrackW(), scrollbarTrackH(),
-                rows, totalRows(), maxScroll());
+                rows, maxScroll());
         if (consumed) {
             scrollOffset = scrollbar.scroll();
         }
         return consumed;
     }
 
+    @Override
     public boolean scrollbarDragged(double mx, double my) {
         if (!scrollbar.isDragging()) {
             return false;
         }
         scrollbar.mouseDragged(my,
                 scrollbarTrackY(), scrollbarTrackH(),
-                rows, totalRows(), maxScroll());
+                maxScroll());
         scrollOffset = scrollbar.scroll();
         return true;
     }
 
+    @Override
     public void scrollbarReleased() {
         scrollbar.mouseReleased();
     }
 
+    @Override
     public boolean scrollbarDragging() {
         return scrollbar.isDragging();
     }
@@ -754,6 +770,15 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
 
     @Override
     public Set<AEKeyType> getSortKeyTypes() {
-        return new HashSet<>(AEKeyTypes.getAll());
+        // AEKeyTypes registration is frozen before any screen can open; Repo calls this on every
+        // view update, so build the set once instead of reallocating an identical one each time.
+        Set<AEKeyType> cached = sortKeyTypesCache;
+        if (cached == null) {
+            cached = Set.copyOf(new HashSet<>(AEKeyTypes.getAll()));
+            sortKeyTypesCache = cached;
+        }
+        return cached;
     }
+
+    private Set<AEKeyType> sortKeyTypesCache;
 }

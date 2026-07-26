@@ -3,6 +3,9 @@ package com.lhy.mest.client.dock;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +66,16 @@ public final class DockManager {
 
     private final List<ModulePanel> panels = new ArrayList<>();
     private final Map<String, ModulePanel> panelsByModuleId = new LinkedHashMap<>();
+    /** Immutable snapshot of {@link #panels}; rebuilt only in {@link #init}. */
+    private List<ModulePanel> panelsView = List.of();
+
+    // --- Hot-path caches. All are invalidated whenever the projection is rebuilt ---------------
+    /** Cached flattened leaf lists per root id (LayoutTrees.leaves allocates a new list per call). */
+    private final Map<String, List<LeafNode>> leavesCache = new HashMap<>();
+    /** Cached slot → owning-visible-panel lookups; identity keys, {@code Optional.empty()} = no owner. */
+    private Map<Slot, java.util.Optional<ModulePanel>> slotPanelCache;
+    /** Cached JEI/EMI exclusion bounds; {@code null} = dirty. */
+    private List<DockRect> exclusionCache;
 
     private ModuleCatalog catalog;
     private ModuleCatalog persistenceCatalog;
@@ -144,6 +157,7 @@ public final class DockManager {
             panel.hosted = false;
             panels.add(panel);
         }
+        panelsView = List.copyOf(panels);
 
         migrationContext = LegacyMigrationContext.currentDockDefaults(this.screenWidth, this.screenHeight);
         catalog = createCatalog(panels, DockInsets.NONE);
@@ -225,19 +239,22 @@ public final class DockManager {
 
     /** Stable module-registration order, independent of floating-root Z order. */
     public List<ModulePanel> panels() {
-        return List.copyOf(panels);
+        return panelsView;
     }
 
     /** Visible floating roots in back-to-front order, suitable for JEI/EMI exclusion zones. */
     public List<DockRect> exclusionBounds() {
         ensureProjection();
-        var result = new ArrayList<DockRect>();
-        for (LayoutProjection.RootPlacement root : projection.roots()) {
-            if (root.effectivelyVisible()) {
-                result.add(root.bounds());
+        if (exclusionCache == null) {
+            var result = new ArrayList<DockRect>();
+            for (LayoutProjection.RootPlacement root : projection.roots()) {
+                if (root.effectivelyVisible()) {
+                    result.add(root.bounds());
+                }
             }
+            exclusionCache = Collections.unmodifiableList(result);
         }
-        return List.copyOf(result);
+        return exclusionCache;
     }
 
     /** Applies a pending model projection. A clean call performs no arrangement or slot writes. */
@@ -343,7 +360,7 @@ public final class DockManager {
             if (!rootEffectivelyVisible(root.rootId())) {
                 continue;
             }
-            for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+            for (LeafNode leaf : leavesOf(root)) {
                 var placement = projection.visibleLeaf(leaf.nodeId());
                 if (placement.isEmpty()) {
                     continue;
@@ -379,7 +396,7 @@ public final class DockManager {
             if (!rootEffectivelyVisible(root.rootId())) {
                 continue;
             }
-            for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+            for (LeafNode leaf : leavesOf(root)) {
                 if (projection.visibleLeaf(leaf.nodeId()).isEmpty()) {
                     continue;
                 }
@@ -405,7 +422,7 @@ public final class DockManager {
         if (exact != null) {
             return exact;
         }
-        for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+        for (LeafNode leaf : leavesOf(root)) {
             if (projection.visibleLeaf(leaf.nodeId()).isPresent()) {
                 return panelsByModuleId.get(leaf.moduleId());
             }
@@ -481,12 +498,23 @@ public final class DockManager {
 
     public ModulePanel panelForSlot(Slot slot) {
         ensureProjection();
-        for (ModulePanel panel : panels) {
-            if (panel.visible && panel.ownsSlot(slot)) {
-                return panel;
-            }
+        Map<Slot, java.util.Optional<ModulePanel>> cache = slotPanelCache;
+        if (cache == null) {
+            cache = new IdentityHashMap<>();
+            slotPanelCache = cache;
         }
-        return null;
+        java.util.Optional<ModulePanel> cached = cache.get(slot);
+        if (cached == null) {
+            cached = java.util.Optional.empty();
+            for (ModulePanel panel : panels) {
+                if (panel.visible && panel.ownsSlot(slot)) {
+                    cached = java.util.Optional.of(panel);
+                    break;
+                }
+            }
+            cache.put(slot, cached);
+        }
+        return cached.orElse(null);
     }
 
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
@@ -684,6 +712,9 @@ public final class DockManager {
         if (!projectionDirty) {
             return;
         }
+        leavesCache.clear();
+        slotPanelCache = null;
+        exclusionCache = null;
         LayoutProjection next = layoutEngine.project(viewportWorkspace);
         for (FloatingRoot root : viewportWorkspace.roots()) {
             for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
@@ -966,7 +997,7 @@ public final class DockManager {
         replaceWorkspace(editor.setRootBounds(workspace, active.rootId(), snapped), false);
     }
 
-    private static int closestSnap(int current, int... candidates) {
+    private static int closestSnap(int current, List<Integer> candidates) {
         int result = current;
         int distance = SNAP_DISTANCE + 1;
         for (int candidate : candidates) {
@@ -979,17 +1010,14 @@ public final class DockManager {
         return result;
     }
 
-    private static int closestSnap(int current, List<Integer> candidates) {
-        int result = current;
-        int distance = SNAP_DISTANCE + 1;
-        for (int candidate : candidates) {
-            int candidateDistance = Math.abs(candidate - current);
-            if (candidateDistance < distance) {
-                result = candidate;
-                distance = candidateDistance;
-            }
+    /** Cached equivalent of {@code LayoutTrees.leaves(root.content())} for hot paths. */
+    private List<LeafNode> leavesOf(FloatingRoot root) {
+        List<LeafNode> cached = leavesCache.get(root.rootId());
+        if (cached == null) {
+            cached = LayoutTrees.leaves(root.content());
+            leavesCache.put(root.rootId(), cached);
         }
-        return result;
+        return cached;
     }
 
     private FloatingRoot topRootAt(double mouseX, double mouseY, String excludedRootId) {
@@ -1011,7 +1039,7 @@ public final class DockManager {
     }
 
     private LeafNode leafNodeAt(FloatingRoot root, double mouseX, double mouseY) {
-        List<LeafNode> leaves = LayoutTrees.leaves(root.content());
+        List<LeafNode> leaves = leavesOf(root);
         for (int i = leaves.size() - 1; i >= 0; i--) {
             LeafNode leaf = leaves.get(i);
             var placement = projection.visibleLeaf(leaf.nodeId());
@@ -1066,23 +1094,30 @@ public final class DockManager {
     }
 
     private boolean rootEffectivelyVisible(String rootId) {
-        return projection.roots().stream()
-                .anyMatch(root -> root.rootId().equals(rootId) && root.effectivelyVisible());
+        for (LayoutProjection.RootPlacement root : projection.roots()) {
+            if (root.rootId().equals(rootId)) {
+                return root.effectivelyVisible();
+            }
+        }
+        return false;
     }
 
     private DockSize rootMinimum(String rootId) {
-        return projection.roots().stream()
-                .filter(root -> root.rootId().equals(rootId))
-                .findFirst()
-                .map(LayoutProjection.RootPlacement::minimumSize)
-                .orElse(DockSize.ZERO);
+        for (LayoutProjection.RootPlacement root : projection.roots()) {
+            if (root.rootId().equals(rootId)) {
+                return root.minimumSize();
+            }
+        }
+        return DockSize.ZERO;
     }
 
     private FloatingRoot rootById(String rootId) {
-        return viewportWorkspace.roots().stream()
-                .filter(root -> root.rootId().equals(rootId))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("unknown root: " + rootId));
+        for (FloatingRoot root : viewportWorkspace.roots()) {
+            if (root.rootId().equals(rootId)) {
+                return root;
+            }
+        }
+        throw new IllegalArgumentException("unknown root: " + rootId);
     }
 
     private LayoutNode findNode(String nodeId) {

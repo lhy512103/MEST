@@ -41,6 +41,23 @@ public final class MestEncodingHelper {
     private MestEncodingHelper() {
     }
 
+    /** How a recipe should be encoded onto a blank pattern. */
+    public enum RecipeKind {
+        /** Encoded as a crafting pattern (crafting/stonecutting/smithing modes). */
+        CRAFTING,
+        /** Encoded as a generic processing pattern. */
+        PROCESSING
+    }
+
+    /** Outcome of {@link #validate}; non-{@code OK} values map to user-facing transfer errors. */
+    public enum ValidationResult {
+        OK,
+        /** Crafting recipe does not fit the 3x3 pattern grid. */
+        RECIPE_TOO_LARGE,
+        /** Processing recipe without any usable inputs or outputs. */
+        INCOMPATIBLE_RECIPE
+    }
+
     public static boolean isSupportedCraftingRecipe(@Nullable Recipe<?> recipe) {
         if (recipe == null) {
             return false;
@@ -50,7 +67,72 @@ public final class MestEncodingHelper {
                 || recipe.getType() == RecipeType.SMITHING;
     }
 
-    public static void encodeProcessingRecipe(
+    /**
+     * Unified recipe-type decision shared by the EMI and JEI bridges.
+     *
+     * @param categorizedAsCrafting framework-specific hint that the recipe belongs to the crafting
+     *                              category even without a supported backing recipe (EMI passes its
+     *                              category check, JEI passes {@code false}).
+     */
+    public static RecipeKind classifyRecipe(@Nullable Recipe<?> recipe, boolean categorizedAsCrafting) {
+        return isSupportedCraftingRecipe(recipe) || categorizedAsCrafting
+                ? RecipeKind.CRAFTING
+                : RecipeKind.PROCESSING;
+    }
+
+    /**
+     * Unified pre-encoding validation shared by the EMI and JEI bridges: crafting patterns must fit
+     * the 3x3 grid (an unknown backing recipe is allowed), processing patterns need at least one
+     * input and one output.
+     */
+    public static ValidationResult validate(
+            RecipeKind kind,
+            @Nullable Recipe<?> recipe,
+            boolean hasInputs,
+            boolean hasOutputs) {
+        return validate(kind, recipe == null || recipe.canCraftInDimensions(3, 3), hasInputs, hasOutputs);
+    }
+
+    /** MC-free core of {@link #validate}; package-private for unit tests. */
+    static ValidationResult validate(
+            RecipeKind kind,
+            boolean craftingRecipeFits3x3,
+            boolean hasInputs,
+            boolean hasOutputs) {
+        if (kind == RecipeKind.CRAFTING) {
+            return craftingRecipeFits3x3
+                    ? ValidationResult.OK
+                    : ValidationResult.RECIPE_TOO_LARGE;
+        }
+        return hasInputs && hasOutputs
+                ? ValidationResult.OK
+                : ValidationResult.INCOMPATIBLE_RECIPE;
+    }
+
+    /**
+     * Unified encoding dispatch: sends the recipe to the pattern-encoding slots as either a crafting
+     * or a processing pattern. Callers are expected to have run {@link #validate} first.
+     *
+     * <p>The crafting and processing ingredient lists are passed separately because the frameworks
+     * shape them differently (e.g. JEI pads the crafting grid to 9 slots but filters empty slots for
+     * processing); only the list matching {@code kind} is used.
+     */
+    public static void encode(
+            MESTMenu menu,
+            RecipeKind kind,
+            @Nullable RecipeHolder<?> recipe,
+            List<List<GenericStack>> craftingIngredients,
+            List<List<GenericStack>> processingInputs,
+            List<GenericStack> processingOutputs,
+            Predicate<ItemStack> visiblePredicate) {
+        if (kind == RecipeKind.CRAFTING) {
+            encodeCraftingRecipe(menu, recipe, craftingIngredients, visiblePredicate);
+        } else {
+            encodeProcessingRecipe(menu, processingInputs, processingOutputs);
+        }
+    }
+
+    private static void encodeProcessingRecipe(
             MESTMenu menu,
             List<List<GenericStack>> genericIngredients,
             List<GenericStack> genericResults) {
@@ -63,7 +145,7 @@ public final class MestEncodingHelper {
                 menu.getProcessingOutputSlots());
     }
 
-    public static void encodeCraftingRecipe(
+    private static void encodeCraftingRecipe(
             MESTMenu menu,
             @Nullable RecipeHolder<?> recipe,
             List<List<GenericStack>> genericIngredients,

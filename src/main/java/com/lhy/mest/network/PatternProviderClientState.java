@@ -21,8 +21,9 @@ final class PatternProviderClientState<V, M> {
     static final int MAX_INVENTORY_SIZE = 4096;
     static final int MAX_TOTAL_INVENTORY_SLOTS = 32768;
     static final int MAX_SLOTS_PER_CHUNK = 64;
-    static final int MAX_CHUNKS_PER_UPDATE =
-            (MAX_INVENTORY_SIZE + MAX_SLOTS_PER_CHUNK - 1) / MAX_SLOTS_PER_CHUNK;
+    // Chunks are split both by slot count and by estimated payload bytes, so in the worst case every
+    // slot may travel in its own chunk.
+    static final int MAX_CHUNKS_PER_UPDATE = MAX_INVENTORY_SIZE;
 
     private static final int MAX_PENDING_UPDATES = 128;
     private static final int MAX_PENDING_SLOT_VALUES = MAX_TOTAL_INVENTORY_SLOTS;
@@ -461,7 +462,8 @@ final class PatternProviderClientState<V, M> {
     }
 
     private static int chunksForSlots(int slots) {
-        return Math.max(1, (slots + MAX_SLOTS_PER_CHUNK - 1) / MAX_SLOTS_PER_CHUNK);
+        // Byte-based splitting can put as little as one slot into each chunk.
+        return Math.max(1, slots);
     }
 
     private Result<V, M> reject() {

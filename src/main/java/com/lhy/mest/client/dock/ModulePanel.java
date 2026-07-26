@@ -151,6 +151,35 @@ public abstract class ModulePanel {
         }
     }
 
+    // --- Optional per-panel scroll interaction ----------------------------
+
+    /**
+     * Handle a scroll-wheel event routed to this panel (the topmost leaf under the cursor).
+     * Default: not consumed.
+     */
+    public boolean mouseScrolled(double mx, double my, double scrollY) {
+        return false;
+    }
+
+    /** Begin a scrollbar drag (or page-jump). Returns true if consumed. Default: no scrollbar. */
+    public boolean scrollbarPressed(double mx, double my) {
+        return false;
+    }
+
+    /** Continue a scrollbar drag started by {@link #scrollbarPressed}. Returns true if consumed. */
+    public boolean scrollbarDragged(double mx, double my) {
+        return false;
+    }
+
+    /** End any scrollbar drag. */
+    public void scrollbarReleased() {
+    }
+
+    /** True while this panel's scrollbar thumb is being dragged. */
+    public boolean scrollbarDragging() {
+        return false;
+    }
+
     /** True if this panel owns the given slot (identity check). */
     public boolean ownsSlot(Slot slot) {
         for (Slot s : ownedSlots) {

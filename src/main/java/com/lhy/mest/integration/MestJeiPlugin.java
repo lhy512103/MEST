@@ -210,27 +210,30 @@ public class MestJeiPlugin implements IModPlugin {
 
             RecipeHolder<?> holder = rawRecipe instanceof RecipeHolder<?> recipeHolder ? recipeHolder : null;
             Recipe<?> recipe = holder != null ? holder.value() : null;
-            boolean craftingPattern = MestEncodingHelper.isSupportedCraftingRecipe(recipe);
-            if (craftingPattern && !recipe.canCraftInDimensions(3, 3)) {
-                return helper.createUserErrorWithTooltip(ItemModText.RECIPE_TOO_LARGE.text());
-            }
+            var kind = MestEncodingHelper.classifyRecipe(recipe, false);
 
             var inputs = genericInputs(slotsView);
             var outputs = genericOutputs(slotsView);
-            if (!craftingPattern && (inputs.isEmpty() || outputs.isEmpty())) {
-                return helper.createUserErrorWithTooltip(ItemModText.INCOMPATIBLE_RECIPE.text());
+            switch (MestEncodingHelper.validate(kind, recipe, !inputs.isEmpty(), !outputs.isEmpty())) {
+                case RECIPE_TOO_LARGE -> {
+                    return helper.createUserErrorWithTooltip(ItemModText.RECIPE_TOO_LARGE.text());
+                }
+                case INCOMPATIBLE_RECIPE -> {
+                    return helper.createUserErrorWithTooltip(ItemModText.INCOMPATIBLE_RECIPE.text());
+                }
+                case OK -> {
+                }
             }
 
             if (doTransfer) {
-                if (craftingPattern) {
-                    MestEncodingHelper.encodeCraftingRecipe(
-                            menu,
-                            holder,
-                            craftingIngredients(slotsView),
-                            stack -> ingredientVisibility.isIngredientVisible(VanillaTypes.ITEM_STACK, stack));
-                } else {
-                    MestEncodingHelper.encodeProcessingRecipe(menu, inputs, outputs);
-                }
+                MestEncodingHelper.encode(
+                        menu,
+                        kind,
+                        holder,
+                        craftingIngredients(slotsView),
+                        inputs,
+                        outputs,
+                        stack -> ingredientVisibility.isIngredientVisible(VanillaTypes.ITEM_STACK, stack));
                 return null;
             }
 
@@ -344,6 +347,11 @@ public class MestJeiPlugin implements IModPlugin {
 
     /** A purely cosmetic error (highlights missing slots but allows the transfer button). */
     private static final class CosmeticTransferError implements IRecipeTransferError {
+        /** ARGB button highlight when some ingredients are missing (translucent orange, was -2130729728). */
+        private static final int MISSING_HIGHLIGHT = 0x80FFA500;
+        /** ARGB button highlight when everything is present (translucent blue, was -2142943745). */
+        private static final int CRAFTABLE_HIGHLIGHT = 0x804545FF;
+
         private final boolean anyMissing;
 
         CosmeticTransferError(boolean anyMissing) {
@@ -357,7 +365,7 @@ public class MestJeiPlugin implements IModPlugin {
 
         @Override
         public int getButtonHighlightColor() {
-            return anyMissing ? -2130729728 : -2142943745;
+            return anyMissing ? MISSING_HIGHLIGHT : CRAFTABLE_HIGHLIGHT;
         }
 
         @Override

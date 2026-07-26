@@ -35,8 +35,8 @@ public class Scrollbar {
         scroll = Math.max(0, Math.min(maxScroll, scroll));
     }
 
-    /** Thumb height/position for the given track + scroll model. */
-    private static int thumbHeight(int trackH, int visible, int total) {
+    /** Fixed AE2-style thumb height, clamped to the track. */
+    private static int thumbHeight(int trackH) {
         return Math.min(HANDLE_HEIGHT, trackH);
     }
 
@@ -49,18 +49,17 @@ public class Scrollbar {
     }
 
     /** Current thumb rect, for hit-testing. */
-    public Rect2i thumbRect(int trackX, int trackY, int trackW, int trackH, int visible, int total, int maxScroll) {
-        int thumbH = thumbHeight(trackH, visible, total);
+    public Rect2i thumbRect(int trackX, int trackY, int trackW, int trackH, int maxScroll) {
+        int thumbH = thumbHeight(trackH);
         int thumbY = thumbY(trackY, trackH, thumbH, scroll, maxScroll);
         return new Rect2i(trackX, thumbY, trackW, thumbH);
     }
 
     /** Draw the same fixed-size AE2 scroller handle used by stock terminal widgets. */
-    public void render(GuiGraphics g, int trackX, int trackY, int trackW, int trackH,
-            int visible, int total, int maxScroll) {
+    public void render(GuiGraphics g, int trackX, int trackY, int trackW, int trackH, int maxScroll) {
         g.fill(trackX, trackY, trackX + trackW, trackY + trackH, ModulePanel.COLOR_DARK);
         g.fill(trackX + 1, trackY, trackX + trackW - 1, trackY + trackH, ModulePanel.COLOR_LIGHT);
-        int thumbH = thumbHeight(trackH, visible, total);
+        int thumbH = thumbHeight(trackH);
         int thumbY = thumbY(trackY, trackH, thumbH, scroll, maxScroll);
         String sprite = maxScroll <= 0 ? "small_scroller_disabled" : "small_scroller";
         g.blitSprite(AppEng.makeId(sprite), trackX, thumbY, trackW, thumbH);
@@ -71,14 +70,14 @@ public class Scrollbar {
      * consumed, the caller must route subsequent {@link #mouseDragged} / {@link #mouseReleased} here.
      */
     public boolean mousePressed(double mx, double my, int trackX, int trackY, int trackW, int trackH,
-            int visible, int total, int maxScroll) {
+            int visible, int maxScroll) {
         if (maxScroll <= 0) {
             return false;
         }
         if (!(mx >= trackX && mx < trackX + trackW && my >= trackY && my < trackY + trackH)) {
             return false;
         }
-        int thumbH = thumbHeight(trackH, visible, total);
+        int thumbH = thumbHeight(trackH);
         int thumbY = thumbY(trackY, trackH, thumbH, scroll, maxScroll);
         if (my >= thumbY && my < thumbY + thumbH) {
             // Grab the thumb.
@@ -95,11 +94,11 @@ public class Scrollbar {
     }
 
     /** Drag the thumb. Only meaningful after a thumb-grabbing {@link #mousePressed}. */
-    public boolean mouseDragged(double my, int trackY, int trackH, int visible, int total, int maxScroll) {
+    public boolean mouseDragged(double my, int trackY, int trackH, int maxScroll) {
         if (!dragging || maxScroll <= 0) {
             return false;
         }
-        int thumbH = thumbHeight(trackH, visible, total);
+        int thumbH = thumbHeight(trackH);
         int travel = trackH - thumbH;
         if (travel <= 0) {
             return true;

@@ -95,6 +95,12 @@ public class MESTMenu extends CraftingTermMenu {
     // Without this guard the constructor's initial call recurses infinitely (StackOverflowError).
     private boolean updatingPatternCraftingOutput;
 
+    // Debounce for the recipe lookup in updatePatternCraftingOutput(): while a batch slot update is in
+    // progress (full content sync, per-slot sync cascade), slot changes only mark this dirty and the
+    // lookup runs once at the end of the batch instead of once per slot.
+    private boolean patternCraftingOutputDirty;
+    private boolean batchingSlotUpdates;
+
     @GuiSync(93)
     public EncodingMode patternEncodingMode = EncodingMode.CRAFTING;
     @GuiSync(92)
@@ -280,7 +286,8 @@ public class MESTMenu extends CraftingTermMenu {
                 for (int j = 1; j < processingOutputSlots.length; j++) {
                     var nextItem = processingOutputSlots[(i + j) % processingOutputSlots.length].getItem();
                     if (!nextItem.isEmpty()) {
-                        newOutputs[i] = nextItem;
+                        // Copy so no live slot stack reference is shared and later mutated through set().
+                        newOutputs[i] = nextItem.copy();
                         break;
                     }
                 }
@@ -698,14 +705,40 @@ public class MESTMenu extends CraftingTermMenu {
 
     @Override
     public void setItem(int slotID, int stateId, ItemStack stack) {
-        super.setItem(slotID, stateId, stack);
-        updatePatternCraftingOutput();
+        boolean wasBatching = batchingSlotUpdates;
+        batchingSlotUpdates = true;
+        try {
+            super.setItem(slotID, stateId, stack);
+        } finally {
+            batchingSlotUpdates = wasBatching;
+        }
+        markPatternCraftingOutputDirty();
     }
 
     @Override
     public void initializeContents(int stateId, List<ItemStack> items, ItemStack carried) {
-        super.initializeContents(stateId, items, carried);
-        updatePatternCraftingOutput();
+        boolean wasBatching = batchingSlotUpdates;
+        batchingSlotUpdates = true;
+        try {
+            super.initializeContents(stateId, items, carried);
+        } finally {
+            batchingSlotUpdates = wasBatching;
+        }
+        markPatternCraftingOutputDirty();
+    }
+
+    private void markPatternCraftingOutputDirty() {
+        patternCraftingOutputDirty = true;
+        if (!batchingSlotUpdates) {
+            flushPatternCraftingOutput();
+        }
+    }
+
+    private void flushPatternCraftingOutput() {
+        if (patternCraftingOutputDirty) {
+            patternCraftingOutputDirty = false;
+            updatePatternCraftingOutput();
+        }
     }
 
     @Override
@@ -716,6 +749,7 @@ public class MESTMenu extends CraftingTermMenu {
             this.patternSubstituteFluids = patternEncodingLogic.isFluidSubstitution();
             this.stonecuttingRecipeId = patternEncodingLogic.getStonecuttingRecipeId();
         }
+        flushPatternCraftingOutput();
         super.broadcastChanges();
         // AEBaseMenu construction can invoke this override before our fields are initialized.
         if (patternAccessSession != null) {
@@ -733,8 +767,11 @@ public class MESTMenu extends CraftingTermMenu {
     public void onServerDataSync(it.unimi.dsi.fastutil.shorts.ShortSet updatedFields) {
         super.onServerDataSync(updatedFields);
 
+        // Client-side: only refresh UI-derived state. Never write the synced mode back into
+        // patternEncodingLogic here - the server owns the logic's item data, and writing to it from the
+        // client can drift from (and later fight with) the authoritative server state.
         if (updatedFields.contains((short) 93) && currentPatternMode != patternEncodingMode) {
-            patternEncodingLogic.setMode(patternEncodingMode);
+            currentPatternMode = patternEncodingMode;
             updatePatternCraftingOutput();
             updateStonecuttingRecipes();
         }
@@ -751,7 +788,7 @@ public class MESTMenu extends CraftingTermMenu {
         if (slot == this.stonecuttingInputSlot) {
             updateStonecuttingRecipes();
         }
-        updatePatternCraftingOutput();
+        markPatternCraftingOutputDirty();
     }
 
     @Override

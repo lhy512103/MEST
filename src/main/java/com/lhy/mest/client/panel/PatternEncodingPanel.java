@@ -328,7 +328,7 @@ public class PatternEncodingPanel extends ModulePanel {
             int trackY = workTop();
             int trackH = 3 * SLOT;
             scrollbar.setScroll(processingScroll);
-            scrollbar.render(g, trackX, trackY, 8, trackH, 3, menu.getProcessingInputSlots().length / 3, maxProcessingScroll());
+            scrollbar.render(g, trackX, trackY, 8, trackH, maxProcessingScroll());
         }
     }
 
@@ -383,7 +383,7 @@ public class PatternEncodingPanel extends ModulePanel {
             scrollbar.render(g,
                     stonecuttingScrollbarTrackX(), stonecuttingScrollbarTrackY(),
                     8, stonecuttingScrollbarTrackH(),
-                    STONECUTTING_ROWS, stonecuttingTotalRows(), maxStonecuttingScroll());
+                    maxStonecuttingScroll());
         }
     }
 
@@ -449,6 +449,7 @@ public class PatternEncodingPanel extends ModulePanel {
         return false;
     }
 
+    @Override
     public boolean mouseScrolled(double mx, double my, double scrollY) {
         if (!visible || !contains(mx, my) || scrollY == 0) {
             return false;
@@ -482,6 +483,7 @@ public class PatternEncodingPanel extends ModulePanel {
         return 3 * SLOT;
     }
 
+    @Override
     public boolean scrollbarPressed(double mx, double my) {
         if (!visible) {
             return false;
@@ -493,10 +495,9 @@ public class PatternEncodingPanel extends ModulePanel {
                 return false;
             }
             scrollbar.setScroll(processingScroll);
-            int total = menu.getProcessingInputSlots().length / 3;
             boolean consumed = scrollbar.mousePressed(mx, my,
                     processingScrollbarTrackX(), processingScrollbarTrackY(), 8, processingScrollbarTrackH(),
-                    3, total, maxProcessingScroll());
+                    3, maxProcessingScroll());
             if (consumed) {
                 processingScroll = scrollbar.scroll();
                 layoutSlots();
@@ -512,7 +513,7 @@ public class PatternEncodingPanel extends ModulePanel {
             scrollbar.setScroll(stonecuttingScroll);
             boolean consumed = scrollbar.mousePressed(mx, my,
                     stonecuttingScrollbarTrackX(), stonecuttingScrollbarTrackY(), 8, stonecuttingScrollbarTrackH(),
-                    STONECUTTING_ROWS, stonecuttingTotalRows(), maxStonecuttingScroll());
+                    STONECUTTING_ROWS, maxStonecuttingScroll());
             if (consumed) {
                 stonecuttingScroll = scrollbar.scroll();
             }
@@ -521,15 +522,15 @@ public class PatternEncodingPanel extends ModulePanel {
         return false;
     }
 
-    public boolean scrollbarDragged(double my) {
+    @Override
+    public boolean scrollbarDragged(double mx, double my) {
         if (!scrollbar.isDragging()) {
             return false;
         }
         if (menu.getPatternEncodingMode() == EncodingMode.PROCESSING) {
-            int total = menu.getProcessingInputSlots().length / 3;
             scrollbar.mouseDragged(my,
                     processingScrollbarTrackY(), processingScrollbarTrackH(),
-                    3, total, maxProcessingScroll());
+                    maxProcessingScroll());
             processingScroll = scrollbar.scroll();
             layoutSlots();
             return true;
@@ -537,17 +538,19 @@ public class PatternEncodingPanel extends ModulePanel {
         if (menu.getPatternEncodingMode() == EncodingMode.STONECUTTING) {
             scrollbar.mouseDragged(my,
                     stonecuttingScrollbarTrackY(), stonecuttingScrollbarTrackH(),
-                    STONECUTTING_ROWS, stonecuttingTotalRows(), maxStonecuttingScroll());
+                    maxStonecuttingScroll());
             stonecuttingScroll = scrollbar.scroll();
             return true;
         }
         return false;
     }
 
+    @Override
     public void scrollbarReleased() {
         scrollbar.mouseReleased();
     }
 
+    @Override
     public boolean scrollbarDragging() {
         return scrollbar.isDragging();
     }

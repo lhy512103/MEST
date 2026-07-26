@@ -481,8 +481,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     protected boolean isHovering(Slot slot, double mx, double my) {
         ModulePanel top = dock.topPanelAt(mx, my);
         if (top != null) {
-            // Only the top panel's slots are hoverable.
-            return top.ownsSlot(slot) && super.isHovering(slot, mx, my);
+            // Only the top panel's slots are hoverable. panelForSlot is backed by the dock's
+            // per-projection slot cache, so this per-slot-per-frame call stays cheap.
+            return dock.panelForSlot(slot) == top && super.isHovering(slot, mx, my);
         }
         return super.isHovering(slot, mx, my);
     }
@@ -599,14 +600,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             }
         }
 
-        // Scrollbar drag takes priority over panel drag so the thumb stays grabbed.
-        if (button == 0 && target == meListPanel && meListPanel.scrollbarPressed(mx, my)) {
-            return true;
-        }
-        if (button == 0 && target == patternEncodingPanel && patternEncodingPanel.scrollbarPressed(mx, my)) {
-            return true;
-        }
-        if (button == 0 && target == patternAccessPanel && patternAccessPanel.scrollbarPressed(mx, my)) {
+        // Scrollbar drag takes priority over panel drag so the thumb stays grabbed. Only the
+        // topmost leaf under the cursor may claim its scrollbar (virtual, default no-op).
+        if (button == 0 && target != null && target.scrollbarPressed(mx, my)) {
             return true;
         }
         if (target == craftingPanel && craftingPanel.mouseClicked(mx, my, button)) {
@@ -647,14 +643,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY) {
-        if (meListPanel != null && meListPanel.scrollbarDragged(mx, my)) {
-            return true;
-        }
-        if (patternEncodingPanel != null && patternEncodingPanel.scrollbarDragged(my)) {
-            return true;
-        }
-        if (patternAccessPanel != null && patternAccessPanel.scrollbarDragged(my)) {
-            return true;
+        for (ModulePanel panel : dock.panels()) {
+            if (panel.scrollbarDragged(mx, my)) {
+                return true;
+            }
         }
         if (dock.mouseDragged(mx, my, button, dragX, dragY)) {
             return true;
@@ -664,17 +656,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean mouseReleased(double mx, double my, int button) {
-        boolean wasDraggingScrollbar = (meListPanel != null && meListPanel.scrollbarDragging())
-                || (patternEncodingPanel != null && patternEncodingPanel.scrollbarDragging())
-                || (patternAccessPanel != null && patternAccessPanel.scrollbarDragging());
-        if (meListPanel != null) {
-            meListPanel.scrollbarReleased();
-        }
-        if (patternEncodingPanel != null) {
-            patternEncodingPanel.scrollbarReleased();
-        }
-        if (patternAccessPanel != null) {
-            patternAccessPanel.scrollbarReleased();
+        boolean wasDraggingScrollbar = false;
+        for (ModulePanel panel : dock.panels()) {
+            wasDraggingScrollbar |= panel.scrollbarDragging();
+            panel.scrollbarReleased();
         }
         if (wasDraggingScrollbar) {
             return true;
@@ -688,22 +673,19 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     @Override
     public boolean mouseScrolled(double mx, double my, double scrollX, double scrollY) {
         ModulePanel target = dock.topLeafAt(mx, my);
-        if (target == meListPanel && meListPanel.inGrid(mx, my) && scrollY != 0) {
-            if (hasShiftDown() && meListPanel.repoSlotAt(mx, my) instanceof RepoSlot repoSlot) {
-                GridInventoryEntry entry = repoSlot.getEntry();
-                long serial = entry != null ? entry.getSerial() : -1;
-                InventoryAction action = toInventoryAction(MEListInteractionPolicy.scrollAction(scrollY));
-                for (int i = 0; i < MEListInteractionPolicy.scrollSteps(scrollY); i++) {
-                    getMenu().handleInteraction(serial, action);
-                }
-                return true;
+        // Shift+scroll over an ME entry rolls single items in/out of the network instead of
+        // scrolling the grid; this screen-level interaction runs before the panel's own scroll.
+        if (target == meListPanel && meListPanel.inGrid(mx, my) && scrollY != 0
+                && hasShiftDown() && meListPanel.repoSlotAt(mx, my) instanceof RepoSlot repoSlot) {
+            GridInventoryEntry entry = repoSlot.getEntry();
+            long serial = entry != null ? entry.getSerial() : -1;
+            InventoryAction action = toInventoryAction(MEListInteractionPolicy.scrollAction(scrollY));
+            for (int i = 0; i < MEListInteractionPolicy.scrollSteps(scrollY); i++) {
+                getMenu().handleInteraction(serial, action);
             }
-            return meListPanel.mouseScrolled(scrollY);
-        }
-        if (target == patternEncodingPanel && patternEncodingPanel.mouseScrolled(mx, my, scrollY)) {
             return true;
         }
-        if (target == patternAccessPanel && patternAccessPanel.mouseScrolled(mx, my, scrollY)) {
+        if (target != null && target.mouseScrolled(mx, my, scrollY)) {
             return true;
         }
         return dock.topPanelAt(mx, my) != null || super.mouseScrolled(mx, my, scrollX, scrollY);

@@ -10,9 +10,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
+import io.netty.buffer.Unpooled;
 import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -37,6 +39,8 @@ public final class PatternAccessSession {
     private static final int MAX_ACTIONS_PER_TICK = 16;
     private static final int MAX_PACKETS_PER_TICK = 16;
     private static final int MAX_PENDING_PACKETS = 2048;
+    /** Safety margin below Minecraft's 1 MiB clientbound custom-payload limit. */
+    private static final int MAX_CHUNK_PAYLOAD_BYTES = 256 * 1024;
     private static final int MAX_TRACKED_PROVIDERS = PatternProviderClientState.MAX_PROVIDERS;
     private static final int MAX_PROVIDER_SLOTS = PatternProviderClientState.MAX_INVENTORY_SIZE;
     private static final int MAX_TOTAL_TRACKED_SLOTS = PatternProviderClientState.MAX_TOTAL_INVENTORY_SLOTS;
@@ -61,6 +65,7 @@ public final class PatternAccessSession {
     private final PerGameTickBudget serverTickBudget = new PerGameTickBudget(1);
     private final PerGameTickBudget actionBudget = new PerGameTickBudget(MAX_ACTIONS_PER_TICK);
     private final PerGameTickBudget packetBudget = new PerGameTickBudget(MAX_PACKETS_PER_TICK);
+    private final PerGameTickBudget subscribeRequestBudget = new PerGameTickBudget(1);
 
     private IGrid trackedGrid;
     private long epoch;
@@ -82,6 +87,11 @@ public final class PatternAccessSession {
         if (!subscribe) {
             subscribed = false;
             clearServerState();
+            return;
+        }
+        // Subscribe requests have their own budget so a client flooding request packets cannot
+        // repeatedly force snapshot work within a single game tick.
+        if (!subscribeRequestBudget.tryAcquire(player.serverLevel().getGameTime())) {
             return;
         }
         if (!subscribed) {
@@ -332,8 +342,10 @@ public final class PatternAccessSession {
         for (int slot = 0; slot < tracker.snapshot.length; slot++) {
             var current = tracker.inventory.getStackInSlot(slot);
             if (!ItemStack.matches(current, tracker.snapshot[slot])) {
-                tracker.snapshot[slot] = current.copy();
-                changed.put(slot, current.copy());
+                // One defensive copy is enough: chunk() copies again before queueing the packet.
+                var copy = current.copy();
+                tracker.snapshot[slot] = copy;
+                changed.put(slot, copy);
             }
         }
         if (!changed.isEmpty()) {
@@ -367,13 +379,13 @@ public final class PatternAccessSession {
                         || inventory.size() > MAX_PROVIDER_SLOTS) {
                     continue;
                 }
-                providers.add(new ProviderView(container, inventory, group, container.getTerminalSortOrder()));
+                providers.add(new ProviderView(container, inventory, group, container.getTerminalSortOrder(),
+                        group.name().getString()));
             }
         }
 
         providers.sort(Comparator
-                .comparing((ProviderView provider) -> provider.group().name().getString(),
-                        String.CASE_INSENSITIVE_ORDER)
+                .comparing(ProviderView::sortKey, String.CASE_INSENSITIVE_ORDER)
                 .thenComparingLong(ProviderView::sortOrder));
 
         int totalSlots = 0;
@@ -410,20 +422,43 @@ public final class PatternAccessSession {
         }
     }
 
-    private static List<Int2ObjectMap<ItemStack>> chunk(Int2ObjectMap<ItemStack> source) {
+    private List<Int2ObjectMap<ItemStack>> chunk(Int2ObjectMap<ItemStack> source) {
         var result = new ArrayList<Int2ObjectMap<ItemStack>>();
         var current = new Int2ObjectArrayMap<ItemStack>();
+        int currentBytes = 0;
         for (var entry : source.int2ObjectEntrySet()) {
-            if (current.size() >= PatternProviderListPacket.MAX_SLOTS_PER_PACKET) {
+            int stackBytes = estimateEncodedSize(entry.getValue());
+            if (!current.isEmpty()
+                    && (current.size() >= PatternProviderListPacket.MAX_SLOTS_PER_PACKET
+                            || currentBytes + stackBytes > MAX_CHUNK_PAYLOAD_BYTES)) {
                 result.add(current);
                 current = new Int2ObjectArrayMap<>();
+                currentBytes = 0;
             }
             current.put(entry.getIntKey(), entry.getValue().copy());
+            currentBytes += stackBytes;
         }
         if (!current.isEmpty() || result.isEmpty()) {
             result.add(current);
         }
         return result;
+    }
+
+    /**
+     * Measures the actual serialized size of one stack so chunks stay well below Minecraft's 1 MiB
+     * clientbound custom-payload limit even for patterns with multi-KiB NBT.
+     */
+    private int estimateEncodedSize(ItemStack stack) {
+        var buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), menu.getPlayer().registryAccess());
+        try {
+            ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, stack);
+            return buf.readableBytes();
+        } catch (RuntimeException exception) {
+            // Force this stack into a chunk of its own if it cannot be measured.
+            return MAX_CHUNK_PAYLOAD_BYTES;
+        } finally {
+            buf.release();
+        }
     }
 
     private void queue(PatternProviderListPacket packet) {
@@ -452,9 +487,9 @@ public final class PatternAccessSession {
     }
 
     private boolean resnapshotCoolingDown() {
-        return trackedGrid == null
-                && epoch != 0
-                && ticks - lastSnapshotTick < MIN_RESNAPSHOT_INTERVAL_TICKS;
+        // Applies to every full-rebuild path (including trackedGrid != null, e.g. after a grid change or
+        // a forced re-subscribe) so clients cannot trigger a snapshot rebuild more than once per cooldown.
+        return epoch != 0 && ticks - lastSnapshotTick < MIN_RESNAPSHOT_INTERVAL_TICKS;
     }
 
     private IGrid getCurrentGrid() {
@@ -489,8 +524,9 @@ public final class PatternAccessSession {
         return result > 0 ? result : NEXT_EPOCH.updateAndGet(value -> value > 0 ? value : 1);
     }
 
+    /** {@code sortKey} caches {@code group().name().getString()} so sorting does not recompute it per comparison. */
     private record ProviderView(PatternContainer container, InternalInventory inventory,
-            PatternContainerGroup group, long sortOrder) {
+            PatternContainerGroup group, long sortOrder, String sortKey) {
     }
 
     private static final class Tracker {

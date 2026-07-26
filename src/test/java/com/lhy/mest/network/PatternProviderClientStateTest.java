@@ -103,6 +103,23 @@ class PatternProviderClientStateTest {
     }
 
     @Test
+    void byteSplitFullUpdateMayUseOneChunkPerSlot() {
+        var state = state();
+        state.apply(reset(45));
+
+        // Byte-based chunk splitting on the server may put a single large slot into each chunk, so a
+        // full update may legitimately consist of inventorySize chunks.
+        assertEquals(PatternProviderClientState.Outcome.IGNORED,
+                state.apply(full(45, 1, 1, 0, 3, 3, Map.of(0, "a"))).outcome());
+        assertEquals(PatternProviderClientState.Outcome.IGNORED,
+                state.apply(full(45, 1, 1, 1, 3, 3, Map.of(1, "b"))).outcome());
+        var result = state.apply(full(45, 1, 1, 2, 3, 3, Map.of(2, "c")));
+
+        assertEquals(PatternProviderClientState.Outcome.CHANGED, result.outcome());
+        assertEquals(Map.of(0, "a", 1, "b", 2, "c"), onlyProvider(result).slots());
+    }
+
+    @Test
     void identicalDuplicateChunkIsIdempotent() {
         var state = state();
         state.apply(reset(40));

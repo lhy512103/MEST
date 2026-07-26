@@ -1,6 +1,5 @@
 plugins {
     id 'java-library'
-    id 'maven-publish'
     id 'net.neoforged.moddev' version '2.0.141'
     id 'idea'
 }
@@ -42,6 +41,8 @@ repositories {
         url = "https://maven.terraformersmc.com/"
     }
     maven {
+        // Hosts AE2 ("appeng"/"org.appliedenergistics"), AE2WTLib ("de.mari_023"),
+        // Mekanism, PneumaticCraft and other modding artifacts.
         name = "ModMaven"
         url = "https://modmaven.dev"
     }
@@ -95,14 +96,6 @@ repositories {
         }
         filter {
             includeGroup "curse.maven"
-        }
-    }
-    maven {
-        url = uri("https://modmaven.dev/")
-        content {
-            includeGroup "appeng"
-            includeGroup "org.appliedenergistics"
-            includeGroup "de.mari_023"
         }
     }
     maven {
@@ -271,18 +264,6 @@ sourceSets.main.resources.srcDir generateModMetadata
 neoForge.ideSyncTask generateModMetadata
 
 // Example configuration to allow publishing using the maven-publish plugin
-publishing {
-    publications {
-        register('mavenJava', MavenPublication) {
-            from components.java
-        }
-    }
-    repositories {
-        maven {
-            url = uri("repo")
-        }
-    }
-}
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation

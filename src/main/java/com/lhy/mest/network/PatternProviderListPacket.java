@@ -200,8 +200,8 @@ public record PatternProviderListPacket(
         if (inventorySize <= 0 || inventorySize > PatternProviderClientState.MAX_INVENTORY_SIZE) {
             return false;
         }
-        int maximumChunks = (inventorySize + MAX_SLOTS_PER_PACKET - 1) / MAX_SLOTS_PER_PACKET;
-        return chunkCount >= 1 && chunkCount <= maximumChunks;
+        // Byte-based chunk splitting can put as little as one slot into each chunk.
+        return chunkCount >= 1 && chunkCount <= inventorySize;
     }
 
     private static PatternProviderListPacket invalid(int containerId) {
@@ -327,10 +327,14 @@ public record PatternProviderListPacket(
 
     @OnlyIn(Dist.CLIENT)
     private static final class ClientState {
-        private static final Comparator<Entry> ENTRY_ORDER = Comparator
-                .comparing((Entry entry) -> entry.group().name().getString(), String.CASE_INSENSITIVE_ORDER)
-                .thenComparingLong(Entry::sortOrder)
-                .thenComparingLong(Entry::providerId);
+        /** Caches {@code group().name().getString()} so sorting does not recompute it per comparison. */
+        private record SortableEntry(String sortKey, Entry entry) {
+        }
+
+        private static final Comparator<SortableEntry> ENTRY_ORDER = Comparator
+                .comparing(SortableEntry::sortKey, String.CASE_INSENSITIVE_ORDER)
+                .thenComparingLong(sortable -> sortable.entry().sortOrder())
+                .thenComparingLong(sortable -> sortable.entry().providerId());
 
         private final PatternProviderClientState<ItemStack, PatternContainerGroup> state =
                 new PatternProviderClientState<>(new PatternProviderClientState.ValueOps<>() {
@@ -388,16 +392,21 @@ public record PatternProviderListPacket(
                 return new ClientApplyResult(null, requestResync);
             }
 
-            var entries = new ArrayList<Entry>(result.providers().size());
+            var sortableEntries = new ArrayList<SortableEntry>(result.providers().size());
             for (var provider : result.providers()) {
                 var providerSlots = new Int2ObjectArrayMap<ItemStack>();
                 for (var slot : provider.slots().entrySet()) {
                     providerSlots.put(slot.getKey().intValue(), slot.getValue().copy());
                 }
-                entries.add(new Entry(provider.epoch(), provider.providerId(), provider.revision(),
-                        provider.metadata(), provider.inventorySize(), provider.sortOrder(), providerSlots));
+                var entry = new Entry(provider.epoch(), provider.providerId(), provider.revision(),
+                        provider.metadata(), provider.inventorySize(), provider.sortOrder(), providerSlots);
+                sortableEntries.add(new SortableEntry(entry.group().name().getString(), entry));
             }
-            entries.sort(ENTRY_ORDER);
+            sortableEntries.sort(ENTRY_ORDER);
+            var entries = new ArrayList<Entry>(sortableEntries.size());
+            for (var sortable : sortableEntries) {
+                entries.add(sortable.entry());
+            }
             return new ClientApplyResult(entries, requestResync);
         }
     }
