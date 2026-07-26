@@ -51,17 +51,8 @@ public record PatternProviderListPacket(
     /** Keeps every payload well below Minecraft's clientbound custom-payload limit. */
     static final int MAX_SLOTS_PER_PACKET = PatternProviderClientState.MAX_SLOTS_PER_CHUNK;
 
-    private static final StreamCodec<RegistryFriendlyByteBuf, Int2ObjectMap<ItemStack>> SLOTS_CODEC =
-            ByteBufCodecs.map(Int2ObjectArrayMap::new,
-                    ByteBufCodecs.SHORT.map(Short::intValue, Integer::shortValue),
-                    ItemStack.OPTIONAL_STREAM_CODEC,
-                    MAX_SLOTS_PER_PACKET);
-
     public static final StreamCodec<RegistryFriendlyByteBuf, PatternProviderListPacket> STREAM_CODEC =
             StreamCodec.ofMember(PatternProviderListPacket::write, PatternProviderListPacket::read);
-
-    @OnlyIn(Dist.CLIENT)
-    private static final ClientState CLIENT_STATE = new ClientState();
 
     public enum Operation {
         RESET,
@@ -99,35 +90,49 @@ public record PatternProviderListPacket(
     }
 
     private static PatternProviderListPacket read(RegistryFriendlyByteBuf buf) {
-        int containerId = buf.readVarInt();
-        long epoch = buf.readVarLong();
-        Operation operation = buf.readEnum(Operation.class);
-        if (operation == Operation.RESET) {
-            return reset(containerId, epoch);
+        int containerId = -1;
+        try {
+            containerId = buf.readVarInt();
+            long epoch = buf.readVarLong();
+            Operation operation = buf.readEnum(Operation.class);
+            PatternProviderListPacket packet;
+            if (operation == Operation.RESET) {
+                packet = reset(containerId, epoch);
+            } else {
+                long providerId = buf.readVarLong();
+                if (operation == Operation.REMOVE) {
+                    packet = remove(containerId, epoch, providerId);
+                } else {
+                    long revision = buf.readVarLong();
+                    int chunkIndex = buf.readVarInt();
+                    int chunkCount = buf.readVarInt();
+                    int inventorySize = 0;
+                    long sortOrder = 0;
+                    PatternContainerGroup group = null;
+                    if (operation == Operation.FULL) {
+                        inventorySize = buf.readVarInt();
+                        sortOrder = buf.readVarLong();
+                        group = PatternContainerGroup.readFromPacket(buf);
+                    }
+                    var slots = SlotsCodecHolder.CODEC.decode(buf);
+                    packet = new PatternProviderListPacket(containerId, epoch, operation, providerId, revision,
+                            chunkIndex, chunkCount, inventorySize, sortOrder, group, slots);
+                }
+            }
+            if (buf.isReadable()) {
+                throw new IllegalArgumentException("Trailing pattern provider list data");
+            }
+            return packet;
+        } catch (RuntimeException exception) {
+            discardRemaining(buf);
+            return invalid(containerId);
         }
-
-        long providerId = buf.readVarLong();
-        if (operation == Operation.REMOVE) {
-            return remove(containerId, epoch, providerId);
-        }
-
-        long revision = buf.readVarLong();
-        int chunkIndex = buf.readVarInt();
-        int chunkCount = buf.readVarInt();
-        int inventorySize = 0;
-        long sortOrder = 0;
-        PatternContainerGroup group = null;
-        if (operation == Operation.FULL) {
-            inventorySize = buf.readVarInt();
-            sortOrder = buf.readVarLong();
-            group = PatternContainerGroup.readFromPacket(buf);
-        }
-        var slots = SLOTS_CODEC.decode(buf);
-        return new PatternProviderListPacket(containerId, epoch, operation, providerId, revision,
-                chunkIndex, chunkCount, inventorySize, sortOrder, group, slots);
     }
 
     private void write(RegistryFriendlyByteBuf buf) {
+        if (!isWellFormed()) {
+            throw new IllegalStateException("Cannot encode a malformed pattern provider list update");
+        }
         buf.writeVarInt(containerId);
         buf.writeVarLong(epoch);
         buf.writeEnum(operation);
@@ -151,21 +156,82 @@ public record PatternProviderListPacket(
             }
             group.writeToPacket(buf);
         }
-        SLOTS_CODEC.encode(buf, slots);
+        SlotsCodecHolder.CODEC.encode(buf, slots);
+    }
+
+    boolean isWellFormed() {
+        if (containerId < 0 || epoch <= 0 || operation == null || slots == null) {
+            return false;
+        }
+        if (operation == Operation.RESET) {
+            return providerId == 0 && revision == 0 && chunkIndex == 0 && chunkCount == 1
+                    && inventorySize == 0 && sortOrder == 0 && group == null && slots.isEmpty();
+        }
+        if (operation == Operation.REMOVE) {
+            return providerId > 0 && revision == 0 && chunkIndex == 0 && chunkCount == 1
+                    && inventorySize == 0 && sortOrder == 0 && group == null && slots.isEmpty();
+        }
+        if (providerId <= 0 || revision <= 0
+                || chunkCount <= 0 || chunkCount > PatternProviderClientState.MAX_CHUNKS_PER_UPDATE
+                || chunkIndex < 0 || chunkIndex >= chunkCount
+                || slots.size() > MAX_SLOTS_PER_PACKET) {
+            return false;
+        }
+        if (operation == Operation.FULL) {
+            if (inventorySize <= 0 || inventorySize > PatternProviderClientState.MAX_INVENTORY_SIZE
+                    || group == null || !isPlausibleFullChunkCount(chunkCount, inventorySize)) {
+                return false;
+            }
+        } else if (inventorySize != 0 || sortOrder != 0 || group != null) {
+            return false;
+        }
+        for (var entry : slots.int2ObjectEntrySet()) {
+            int slot = entry.getIntKey();
+            if (slot < 0 || slot >= PatternProviderClientState.MAX_INVENTORY_SIZE
+                    || entry.getValue() == null
+                    || operation == Operation.FULL && slot >= inventorySize) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static boolean isPlausibleFullChunkCount(int chunkCount, int inventorySize) {
+        if (inventorySize <= 0 || inventorySize > PatternProviderClientState.MAX_INVENTORY_SIZE) {
+            return false;
+        }
+        int maximumChunks = (inventorySize + MAX_SLOTS_PER_PACKET - 1) / MAX_SLOTS_PER_PACKET;
+        return chunkCount >= 1 && chunkCount <= maximumChunks;
+    }
+
+    private static PatternProviderListPacket invalid(int containerId) {
+        return new PatternProviderListPacket(containerId, 0, Operation.RESET,
+                0, 0, 0, 1, 0, 0, null, new Int2ObjectArrayMap<>());
+    }
+
+    private static void discardRemaining(ByteBuf buf) {
+        try {
+            buf.skipBytes(buf.readableBytes());
+        } catch (RuntimeException ignored) {
+            // Decoding must still return a rejected sentinel if the buffer itself is already invalid.
+        }
     }
 
     public static void handle(PatternProviderListPacket packet, IPayloadContext context) {
+        if (!packet.isWellFormed()) {
+            return;
+        }
         context.enqueueWork(() -> handleClient(packet));
     }
 
     @OnlyIn(Dist.CLIENT)
     public static void beginClientSubscription(MESTMenu menu) {
-        CLIENT_STATE.beginSession(menu);
+        ClientStateHolder.INSTANCE.beginSession(menu);
     }
 
     @OnlyIn(Dist.CLIENT)
     public static void endClientSubscription(MESTMenu menu) {
-        CLIENT_STATE.endSession(menu);
+        ClientStateHolder.INSTANCE.endSession(menu);
     }
 
     @OnlyIn(Dist.CLIENT)
@@ -186,7 +252,7 @@ public record PatternProviderListPacket(
             return;
         }
 
-        var result = CLIENT_STATE.apply(packet);
+        var result = ClientStateHolder.INSTANCE.apply(packet);
         if (result.requestResync()) {
             PacketDistributor.sendToServer(new Request(menu.containerId, true));
         }
@@ -210,23 +276,49 @@ public record PatternProviderListPacket(
         public static final Type<Request> TYPE =
                 new Type<>(ResourceLocation.fromNamespaceAndPath(MESplicedterminal.MODID,
                         "pattern_provider_list_request"));
-        public static final StreamCodec<ByteBuf, Request> STREAM_CODEC = StreamCodec.composite(
-                ByteBufCodecs.VAR_INT,
-                Request::containerId,
-                ByteBufCodecs.BOOL,
-                Request::subscribe,
-                Request::new);
+        public static final StreamCodec<ByteBuf, Request> STREAM_CODEC =
+                StreamCodec.ofMember(Request::write, Request::read);
 
         @Override
         public Type<? extends CustomPacketPayload> type() {
             return TYPE;
         }
 
+        private static Request read(ByteBuf buf) {
+            try {
+                int containerId = ByteBufCodecs.VAR_INT.decode(buf);
+                boolean subscribe = ByteBufCodecs.BOOL.decode(buf);
+                if (buf.isReadable()) {
+                    throw new IllegalArgumentException("Trailing pattern provider request data");
+                }
+                return new Request(containerId, subscribe);
+            } catch (RuntimeException exception) {
+                discardRemaining(buf);
+                return new Request(-1, false);
+            }
+        }
+
+        private void write(ByteBuf buf) {
+            if (!isWellFormed()) {
+                throw new IllegalStateException("Cannot encode a malformed pattern provider request");
+            }
+            ByteBufCodecs.VAR_INT.encode(buf, containerId);
+            ByteBufCodecs.BOOL.encode(buf, subscribe);
+        }
+
+        boolean isWellFormed() {
+            return containerId >= 0;
+        }
+
         public static void handle(Request packet, IPayloadContext context) {
+            if (!packet.isWellFormed()) {
+                return;
+            }
             context.enqueueWork(() -> {
                 if (context.player() instanceof ServerPlayer player
                         && player.containerMenu instanceof MESTMenu menu
-                        && menu.containerId == packet.containerId()) {
+                        && menu.containerId == packet.containerId()
+                        && (!packet.subscribe() || menu.canUsePatternAccess(player))) {
                     menu.getPatternAccessSession().setSubscribed(player, packet.subscribe());
                 }
             });
@@ -311,5 +403,22 @@ public record PatternProviderListPacket(
     }
 
     private record ClientApplyResult(@Nullable List<Entry> entries, boolean requestResync) {
+    }
+
+    /**
+     * ItemStack's stream codec touches bootstrapped registries during initialization. Keep it out of
+     * RESET and rejected-packet decode paths, which do not contain slot data.
+     */
+    private static final class SlotsCodecHolder {
+        private static final StreamCodec<RegistryFriendlyByteBuf, Int2ObjectMap<ItemStack>> CODEC =
+                ByteBufCodecs.map(Int2ObjectArrayMap::new,
+                        ByteBufCodecs.SHORT.map(Short::intValue, Integer::shortValue),
+                        ItemStack.OPTIONAL_STREAM_CODEC,
+                        MAX_SLOTS_PER_PACKET);
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static final class ClientStateHolder {
+        private static final ClientState INSTANCE = new ClientState();
     }
 }

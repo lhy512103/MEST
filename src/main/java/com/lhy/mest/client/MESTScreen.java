@@ -102,7 +102,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         this.meListPanel = new MEListPanel(getMenu());
         this.meListPanel.repo().setUpdateViewListener(this::refreshCraftableKeys);
         getMenu().setGui(this::onMenuReceivedClientUpdate);
-        MestRecipeTransferContext.beginMenu(menu.containerId);
+        MestRecipeTransferContext.beginMenu(menu);
 
         // ME list control buttons (sort order / view mode / sort direction). These reuse AE2's icon
         // buttons but are repositioned each frame to sit on the ME panel's title bar, so they travel
@@ -114,6 +114,16 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 cm.getSetting(Settings.VIEW_MODE), this::toggleServerSetting));
         meSettingButtons.add(new SettingToggleButton<>(Settings.SORT_DIRECTION,
                 cm.getSetting(Settings.SORT_DIRECTION), this::toggleServerSetting));
+        for (SettingToggleButton<?> button : meSettingButtons) {
+            // IconButton's stock background is rendered at 18x20 around a 16x16 widget. The ME
+            // title bar is only 18px tall and already supplies the button surface, so drawing that
+            // background would bleed into the panel content (and would not match the hit box).
+            button.setDisableBackground(true);
+            // AbstractWidget exposes a safe mutable height. Cover the full title-bar height so the
+            // bottom two pixels do not unexpectedly start a panel drag instead of pressing the
+            // visible icon.
+            button.setHeight(ModulePanel.TITLE_BAR_HEIGHT);
+        }
     }
 
     private <SE extends Enum<SE>> void toggleServerSetting(SettingToggleButton<SE> btn, boolean backwards) {
@@ -206,18 +216,20 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     /** Place the ME list control buttons on the ME panel's title bar (right-aligned), or hide them. */
     private void repositionMeButtons() {
-        boolean show = meListPanel != null && dock.isEffectivelyVisible(meListPanel);
-        // Buttons sit inside the AE2-style 18px title header.
+        boolean panelVisible = meListPanel != null && dock.isEffectivelyVisible(meListPanel);
+        // With the oversized IconButton background disabled, the 16px icon fits inside the
+        // AE2-style 18px title header at y + 1 (or y + 2 while hovered).
         int bx = meListPanel != null ? meListPanel.x + meListPanel.width - 18 : 0;
-        int by = meListPanel != null ? meListPanel.y + 1 : 0;
+        int by = meListPanel != null ? meListPanel.y : 0;
         for (SettingToggleButton<?> b : meSettingButtons) {
+            b.setX(bx);
+            b.setY(by);
+            boolean show = panelVisible && dock.isAreaUnobscured(
+                    meListPanel,
+                    new DockRect(bx, by, b.getWidth(), b.getHeight()));
             b.visible = show;
             b.active = show;
-            if (show) {
-                b.setX(bx);
-                b.setY(by);
-                bx -= 18;
-            }
+            bx -= 18;
         }
     }
 
@@ -294,17 +306,17 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     private void selectVisibleRecipeTargetIfNeeded() {
-        var selected = MestRecipeTransferContext.targetFor(getMenu().containerId);
+        var selected = MestRecipeTransferContext.targetFor(getMenu());
         if (selected == MestRecipeTransferContext.Target.PATTERN_ENCODING
                 && !dock.isEffectivelyVisible(patternEncodingPanel)
                 && dock.isEffectivelyVisible(craftingPanel)) {
             MestRecipeTransferContext.select(
-                    getMenu().containerId, MestRecipeTransferContext.Target.CRAFTING);
+                    getMenu(), MestRecipeTransferContext.Target.CRAFTING);
         } else if (selected == MestRecipeTransferContext.Target.CRAFTING
                 && !dock.isEffectivelyVisible(craftingPanel)
                 && dock.isEffectivelyVisible(patternEncodingPanel)) {
             MestRecipeTransferContext.select(
-                    getMenu().containerId, MestRecipeTransferContext.Target.PATTERN_ENCODING);
+                    getMenu(), MestRecipeTransferContext.Target.PATTERN_ENCODING);
         }
     }
 
@@ -504,11 +516,31 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
+        // The global toolbar is not owned by any floating root. Do not focus an arbitrary panel
+        // underneath it when the toolbar happens to overlap the workspace.
+        if (isMouseOverToolbarWidget(mx, my)) {
+            if (meListPanel != null) {
+                meListPanel.setSearchFocused(false);
+            }
+            return super.mouseClicked(mx, my, button);
+        }
+
+        // Raise the pointed root before dispatching to panel-owned controls. A finally block commits
+        // the raise only if dock chrome did not take ownership and merge it into a drag/resize.
+        dock.beginPanelInteraction(mx, my);
+        try {
+            return mouseClickedInWorkspace(mx, my, button);
+        } finally {
+            dock.commitPanelInteraction();
+        }
+    }
+
+    private boolean mouseClickedInWorkspace(double mx, double my, int button) {
         ModulePanel target = dock.topLeafAt(mx, my);
 
-        // Widgets are rendered above panel chrome. Let visible toolbar/header widgets receive the
-        // click before the title-bar drag state machine.
-        if (isMouseOverWorkspaceWidget(mx, my)) {
+        // ME header controls render above panel chrome, but still belong to the ME root and therefore
+        // participate in its pre-dispatch focus transaction.
+        if (isMouseOverMeSettingButton(mx, my)) {
             if (meListPanel != null) {
                 meListPanel.setSearchFocused(false);
             }
@@ -517,16 +549,20 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
         if (target == craftingPanel) {
             MestRecipeTransferContext.select(
-                    getMenu().containerId, MestRecipeTransferContext.Target.CRAFTING);
+                    getMenu(), MestRecipeTransferContext.Target.CRAFTING);
         } else if (target == patternEncodingPanel) {
             MestRecipeTransferContext.select(
-                    getMenu().containerId, MestRecipeTransferContext.Target.PATTERN_ENCODING);
+                    getMenu(), MestRecipeTransferContext.Target.PATTERN_ENCODING);
         }
 
         // Search focus and custom controls are scoped to the topmost leaf only.
         if (target == meListPanel) {
             if (button == 0 && meListPanel.inSearchField(mx, my)) {
                 meListPanel.setSearchFocused(true);
+                // Put the insertion point where the user clicked instead of always appending to the
+                // previous query. The panel accounts for horizontal clipping and code-point
+                // boundaries itself.
+                meListPanel.placeSearchCursor(mx, this.font);
                 return true;
             }
             meListPanel.setSearchFocused(false);
@@ -591,12 +627,16 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         return handled || dock.topPanelAt(mx, my) != null;
     }
 
-    private boolean isMouseOverWorkspaceWidget(double mx, double my) {
+    private boolean isMouseOverToolbarWidget(double mx, double my) {
         for (Button button : panelButtons) {
             if (button.visible && button.isMouseOver(mx, my)) {
                 return true;
             }
         }
+        return false;
+    }
+
+    private boolean isMouseOverMeSettingButton(double mx, double my) {
         for (SettingToggleButton<?> button : meSettingButtons) {
             if (button.visible && button.isMouseOver(mx, my)) {
                 return true;
@@ -876,19 +916,63 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // Search field editing while focused.
+        // Search field editing while focused. Keep this handling ahead of AE2/vanilla hotkeys: while
+        // the query owns focus, navigation and clipboard shortcuts must never activate a terminal
+        // action or close the screen.
         if (meListPanel != null && meListPanel.isSearchFocused()) {
-            if (keyCode == GLFW.GLFW_KEY_BACKSPACE && meListPanel.searchBackspace()) {
-                return true;
+            boolean selecting = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
+            boolean control = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0
+                    || (modifiers & GLFW.GLFW_MOD_SUPER) != 0;
+
+            switch (keyCode) {
+                case GLFW.GLFW_KEY_BACKSPACE -> {
+                    return meListPanel.searchBackspace();
+                }
+                case GLFW.GLFW_KEY_DELETE -> {
+                    return meListPanel.searchDeleteForward();
+                }
+                case GLFW.GLFW_KEY_LEFT -> {
+                    return meListPanel.searchMoveCursor(-1, selecting);
+                }
+                case GLFW.GLFW_KEY_RIGHT -> {
+                    return meListPanel.searchMoveCursor(1, selecting);
+                }
+                case GLFW.GLFW_KEY_HOME -> {
+                    return meListPanel.searchMoveHome(selecting);
+                }
+                case GLFW.GLFW_KEY_END -> {
+                    return meListPanel.searchMoveEnd(selecting);
+                }
+                case GLFW.GLFW_KEY_A -> {
+                    if (control) {
+                        return meListPanel.searchSelectAll();
+                    }
+                }
+                case GLFW.GLFW_KEY_C -> {
+                    if (control) {
+                        return meListPanel.searchCopySelection();
+                    }
+                }
+                case GLFW.GLFW_KEY_X -> {
+                    if (control) {
+                        return meListPanel.searchCutSelection();
+                    }
+                }
+                case GLFW.GLFW_KEY_V -> {
+                    if (control) {
+                        return meListPanel.searchPasteClipboard();
+                    }
+                }
+                case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_ESCAPE -> {
+                    meListPanel.setSearchFocused(false);
+                    return true;
+                }
+                default -> {
+                    // Swallow all other key presses while the field is focused. This prevents
+                    // function keys and terminal shortcuts from leaking through during editing.
+                }
             }
-            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                meListPanel.setSearchFocused(false);
-                return true;
-            }
-            // Swallow other keys so they do not trigger hotkeys / close while typing.
-            if (keyCode != GLFW.GLFW_KEY_ESCAPE) {
-                return true;
-            }
+            return true;
         }
         boolean handled = super.keyPressed(keyCode, scanCode, modifiers);
         if (!handled) {
@@ -904,7 +988,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean isHandlingRightClick() {
-        return false;
+        // AEBaseScreen temporarily sets this flag while it forwards a right click to a button as a
+        // left click. SettingToggleButton reads it to decide whether to cycle backwards.
+        return super.isHandlingRightClick();
     }
 
     @Override
@@ -918,19 +1004,24 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
     }
 
+    private void clearRecipeTransferContext() {
+        MestRecipeTransferContext.clear(getMenu());
+    }
+
     @Override
     public void onClose() {
         if (AEConfig.instance().isClearGridOnClose()) {
             getMenu().clearCraftingGrid();
             getMenu().clearPatternEncoding();
         }
-        MestRecipeTransferContext.clear(getMenu().containerId);
+        clearRecipeTransferContext();
         super.onClose();
     }
 
     @Override
     public void removed() {
         closePatternAccessSubscription();
+        clearRecipeTransferContext();
         dock.save();
         super.removed();
     }

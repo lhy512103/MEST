@@ -40,6 +40,11 @@
   resynchronization.
 - Added stale-action rejection, subscription cleanup, request/packet limits and
   conserving exchange and quick-move transactions for provider slots.
+- Made provider request, action and packet budgets advance from server game time
+  so repeated menu broadcasts cannot reset the per-tick limits.
+- Cleared client provider-session state on terminal close, screen replacement
+  and disconnect, while preserving updates during the processing-amount
+  sub-screen.
 
 ### Integrations And Acquisition
 
@@ -48,6 +53,9 @@
   smithing, stonecutting and generic processing recipes.
 - Added independent `mestRunJei` and `mestRunEmi` Gradle development-runtime
   switches, with both viewers enabled by default.
+- Isolated the launch-only client runtime from compile-only optional integrations
+  and kept JEI-specific AE2/character-search addons out of EMI-only and
+  viewer-disabled runs.
 - Added a survival smithing upgrade from the wireless universal terminal,
   component preservation, recipe advancement, Curios tag and dedicated 16x16
   item texture.

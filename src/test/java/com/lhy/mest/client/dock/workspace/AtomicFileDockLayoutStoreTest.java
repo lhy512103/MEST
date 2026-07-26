@@ -36,4 +36,21 @@ class AtomicFileDockLayoutStoreTest {
             assertFalse(children.anyMatch(file -> file.getFileName().toString().endsWith(".tmp")));
         }
     }
+
+    @Test
+    void quarantinesMalformedLayoutInsteadOfLeavingItForOverwrite() throws Exception {
+        Path path = temporaryDirectory.resolve("layout.json");
+        Files.writeString(path, "{ this is not valid json", java.nio.charset.StandardCharsets.UTF_8);
+
+        var codec = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog(),
+                WorkspacePersistenceFixtures.migrationContext());
+        var store = new AtomicFileDockLayoutStore(path, codec);
+
+        assertTrue(store.load().isEmpty());
+        assertFalse(Files.exists(path));
+        Path quarantine = store.lastQuarantinedPath().orElseThrow();
+        assertTrue(Files.isRegularFile(quarantine));
+        assertTrue(quarantine.getFileName().toString().contains(".corrupt."));
+    }
 }

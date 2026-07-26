@@ -2,7 +2,7 @@ package com.lhy.mest.client.dock.workspace;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -67,9 +67,15 @@ public final class DockLayoutCodec {
             JsonObject object = parsed.getAsJsonObject();
             if (object.has("version")) {
                 DockLayoutDto dto = readV2(object);
-                return new DecodedLayout(fromDto(dto), DockLayoutDto.CURRENT_VERSION, false);
+                Reconciliation reconciliation = reconcile(fromDtoRaw(dto));
+                return new DecodedLayout(
+                        reconciliation.workspace(),
+                        DockLayoutDto.CURRENT_VERSION,
+                        false,
+                        reconciliation.changed());
             }
-            return new DecodedLayout(migrateV1(object), 1, true);
+            Reconciliation reconciliation = reconcile(migrateV1(object));
+            return new DecodedLayout(reconciliation.workspace(), 1, true, reconciliation.changed());
         } catch (DockLayoutFormatException e) {
             throw e;
         } catch (JsonParseException | ArithmeticException | ClassCastException e) {
@@ -89,6 +95,10 @@ public final class DockLayoutCodec {
     }
 
     public DockWorkspace fromDto(DockLayoutDto dto) throws DockLayoutFormatException {
+        return reconcile(fromDtoRaw(dto)).workspace();
+    }
+
+    private DockWorkspace fromDtoRaw(DockLayoutDto dto) throws DockLayoutFormatException {
         if (dto == null) {
             throw new DockLayoutFormatException("layout DTO must not be null");
         }
@@ -112,11 +122,111 @@ public final class DockLayoutCodec {
                         fromDto(root.content(), budget, 1)));
             }
             DockWorkspace workspace = new DockWorkspace(roots);
-            WorkspaceValidator.validateStrict(workspace, catalog);
+            WorkspaceValidator.validateStructure(workspace);
             return workspace;
         } catch (IllegalArgumentException | NullPointerException e) {
             throw new DockLayoutFormatException("invalid v2 DTO: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Reconciles a structurally valid persisted workspace with the modules registered by the
+     * current terminal screen.
+     *
+     * <p>Module ids are the only stable association between persisted leaves and runtime panels.
+     * Unknown leaves are removed (collapsing now-empty split branches), while newly registered
+     * modules receive deterministic default roots appended in catalog order. This keeps a single
+     * added, removed, or renamed module from invalidating an otherwise usable layout.</p>
+     */
+    public DockWorkspace reconcileWorkspace(DockWorkspace workspace) throws DockLayoutFormatException {
+        return reconcile(workspace).workspace();
+    }
+
+    private Reconciliation reconcile(DockWorkspace source) throws DockLayoutFormatException {
+        try {
+            WorkspaceValidator.validateStructure(source);
+        } catch (RuntimeException e) {
+            throw new DockLayoutFormatException("invalid persisted layout structure: " + e.getMessage(), e);
+        }
+
+        var retainedRoots = new ArrayList<FloatingRoot>();
+        for (FloatingRoot root : source.roots()) {
+            LayoutNode retained = reconcileNode(root.content());
+            if (retained != null) {
+                retainedRoots.add(root.withContent(retained));
+            }
+        }
+
+        var result = new DockWorkspace(retainedRoots);
+        var usedModules = WorkspaceValidator.validateStructure(result);
+        var usedIdentifiers = collectIdentifiers(result);
+        int defaultIndex = retainedRoots.size();
+        for (String moduleId : catalog.moduleIds()) {
+            if (usedModules.contains(moduleId)) {
+                continue;
+            }
+            String rootId = uniqueIdentifier(DockWorkspaceDefaults.rootId(moduleId), usedIdentifiers, "root");
+            usedIdentifiers.add(rootId);
+            String leafId = uniqueIdentifier(DockWorkspaceDefaults.leafNodeId(moduleId), usedIdentifiers, "leaf");
+            usedIdentifiers.add(leafId);
+            retainedRoots.add(new FloatingRoot(
+                    rootId,
+                    migrationContext.defaultRootBounds(catalog.metrics(moduleId), defaultIndex++),
+                    new LeafNode(leafId, moduleId, true)));
+        }
+
+        result = new DockWorkspace(retainedRoots);
+        try {
+            WorkspaceValidator.validateStrict(result, catalog);
+        } catch (RuntimeException e) {
+            throw new DockLayoutFormatException("invalid reconciled layout: " + e.getMessage(), e);
+        }
+        return new Reconciliation(result, !result.equals(source));
+    }
+
+    private LayoutNode reconcileNode(LayoutNode node) {
+        if (node instanceof LeafNode leaf) {
+            return catalog.contains(leaf.moduleId()) ? leaf : null;
+        }
+        SplitNode split = (SplitNode) node;
+        LayoutNode first = reconcileNode(split.first());
+        LayoutNode second = reconcileNode(split.second());
+        if (first == null) {
+            return second;
+        }
+        if (second == null) {
+            return first;
+        }
+        return split.withChildren(first, second);
+    }
+
+    private static Set<String> collectIdentifiers(DockWorkspace workspace) {
+        var identifiers = new LinkedHashSet<String>();
+        for (FloatingRoot root : workspace.roots()) {
+            identifiers.add(root.rootId());
+            collectIdentifiers(root.content(), identifiers);
+        }
+        return identifiers;
+    }
+
+    private static void collectIdentifiers(LayoutNode node, Set<String> identifiers) {
+        identifiers.add(node.nodeId());
+        if (node instanceof SplitNode split) {
+            collectIdentifiers(split.first(), identifiers);
+            collectIdentifiers(split.second(), identifiers);
+        }
+    }
+
+    private static String uniqueIdentifier(String preferred, Set<String> used, String namespace) {
+        if (!used.contains(preferred)) {
+            return preferred;
+        }
+        int suffix = 1;
+        String candidate;
+        do {
+            candidate = NodeIds.deterministic(namespace, preferred + ":" + suffix++);
+        } while (used.contains(candidate));
+        return candidate;
     }
 
     private NodeDto toDto(LayoutNode node) {
@@ -255,7 +365,7 @@ public final class DockLayoutCodec {
 
     private DockWorkspace migrateV1(JsonObject object) throws DockLayoutFormatException {
         var roots = new ArrayList<FloatingRoot>();
-        var consumedModules = new HashSet<String>();
+        var consumedModules = new LinkedHashSet<String>();
         int index = 0;
         for (var entry : object.entrySet()) {
             String path = "v1[" + entry.getKey() + "]";
@@ -315,18 +425,9 @@ public final class DockLayoutCodec {
             index++;
         }
 
-        for (String moduleId : catalog.moduleIds()) {
-            if (consumedModules.add(moduleId)) {
-                roots.add(new FloatingRoot(
-                        DockWorkspaceDefaults.rootId(moduleId),
-                        migrationContext.defaultRootBounds(catalog.metrics(moduleId), index++),
-                        new LeafNode(DockWorkspaceDefaults.leafNodeId(moduleId), moduleId, true)));
-            }
-        }
-
         DockWorkspace workspace = new DockWorkspace(roots);
         try {
-            WorkspaceValidator.validateStrict(workspace, catalog);
+            WorkspaceValidator.validateStructure(workspace);
         } catch (WorkspaceValidationException e) {
             throw new DockLayoutFormatException("invalid migrated v1 layout: " + e.getMessage(), e);
         }
@@ -344,9 +445,6 @@ public final class DockLayoutCodec {
 
     private void consumeLegacyModule(String moduleId, Set<String> consumed, String path)
             throws DockLayoutFormatException {
-        if (!catalog.contains(moduleId)) {
-            throw new DockLayoutFormatException(path + " references unknown module " + moduleId);
-        }
         if (!consumed.add(moduleId)) {
             throw new DockLayoutFormatException(path + " duplicates module " + moduleId);
         }
@@ -446,10 +544,25 @@ public final class DockLayoutCodec {
         return element;
     }
 
-    public record DecodedLayout(DockWorkspace workspace, int sourceVersion, boolean migrated) {
+    public record DecodedLayout(
+            DockWorkspace workspace,
+            int sourceVersion,
+            boolean migrated,
+            boolean reconciled) {
+        public DecodedLayout(DockWorkspace workspace, int sourceVersion, boolean migrated) {
+            this(workspace, sourceVersion, migrated, false);
+        }
+
         public DecodedLayout {
             Objects.requireNonNull(workspace, "workspace");
         }
+
+        public boolean needsRewrite() {
+            return migrated || reconciled;
+        }
+    }
+
+    private record Reconciliation(DockWorkspace workspace, boolean changed) {
     }
 
     private static final class DecodeBudget {

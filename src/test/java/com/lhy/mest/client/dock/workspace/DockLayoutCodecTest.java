@@ -22,6 +22,8 @@ class DockLayoutCodecTest {
 
         assertEquals(2, decoded.sourceVersion());
         assertFalse(decoded.migrated());
+        assertFalse(decoded.reconciled());
+        assertFalse(decoded.needsRewrite());
         assertEquals(original, decoded.workspace());
         assertTrue(encoded.indexOf("root-a") < encoded.indexOf("root-bc"));
     }
@@ -110,6 +112,190 @@ class DockLayoutCodecTest {
         assertThrows(
                 DockLayoutFormatException.class,
                 () -> codec().decode("{\"version\":3,\"roots\":[]}"));
+    }
+
+    @Test
+    void reconcilesAddedAndRemovedModulesWithoutDiscardingRetainedRoots() throws Exception {
+        String persisted = """
+                {
+                  "version": 2,
+                  "roots": [
+                    {
+                      "rootId": "root-a",
+                      "bounds": {"x": 10, "y": 20, "width": 100, "height": 80},
+                      "content": {
+                        "type": "leaf", "nodeId": "leaf-a", "moduleId": "a", "visible": false
+                      }
+                    },
+                    {
+                      "rootId": "root-old",
+                      "bounds": {"x": 120, "y": 20, "width": 100, "height": 80},
+                      "content": {
+                        "type": "leaf", "nodeId": "leaf-old", "moduleId": "old_name", "visible": true
+                      }
+                    }
+                  ]
+                }
+                """;
+
+        DockLayoutCodec.DecodedLayout decoded = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog("a", "new_name"),
+                WorkspacePersistenceFixtures.migrationContext()).decode(persisted);
+
+        assertTrue(decoded.reconciled());
+        assertTrue(decoded.needsRewrite());
+        assertEquals(2, decoded.workspace().roots().size());
+        LeafNode retained = assertInstanceOf(
+                LeafNode.class,
+                decoded.workspace().roots().getFirst().content());
+        assertEquals("a", retained.moduleId());
+        assertFalse(retained.visible());
+        LeafNode added = assertInstanceOf(
+                LeafNode.class,
+                decoded.workspace().roots().getLast().content());
+        assertEquals("new_name", added.moduleId());
+        assertTrue(added.visible());
+    }
+
+    @Test
+    void collapsesSplitsWhenOnlyOneSideReferencesADeletedModule() throws Exception {
+        String persisted = """
+                {
+                  "version": 2,
+                  "roots": [{
+                    "rootId": "root-main",
+                    "bounds": {"x": 0, "y": 0, "width": 200, "height": 100},
+                    "content": {
+                      "type": "split", "nodeId": "split-main", "axis": "HORIZONTAL",
+                      "ratio": 0.5,
+                      "first": {"type": "leaf", "nodeId": "leaf-old", "moduleId": "removed", "visible": true},
+                      "second": {"type": "leaf", "nodeId": "leaf-a", "moduleId": "a", "visible": true}
+                    }
+                  }]
+                }
+                """;
+
+        DockLayoutCodec.DecodedLayout decoded = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog("a"),
+                WorkspacePersistenceFixtures.migrationContext()).decode(persisted);
+
+        DockWorkspaceCodecAssertions.assertSingleLeaf(decoded.workspace(), "a");
+        assertEquals("root-main", decoded.workspace().roots().getFirst().rootId());
+        assertEquals(200, decoded.workspace().roots().getFirst().bounds().width());
+        assertEquals(100, decoded.workspace().roots().getFirst().bounds().height());
+        assertTrue(decoded.reconciled());
+        assertTrue(decoded.needsRewrite());
+    }
+
+    @Test
+    void renamedCatalogIdsFallBackToDefaultsInsteadOfMakingTheDocumentInvalid() throws Exception {
+        String persisted = """
+                {
+                  "version": 2,
+                  "roots": [{
+                    "rootId": "root-old",
+                    "bounds": {"x": 0, "y": 0, "width": 200, "height": 100},
+                    "content": {
+                      "type": "leaf", "nodeId": "leaf-old", "moduleId": "old_id", "visible": false
+                    }
+                  }]
+                }
+                """;
+
+        DockLayoutCodec.DecodedLayout decoded = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog("new_id"),
+                WorkspacePersistenceFixtures.migrationContext()).decode(persisted);
+        assertEquals(1, decoded.workspace().roots().size());
+        LeafNode leaf = assertInstanceOf(LeafNode.class, decoded.workspace().roots().getFirst().content());
+        assertEquals("new_id", leaf.moduleId());
+        assertTrue(leaf.visible());
+    }
+
+    @Test
+    void rejectsDuplicateModuleAndIdentifierStateBeforeReconciliation() {
+        String duplicateModule = """
+                {
+                  "version": 2,
+                  "roots": [
+                    {
+                      "rootId": "root-a",
+                      "bounds": {"x": 0, "y": 0, "width": 100, "height": 80},
+                      "content": {
+                        "type": "leaf", "nodeId": "leaf-a-1", "moduleId": "a", "visible": true
+                      }
+                    },
+                    {
+                      "rootId": "root-a-duplicate-module",
+                      "bounds": {"x": 110, "y": 0, "width": 100, "height": 80},
+                      "content": {
+                        "type": "leaf", "nodeId": "leaf-a-2", "moduleId": "a", "visible": true
+                      }
+                    }
+                  ]
+                }
+                """;
+        String duplicateIdentifier = """
+                {
+                  "version": 2,
+                  "roots": [{
+                    "rootId": "same-id",
+                    "bounds": {"x": 0, "y": 0, "width": 200, "height": 100},
+                    "content": {
+                      "type": "split", "nodeId": "split-main", "axis": "HORIZONTAL",
+                      "ratio": 0.5,
+                      "first": {
+                        "type": "leaf", "nodeId": "same-id", "moduleId": "a", "visible": true
+                      },
+                      "second": {
+                        "type": "leaf", "nodeId": "leaf-b", "moduleId": "b", "visible": true
+                      }
+                    }
+                  }]
+                }
+                """;
+
+        assertThrows(DockLayoutFormatException.class, () -> codec().decode(duplicateModule));
+        assertThrows(DockLayoutFormatException.class, () -> codec().decode(duplicateIdentifier));
+    }
+
+    @Test
+    void allocatesCollisionFreeIdentifiersForNewDefaultRoots() throws Exception {
+        String preferredNewRootId = com.lhy.mest.client.dock.workspace.DockWorkspaceDefaults.rootId("new");
+        String preferredNewLeafId = com.lhy.mest.client.dock.workspace.DockWorkspaceDefaults.leafNodeId("new");
+        String persisted = """
+                {
+                  "version": 2,
+                  "roots": [{
+                    "rootId": "%s",
+                    "bounds": {"x": 7, "y": 9, "width": 100, "height": 80},
+                    "content": {
+                      "type": "leaf", "nodeId": "%s", "moduleId": "a", "visible": true
+                    }
+                  }]
+                }
+                """.formatted(preferredNewRootId, preferredNewLeafId);
+
+        DockLayoutCodec.DecodedLayout decoded = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog("a", "new"),
+                WorkspacePersistenceFixtures.migrationContext()).decode(persisted);
+
+        assertEquals(2, decoded.workspace().roots().size());
+        assertEquals(preferredNewRootId, decoded.workspace().roots().getFirst().rootId());
+        assertEquals(preferredNewLeafId, decoded.workspace().roots().getFirst().content().nodeId());
+        assertFalse(preferredNewRootId.equals(decoded.workspace().roots().getLast().rootId()));
+        assertFalse(preferredNewLeafId.equals(decoded.workspace().roots().getLast().content().nodeId()));
+        assertTrue(decoded.reconciled());
+    }
+
+    private static final class DockWorkspaceCodecAssertions {
+        private DockWorkspaceCodecAssertions() {
+        }
+
+        static void assertSingleLeaf(com.lhy.mest.client.dock.model.DockWorkspace workspace, String moduleId) {
+            assertEquals(1, workspace.roots().size());
+            LeafNode leaf = assertInstanceOf(LeafNode.class, workspace.roots().getFirst().content());
+            assertEquals(moduleId, leaf.moduleId());
+        }
     }
 
     private static DockLayoutCodec codec() {

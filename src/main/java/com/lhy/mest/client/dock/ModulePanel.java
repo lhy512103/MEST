@@ -12,6 +12,8 @@ import appeng.client.gui.style.BackgroundGenerator;
 import appeng.client.gui.style.Blitter;
 import appeng.core.AppEng;
 
+import com.lhy.mest.client.dock.model.DockRect;
+
 /**
  * Base class for a floating, draggable, resizable module panel.
  *
@@ -101,6 +103,17 @@ public abstract class ModulePanel {
                 && my >= y + height - RESIZE_HANDLE && my < y + height;
     }
 
+    /**
+     * Width reserved on the right side of the title bar for controls supplied by a concrete panel.
+     *
+     * <p>The dock draws the resize affordance at floating-root level, so this inset only concerns
+     * title-bar controls (for example the three ME sorting buttons). Subclasses can increase it when
+     * they place controls over the title bar.
+     */
+    protected int titleRightInset() {
+        return 28;
+    }
+
     // --- Lifecycle hooks --------------------------------------------------
 
     /**
@@ -156,6 +169,7 @@ public abstract class ModulePanel {
     public static final int COLOR_DARK = 0xFF777B8C;
     public static final int COLOR_MUTED = 0xFF878FA5;
     public static final int COLOR_TITLE_TEXT = 0xFF413F54;
+    private static final int TITLE_LEFT_INSET = 8;
 
     private static final Blitter TEXT_FIELD = Blitter.texture("guis/text_field.png", 128, 128);
     private static final Blitter CRAFTING_ARROW = Blitter.texture("guis/crafting.png", 256, 256)
@@ -172,16 +186,28 @@ public abstract class ModulePanel {
         BackgroundGenerator.draw(width, height, g, x, y);
 
         // AE2 headers are part of the light dialog surface instead of a dark desktop-window bar.
-        String clippedTitle = font.plainSubstrByWidth(title().getString(), Math.max(0, width - 28));
-        g.drawString(font, clippedTitle, x + 8, y + 6, COLOR_TITLE_TEXT, false);
+        String clippedTitle = font.plainSubstrByWidth(
+                title().getString(), Math.max(0, width - TITLE_LEFT_INSET - titleRightInset()));
+        g.drawString(font, clippedTitle, x + TITLE_LEFT_INSET, y + 6, COLOR_TITLE_TEXT, false);
         g.fill(x + 5, y + TITLE_BAR_HEIGHT - 2, x + width - 5, y + TITLE_BAR_HEIGHT - 1, COLOR_DARK);
         g.fill(x + 5, y + TITLE_BAR_HEIGHT - 1, x + width - 5, y + TITLE_BAR_HEIGHT, COLOR_LIGHT);
+    }
 
-        // Small AE2-colored resize grip. It stays understated until the user needs it.
-        int hx = x + width - RESIZE_HANDLE;
-        int hy = y + height - RESIZE_HANDLE;
-        g.fill(hx + 1, y + height - 3, x + width - 2, y + height - 2, COLOR_MUTED);
-        g.fill(x + width - 3, hy + 1, x + width - 2, y + height - 2, COLOR_MUTED);
+    /**
+     * Draw the one resize affordance owned by a floating root.
+     *
+     * <p>Individual leaves still expose {@link #inResizeHandle(double, double)} for compatibility,
+     * but a composite root must never draw one grip per leaf. The dock therefore invokes this helper
+     * once with the root rectangle after all leaf frames have been rendered.
+     */
+    public static void renderResizeGrip(GuiGraphics g, DockRect bounds) {
+        if (bounds == null || bounds.width() < 2 || bounds.height() < 2) {
+            return;
+        }
+        int hx = bounds.right() - RESIZE_HANDLE;
+        int hy = bounds.bottom() - RESIZE_HANDLE;
+        g.fill(hx + 1, bounds.bottom() - 3, bounds.right() - 2, bounds.bottom() - 2, COLOR_MUTED);
+        g.fill(bounds.right() - 3, hy + 1, bounds.right() - 2, bounds.bottom() - 2, COLOR_MUTED);
     }
 
     /** Draw a single AE2-style recessed 18x18 slot whose top-left is at (px,py) (the 16x16 item area

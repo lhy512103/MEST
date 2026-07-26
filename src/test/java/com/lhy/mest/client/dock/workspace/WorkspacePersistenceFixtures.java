@@ -26,6 +26,16 @@ final class WorkspacePersistenceFixtures {
         return new ModuleCatalog(entries);
     }
 
+    static ModuleCatalog catalog(String... moduleIds) {
+        var entries = new LinkedHashMap<String, ModuleMetrics>();
+        for (String moduleId : moduleIds) {
+            entries.put(moduleId, new ModuleMetrics(
+                    new DockSize(20, 20),
+                    new DockSize(80, 60)));
+        }
+        return new ModuleCatalog(entries);
+    }
+
     static LegacyMigrationContext migrationContext() {
         return new LegacyMigrationContext(DockInsets.NONE, 4, 8, 8, 16, 800, 600);
     }

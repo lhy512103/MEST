@@ -77,7 +77,7 @@ public class MestEmiPlugin implements EmiPlugin {
             var player = Minecraft.getInstance().player;
             return player != null
                     && player.containerMenu instanceof MESTMenu menu
-                    && MestRecipeTransferContext.targetFor(menu.containerId)
+                    && MestRecipeTransferContext.targetFor(menu)
                             == MestRecipeTransferContext.Target.PATTERN_ENCODING;
         }
 

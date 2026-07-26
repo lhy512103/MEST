@@ -1,13 +1,16 @@
 def mestRunJei = !project.hasProperty("mestRunJei") || project.property("mestRunJei").toString().toBoolean()
 def mestRunEmi = !project.hasProperty("mestRunEmi") || project.property("mestRunEmi").toString().toBoolean()
 
+// localRuntime is shared by client and dedicated-server launches. Keep client-only
+// recipe viewers out unconditionally, including copies pulled transitively by Create.
+configurations.localRuntime.exclude group: "mezz.jei"
+configurations.localRuntime.exclude group: "dev.emi"
+
 if (!mestRunJei) {
-    configurations.localRuntime.exclude group: "mezz.jei"
     configurations.clientLocalRuntime.exclude group: "mezz.jei"
     configurations.clientLocalRuntime.exclude group: "curse.maven", module: "ae2-jei-integration-1074338"
 }
 if (!mestRunEmi) {
-    configurations.localRuntime.exclude group: "dev.emi"
     configurations.clientLocalRuntime.exclude group: "dev.emi"
 }
 
@@ -41,15 +44,6 @@ dependencies {
     localRuntime "curse.maven:spark-361579:${spark_file}"
     localRuntime "maven.modrinth:modernfix:${modernfix_version}"
     localRuntime "top.theillusivec4.curios:curios-neoforge:${curios_version}"
-
-    // Local runtime recipe viewers. Override with -PmestRunJei=false and/or
-    // -PmestRunEmi=false to exercise all optional-dependency combinations.
-    if (mestRunJei) {
-        localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
-    }
-    if (mestRunEmi) {
-        localRuntime "dev.emi:emi-neoforge:${emi_version}"
-    }
 
     // Local runtime AE2 addons
     localRuntime "curse.maven:advancedae-1084104:${advancedae_file}"
@@ -87,17 +81,26 @@ dependencies {
     localRuntime "me.desht.pneumaticcraft:pneumaticcraft-repressurized:${pneumaticcraft_version}"
     localRuntime "thedarkcolour:kotlinforforge-neoforge:${kotlinforforge_version}"
 
-    // Client-only local runtime UI and input helpers
+    // Client-only recipe viewers and their integrations. Override with
+    // -PmestRunJei=false and/or -PmestRunEmi=false to exercise all combinations.
     if (mestRunJei) {
+        clientLocalRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
         clientLocalRuntime "curse.maven:ae2-jei-integration-1074338:${ae2jei_integration_file}"
+        // Just Enough Characters is a JEI search addon; keep it out of EMI-only
+        // and viewer-disabled launch matrices.
+        clientLocalRuntime "curse.maven:just-enough-characters-250702:${jech_file}"
     }
+    if (mestRunEmi) {
+        clientLocalRuntime "dev.emi:emi-neoforge:${emi_version}"
+    }
+
+    // Client-only local runtime UI and input helpers
     clientLocalRuntime "curse.maven:modern-ui-352491:${modern_ui_file}"
     clientLocalRuntime "curse.maven:mouse-tweaks-60089:${mouse_tweaks_file}"
     clientLocalRuntime "curse.maven:configured-457570:${configured_file}"
     clientLocalRuntime "curse.maven:searchables-858542:${searchables_file}"
     clientLocalRuntime "curse.maven:controlling-250398:${controlling_file}"
     clientLocalRuntime "curse.maven:imblocker-483760:${imblocker_file}"
-    clientLocalRuntime "curse.maven:just-enough-characters-250702:${jech_file}"
 }
 
 // The clientRuntime source set is launch-only and has no sources of its own. Its

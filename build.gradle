@@ -235,6 +235,13 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
 }
 
+// Unit tests are isolated from mod dependencies by default. Packet codec tests need the same
+// Minecraft/NeoForge/AE2 API classes that compile the main source set.
+sourceSets.test {
+    compileClasspath += sourceSets.main.compileClasspath
+    runtimeClasspath += sourceSets.main.compileClasspath
+}
+
 tasks.named('test', Test).configure {
     useJUnitPlatform()
 }
@@ -272,7 +279,7 @@ publishing {
     }
     repositories {
         maven {
-            url "file://${project.projectDir}/repo"
+            url = uri("repo")
         }
     }
 }

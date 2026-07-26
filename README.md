@@ -61,7 +61,9 @@ workspace whose modules can be moved, resized, split and rejoined.
   transfers toward the player inventory while preserving any remainder.
 - Synchronizes provider state per open menu with epochs, epoch-scoped provider
   IDs, revisions and bounded chunks. The server rejects stale actions,
-  rate-limits requests and tears down subscriptions when the menu closes.
+  rate-limits requests against server game time and tears down subscriptions
+  when the menu closes. The client also clears its session state when leaving
+  the terminal, including disconnect and screen-replacement paths.
 
 ## JEI And EMI
 
@@ -73,7 +75,9 @@ workspace whose modules can be moved, resized, split and rejoined.
 - Local development enables both viewers by default. Use
   `-PmestRunJei=false` and/or `-PmestRunEmi=false` to change the Gradle run-time
   dependency set. These properties are development switches, not player-facing
-  mod configuration.
+  mod configuration. The launch-only client classpath is assembled from runtime
+  dependencies so compile-only JEI/EMI integrations cannot leak into disabled
+  combinations; JEI-only helpers are also omitted when JEI is disabled.
 
 ## Development Notes
 

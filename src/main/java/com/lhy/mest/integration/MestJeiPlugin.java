@@ -121,13 +121,11 @@ public class MestJeiPlugin implements IModPlugin {
         @Override
         public IRecipeTransferError transferRecipe(T menu, RecipeHolder<CraftingRecipe> recipe,
                 IRecipeSlotsView slotsView, Player player, boolean maxTransfer, boolean doTransfer) {
-            if (MestRecipeTransferContext.targetFor(menu.containerId)
+            if (menu instanceof MESTMenu mestMenu
+                    && MestRecipeTransferContext.targetFor(mestMenu)
                     == MestRecipeTransferContext.Target.PATTERN_ENCODING) {
-                if (menu instanceof MESTMenu mestMenu) {
-                    return encodingHandler.transferRecipe(
-                            mestMenu, recipe, slotsView, player, maxTransfer, doTransfer);
-                }
-                return helper.createInternalError();
+                return encodingHandler.transferRecipe(
+                        mestMenu, recipe, slotsView, player, maxTransfer, doTransfer);
             }
             CraftingRecipe crafting = recipe.value();
 
@@ -205,7 +203,7 @@ public class MestJeiPlugin implements IModPlugin {
                 Player player,
                 boolean maxTransfer,
                 boolean doTransfer) {
-            if (MestRecipeTransferContext.targetFor(menu.containerId)
+            if (MestRecipeTransferContext.targetFor(menu)
                     != MestRecipeTransferContext.Target.PATTERN_ENCODING) {
                 return helper.createInternalError();
             }

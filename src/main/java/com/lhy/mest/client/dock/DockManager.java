@@ -9,6 +9,7 @@ import java.util.Map;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.world.inventory.Slot;
 import net.neoforged.fml.loading.FMLPaths;
 
@@ -50,6 +51,7 @@ public final class DockManager {
     private static final int DROP_ZONE_MIN = 12;
     private static final int DROP_ZONE_MAX = 32;
     private static final int SNAP_DISTANCE = 8;
+    private static final int LEAF_DRAG_THRESHOLD = 4;
 
     private static final int DIVIDER_COLOR = 0xFF777B8C;
     private static final int DIVIDER_HOVER_COLOR = 0xFFACE9FF;
@@ -69,20 +71,41 @@ public final class DockManager {
     private DockLayoutPersistence persistence;
     private LegacyMigrationContext migrationContext;
 
+    /** Canonical layout retained for persistence, independent of the current screen viewport. */
     private DockWorkspace workspace;
+    /**
+     * Viewport-clamped projection source. Bounds in this snapshot are transient and must not mark
+     * the canonical workspace dirty when the screen is resized.
+     */
+    private DockWorkspace viewportWorkspace;
     private LayoutProjection projection;
     private boolean projectionDirty;
     private long workspaceRevision;
     private long persistedRevision = -1;
+    /**
+     * A corrupt persisted layout is quarantined by the store. Until the player deliberately changes
+     * the layout, never write the recovered defaults back to the original path: a close-without-edit
+     * must not look like a successful repair, and a failed quarantine may have left the only
+     * recoverable copy at that original path.
+     */
+    private boolean persistenceBlockedAfterLoadFailure;
     private int structureVersion;
     private int screenWidth;
     private int screenHeight;
     private DockWorkspace undoWorkspace;
     private DockWorkspace gestureStartWorkspace;
+    /**
+     * Original workspace captured when the screen raises a root before dispatching a click to a
+     * panel-owned child control. The control may consume the click before {@link #mouseClicked}, so
+     * this small two-phase transaction lets that raise either commit on its own or merge into a
+     * subsequent dock gesture.
+     */
+    private DockWorkspace pendingFocusWorkspace;
     private boolean layoutLocked;
 
     private enum Mode {
         NONE,
+        PENDING_LEAF_DRAG,
         DRAG_ROOT,
         RESIZE_ROOT,
         RESIZE_DIVIDER
@@ -90,9 +113,12 @@ public final class DockManager {
 
     private Mode mode = Mode.NONE;
     private String activeRootId;
+    private String activeLeafNodeId;
     private String activeSplitId;
     private double grabOffsetX;
     private double grabOffsetY;
+    private double pressX;
+    private double pressY;
     private DropCandidate dropCandidate;
 
     public boolean isEmpty() {
@@ -132,34 +158,48 @@ public final class DockManager {
 
         boolean loadedCleanV2 = false;
         boolean rewriteMigratedLayout = false;
+        persistenceBlockedAfterLoadFailure = false;
         try {
             var loaded = persistence.load();
+            if (persistence.lastQuarantinedPath().isPresent()) {
+                persistenceBlockedAfterLoadFailure = true;
+                MESplicedterminal.LOGGER.warn(
+                        "Recovered terminal layout from defaults; corrupt file quarantined at {}",
+                        persistence.lastQuarantinedPath().orElseThrow());
+            }
             if (loaded.isPresent()) {
                 DockLayoutCodec.DecodedLayout decoded = loaded.get();
                 workspace = decoded.workspace();
-                rewriteMigratedLayout = decoded.migrated();
-                loadedCleanV2 = !decoded.migrated();
+                rewriteMigratedLayout = decoded.needsRewrite();
+                loadedCleanV2 = !decoded.needsRewrite();
             } else {
                 workspace = DockWorkspaceDefaults.create(persistenceCatalog, migrationContext);
             }
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn("Failed to load terminal layout v2, using defaults", e);
+            // This also covers a failed quarantine move. In that case the original file may still
+            // exist, so it is especially important that a later close hook cannot overwrite it.
+            persistenceBlockedAfterLoadFailure = true;
             workspace = DockWorkspaceDefaults.create(persistenceCatalog, migrationContext);
         }
 
-        DockWorkspace clamped = clampWorkspaceToViewport(workspace);
-        boolean geometryRecovered = !clamped.equals(workspace);
-        workspace = clamped;
+        viewportWorkspace = clampWorkspaceToViewport(workspace);
         workspaceRevision = 1;
-        persistedRevision = loadedCleanV2 && !geometryRecovered ? workspaceRevision : -1;
+        persistedRevision = loadedCleanV2 ? workspaceRevision : -1;
         undoWorkspace = null;
         gestureStartWorkspace = null;
+        pendingFocusWorkspace = null;
         layoutLocked = false;
+        mode = Mode.NONE;
+        activeRootId = null;
+        activeLeafNodeId = null;
+        activeSplitId = null;
+        dropCandidate = null;
         projectionDirty = true;
         structureVersion++;
         ensureProjection();
 
-        if (rewriteMigratedLayout) {
+        if (rewriteMigratedLayout && !persistenceBlockedAfterLoadFailure) {
             save();
         }
     }
@@ -172,10 +212,11 @@ public final class DockManager {
         }
         this.screenWidth = newWidth;
         this.screenHeight = newHeight;
-        DockWorkspace clamped = clampWorkspaceToViewport(workspace);
-        if (!clamped.equals(workspace)) {
-            replaceWorkspace(clamped, false);
-        }
+        // Viewport clamping is a transient projection concern. Keep the canonical workspace (and
+        // its persisted revision) untouched so a temporary small window does not destroy the user's
+        // larger-screen geometry.
+        viewportWorkspace = clampWorkspaceToViewport(workspace);
+        projectionDirty = true;
     }
 
     public int structureVersion() {
@@ -213,10 +254,10 @@ public final class DockManager {
     }
 
     public void resetLayout() {
-        rememberUndoPoint(workspace);
-        DockWorkspace defaults = DockWorkspaceDefaults.create(persistenceCatalog, migrationContext);
-        replaceWorkspace(clampWorkspaceToViewport(defaults), true);
-        save();
+        DockWorkspace defaults = DockWorkspaceDefaults.create(
+                persistenceCatalog,
+                LegacyMigrationContext.currentDockDefaults(screenWidth, screenHeight));
+        applyPresetWorkspace(defaults);
     }
 
     public boolean isLayoutLocked() {
@@ -227,9 +268,11 @@ public final class DockManager {
         layoutLocked = !layoutLocked;
         mode = Mode.NONE;
         activeRootId = null;
+        activeLeafNodeId = null;
         activeSplitId = null;
         dropCandidate = null;
         gestureStartWorkspace = null;
+        pendingFocusWorkspace = null;
         structureVersion++;
     }
 
@@ -243,6 +286,7 @@ public final class DockManager {
         }
         DockWorkspace restore = undoWorkspace;
         undoWorkspace = null;
+        persistenceBlockedAfterLoadFailure = false;
         structureVersion++;
         replaceWorkspace(restore, true);
         save();
@@ -250,7 +294,6 @@ public final class DockManager {
 
     /** Compact preset: flatten leaves into default-sized, non-overlapping roots where space allows. */
     public void applyCompactPreset() {
-        rememberUndoPoint(workspace);
         var roots = new ArrayList<FloatingRoot>();
         int gap = 4;
         int x = gap;
@@ -270,7 +313,17 @@ public final class DockManager {
             x += width + gap;
             rowHeight = Math.max(rowHeight, height);
         }
-        replaceWorkspace(new DockWorkspace(roots), true);
+        applyPresetWorkspace(new DockWorkspace(roots));
+    }
+
+    private void applyPresetWorkspace(DockWorkspace target) {
+        if (!target.equals(workspace)) {
+            rememberUndoPoint(workspace);
+            replaceWorkspace(target, true);
+        }
+        // Reset and compact are explicit repair actions. They are allowed to replace a
+        // quarantined/corrupt file even when the chosen preset is already the active workspace.
+        persistenceBlockedAfterLoadFailure = false;
         save();
     }
 
@@ -286,7 +339,7 @@ public final class DockManager {
         FloatingRoot hoveredRoot = topRootAt(mouseX, mouseY, null);
         DividerHit hoveredDivider = hoveredRoot == null ? null : dividerAt(hoveredRoot, mouseX, mouseY);
 
-        for (FloatingRoot root : workspace.roots()) {
+        for (FloatingRoot root : viewportWorkspace.roots()) {
             if (!rootEffectivelyVisible(root.rootId())) {
                 continue;
             }
@@ -303,6 +356,9 @@ public final class DockManager {
                 panel.renderSlots(graphics, slotRenderer);
             }
             renderDividers(graphics, root, hoveredDivider);
+            // A composite root owns one resize affordance. Leaf panels deliberately do not draw
+            // their own grips, otherwise every leaf in a split would expose a dead handle.
+            ModulePanel.renderResizeGrip(graphics, root.bounds());
         }
         renderDropHighlight(graphics);
     }
@@ -314,8 +370,12 @@ public final class DockManager {
             int mouseY,
             float partialTicks) {
         ensureProjection();
+        FloatingRoot hoveredRoot = topRootAt(mouseX, mouseY, null);
         ModulePanel hoveredLeaf = topLeafAt(mouseX, mouseY);
-        for (FloatingRoot root : workspace.roots()) {
+        // Roots are stored back-to-front. Keep that order for compositing, but route the real
+        // cursor only to the topmost root under it; a lower overlapping root must never emit a
+        // tooltip/hover state on top of the root that visually owns the cursor.
+        for (FloatingRoot root : viewportWorkspace.roots()) {
             if (!rootEffectivelyVisible(root.rootId())) {
                 continue;
             }
@@ -324,8 +384,8 @@ public final class DockManager {
                     continue;
                 }
                 ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
-                int routedMouseX = panel == hoveredLeaf ? mouseX : Integer.MIN_VALUE;
-                int routedMouseY = panel == hoveredLeaf ? mouseY : Integer.MIN_VALUE;
+                int routedMouseX = root == hoveredRoot && panel == hoveredLeaf ? mouseX : Integer.MIN_VALUE;
+                int routedMouseY = root == hoveredRoot && panel == hoveredLeaf ? mouseY : Integer.MIN_VALUE;
                 panel.renderForegroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
             }
         }
@@ -365,6 +425,60 @@ public final class DockManager {
         return projection.isEffectivelyVisible(leaf.nodeId());
     }
 
+    /**
+     * Returns whether an area owned by a panel is fully inside its visible leaf and not covered by
+     * any higher floating root.
+     *
+     * <p>This is intended for native screen widgets that render after the dock pass. Without this
+     * check, such a widget would visually and interactively punch through a root painted above its
+     * owning panel.
+     */
+    public boolean isAreaUnobscured(ModulePanel panel, DockRect area) {
+        ensureProjection();
+        LeafNode leaf = leafForPanel(panel);
+        DockRect leafBounds = projection.visibleLeaf(leaf.nodeId())
+                .map(LayoutProjection.LeafPlacement::bounds)
+                .orElse(null);
+        if (leafBounds == null || !contains(leafBounds, area)) {
+            return false;
+        }
+        String ownerRootId = rootContainingNode(viewportWorkspace, leaf.nodeId()).rootId();
+        return isAreaUnobscured(viewportWorkspace.roots(), ownerRootId, area);
+    }
+
+    /**
+     * Raises the visible root under the pointer before the screen dispatches the click to controls
+     * owned by that panel.
+     *
+     * <p>The change is deliberately left pending. If a child control consumes the click,
+     * {@link #commitPanelInteraction()} records and saves the raise. If dock chrome starts a drag or
+     * resize, {@link #mouseClicked(double, double, int)} takes over the same snapshot so the whole
+     * gesture remains one undoable edit and one save.
+     */
+    public void beginPanelInteraction(double mouseX, double mouseY) {
+        ensureProjection();
+        if (layoutLocked || mode != Mode.NONE || pendingFocusWorkspace != null) {
+            return;
+        }
+        FloatingRoot root = topRootAt(mouseX, mouseY, null);
+        if (root == null || viewportWorkspace.roots().getLast().rootId().equals(root.rootId())) {
+            return;
+        }
+        DockWorkspace beforeInteraction = workspace;
+        replaceWorkspace(editor.raiseRoot(workspace, root.rootId()), false);
+        if (!beforeInteraction.equals(workspace)) {
+            pendingFocusWorkspace = beforeInteraction;
+        }
+    }
+
+    /** Commits a pre-dispatch root raise when no dock gesture took ownership of it. */
+    public void commitPanelInteraction() {
+        DockWorkspace beforeInteraction = takePendingFocusWorkspace();
+        if (beforeInteraction != null) {
+            commitInteraction(beforeInteraction);
+        }
+    }
+
     public ModulePanel panelForSlot(Slot slot) {
         ensureProjection();
         for (ModulePanel panel : panels) {
@@ -386,20 +500,22 @@ public final class DockManager {
             return false;
         }
 
-        DockWorkspace beforeInteraction = workspace;
-
         DividerHit divider = dividerAt(root, mouseX, mouseY);
         if (button == 1 && divider != null) {
+            DockWorkspace beforeInteraction = takeInteractionStartWorkspace();
             rememberUndoPoint(beforeInteraction);
-            detachDividerBranch(root, divider);
+            detachDividerBranch(root, divider, Screen.hasShiftDown());
             return true;
         }
         if (button != 0) {
             return false;
         }
 
-        if (!workspace.roots().getLast().rootId().equals(root.rootId())) {
+        DockWorkspace beforeInteraction = takeInteractionStartWorkspace();
+        boolean rootRaised = !beforeInteraction.equals(workspace);
+        if (!viewportWorkspace.roots().getLast().rootId().equals(root.rootId())) {
             replaceWorkspace(editor.raiseRoot(workspace, root.rootId()), false);
+            rootRaised = rootRaised || !beforeInteraction.equals(workspace);
             root = rootById(root.rootId());
             divider = dividerAt(root, mouseX, mouseY);
         }
@@ -423,13 +539,40 @@ public final class DockManager {
 
         ModulePanel leaf = leafAt(root, mouseX, mouseY);
         if (leaf != null && leaf.inTitleBar(mouseX, mouseY)) {
-            mode = Mode.DRAG_ROOT;
-            activeRootId = root.rootId();
-            grabOffsetX = mouseX - root.bounds().x();
-            grabOffsetY = mouseY - root.bounds().y();
+            LeafNode leafNode = leafNodeAt(root, mouseX, mouseY);
+            if (leafNode == null) {
+                if (rootRaised) {
+                    commitInteraction(beforeInteraction);
+                }
+                return false;
+            }
+            activeLeafNodeId = leafNode.nodeId();
+            pressX = mouseX;
+            pressY = mouseY;
+            if (root.content().nodeId().equals(leafNode.nodeId())) {
+                // A standalone leaf is itself the floating root, so retain the fast path that
+                // drags that root immediately.
+                mode = Mode.DRAG_ROOT;
+                activeRootId = root.rootId();
+                grabOffsetX = mouseX - root.bounds().x();
+                grabOffsetY = mouseY - root.bounds().y();
+            } else {
+                // In a composite root, wait for an actual drag before detaching the clicked leaf.
+                // A click without movement must not mutate the layout tree.
+                mode = Mode.PENDING_LEAF_DRAG;
+                activeRootId = root.rootId();
+                DockRect leafBounds = projection.boundsFor(leafNode.nodeId()).orElse(root.bounds());
+                grabOffsetX = mouseX - leafBounds.x();
+                grabOffsetY = mouseY - leafBounds.y();
+            }
             dropCandidate = null;
             gestureStartWorkspace = beforeInteraction;
             return true;
+        }
+        if (rootRaised) {
+            // A plain content click can finish without entering a dock gesture. Raising the root is
+            // still a persistent layout edit and must be independently undoable.
+            commitInteraction(beforeInteraction);
         }
         return false;
     }
@@ -444,6 +587,21 @@ public final class DockManager {
             return false;
         }
         ensureProjection();
+        if (mode == Mode.PENDING_LEAF_DRAG) {
+            double dx = mouseX - pressX;
+            double dy = mouseY - pressY;
+            if (dx * dx + dy * dy < (double) LEAF_DRAG_THRESHOLD * LEAF_DRAG_THRESHOLD) {
+                return true;
+            }
+            if (!detachPendingLeaf()) {
+                // Detach can become invalid if the projected leaf disappears between press and
+                // drag. A root may already have been raised at press time, so finish that edit
+                // instead of silently leaving it unsaved and without an undo point.
+                finishGesture();
+                return true;
+            }
+            mode = Mode.DRAG_ROOT;
+        }
         if (mode == Mode.DRAG_ROOT) {
             FloatingRoot root = rootById(activeRootId);
             DockRect bounds = root.bounds();
@@ -480,6 +638,12 @@ public final class DockManager {
         if (button != 0 || mode == Mode.NONE) {
             return false;
         }
+        if (mode == Mode.PENDING_LEAF_DRAG) {
+            // A title click that never crossed the drag threshold does not detach the leaf, but it
+            // may still have raised a lower root. Commit that Z-order change as one undoable edit.
+            finishGesture();
+            return true;
+        }
         if (mode == Mode.DRAG_ROOT) {
             if (dropCandidate != null) {
                 executeDrop(dropCandidate);
@@ -487,21 +651,25 @@ public final class DockManager {
                 snapActiveRoot();
             }
         }
-        if (gestureStartWorkspace != null && !gestureStartWorkspace.equals(workspace)) {
-            rememberUndoPoint(gestureStartWorkspace);
-        }
+        finishGesture();
+        return true;
+    }
+
+    private void finishGesture() {
+        DockWorkspace beforeInteraction = gestureStartWorkspace;
         mode = Mode.NONE;
         activeRootId = null;
+        activeLeafNodeId = null;
         activeSplitId = null;
         dropCandidate = null;
         gestureStartWorkspace = null;
-        save();
-        return true;
+        commitInteraction(beforeInteraction);
     }
 
     /** Persists only a dirty workspace revision; repeated close/store hooks perform no file IO. */
     public void save() {
-        if (persistence == null || workspace == null || persistedRevision == workspaceRevision) {
+        if (persistence == null || workspace == null || persistedRevision == workspaceRevision
+                || persistenceBlockedAfterLoadFailure) {
             return;
         }
         try {
@@ -516,8 +684,8 @@ public final class DockManager {
         if (!projectionDirty) {
             return;
         }
-        LayoutProjection next = layoutEngine.project(workspace);
-        for (FloatingRoot root : workspace.roots()) {
+        LayoutProjection next = layoutEngine.project(viewportWorkspace);
+        for (FloatingRoot root : viewportWorkspace.roots()) {
             for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
                 ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
                 var placement = next.visibleLeaf(leaf.nodeId());
@@ -547,11 +715,15 @@ public final class DockManager {
     }
 
     private void replaceWorkspace(DockWorkspace changed, boolean structural) {
-        DockWorkspace clamped = clampWorkspaceToViewport(changed);
-        if (clamped.equals(workspace)) {
+        if (changed.equals(workspace)) {
             return;
         }
-        workspace = clamped;
+        // Every path into replaceWorkspace is a real user layout edit (move, resize, split,
+        // visibility, detach, snap, compact, or undo). It is therefore the point at which it is
+        // safe to release the post-load-failure write guard.
+        persistenceBlockedAfterLoadFailure = false;
+        workspace = changed;
+        viewportWorkspace = clampWorkspaceToViewport(changed);
         workspaceRevision++;
         projectionDirty = true;
         if (structural) {
@@ -569,6 +741,24 @@ public final class DockManager {
         if (!wasAvailable) {
             structureVersion++;
         }
+    }
+
+    private DockWorkspace takeInteractionStartWorkspace() {
+        DockWorkspace pending = takePendingFocusWorkspace();
+        return pending != null ? pending : workspace;
+    }
+
+    private DockWorkspace takePendingFocusWorkspace() {
+        DockWorkspace pending = pendingFocusWorkspace;
+        pendingFocusWorkspace = null;
+        return pending;
+    }
+
+    private void commitInteraction(DockWorkspace beforeInteraction) {
+        if (beforeInteraction != null && !beforeInteraction.equals(workspace)) {
+            rememberUndoPoint(beforeInteraction);
+        }
+        save();
     }
 
     private DockWorkspace clampWorkspaceToViewport(DockWorkspace source) {
@@ -649,7 +839,10 @@ public final class DockManager {
 
     private void executeDrop(DropCandidate candidate) {
         FloatingRoot draggedRoot = rootById(activeRootId);
-        FloatingRoot targetRoot = rootContainingNode(workspace, candidate.targetNodeId());
+        // The candidate and its highlight were computed from the transient viewport projection.
+        // Use the matching viewport root for geometry as well; mixing it with canonical (possibly
+        // larger-screen) bounds makes a drop jump when the window is temporarily smaller.
+        FloatingRoot targetViewportRoot = rootContainingNode(viewportWorkspace, candidate.targetNodeId());
         LayoutNode dragged = draggedRoot.content();
         DockRect targetBounds = projection.boundsFor(candidate.targetNodeId()).orElseThrow();
         int draggedExtent = candidate.edge().axis().extent(draggedRoot.bounds());
@@ -667,7 +860,8 @@ public final class DockManager {
                 splitNodeId,
                 ratio);
         String joinedRootId = rootContainingNode(joined, splitNodeId).rootId();
-        DockRect expandedBounds = expandedDockBounds(targetRoot.bounds(), draggedRoot.bounds(), candidate.edge());
+        DockRect expandedBounds = expandedDockBounds(
+                targetViewportRoot.bounds(), draggedRoot.bounds(), candidate.edge());
         joined = editor.setRootBounds(joined, joinedRootId, expandedBounds);
         joined = editor.raiseRoot(joined, joinedRootId);
         replaceWorkspace(joined, true);
@@ -698,14 +892,38 @@ public final class DockManager {
         return clampRectToViewport(new DockRect(x, y, width, height), DockSize.ZERO);
     }
 
-    private void detachDividerBranch(FloatingRoot sourceRoot, DividerHit divider) {
+    private boolean detachPendingLeaf() {
+        if (activeRootId == null || activeLeafNodeId == null) {
+            return false;
+        }
+        FloatingRoot sourceRoot = rootById(activeRootId);
+        LayoutNode node = LayoutTrees.find(sourceRoot.content(), activeLeafNodeId).orElse(null);
+        if (!(node instanceof LeafNode)
+                || sourceRoot.content().nodeId().equals(activeLeafNodeId)) {
+            return false;
+        }
+        DockRect leafBounds = projection.boundsFor(activeLeafNodeId).orElse(null);
+        if (leafBounds == null) {
+            return false;
+        }
+
+        String newRootId = "root:" + NodeIds.random();
+        DockWorkspace changed = editor.detach(workspace, activeLeafNodeId, newRootId, leafBounds);
+        changed = editor.raiseRoot(changed, newRootId);
+        replaceWorkspace(changed, true);
+        activeRootId = newRootId;
+        return true;
+    }
+
+    private void detachDividerBranch(FloatingRoot sourceRoot, DividerHit divider, boolean detachFirst) {
         LayoutNode node = LayoutTrees.find(sourceRoot.content(), divider.splitNodeId()).orElseThrow();
         if (!(node instanceof SplitNode split)) {
             return;
         }
-        LayoutNode detached = split.second();
+        LayoutNode detached = detachFirst ? split.first() : split.second();
+        LayoutNode remaining = detachFirst ? split.second() : split.first();
         DockRect detachedBounds = projection.boundsFor(detached.nodeId()).orElse(sourceRoot.bounds());
-        DockRect remainingBounds = projection.boundsFor(split.first().nodeId()).orElse(sourceRoot.bounds());
+        DockRect remainingBounds = projection.boundsFor(remaining.nodeId()).orElse(sourceRoot.bounds());
         String newRootId = "root:" + NodeIds.random();
 
         DockWorkspace changed = editor.detach(workspace, detached.nodeId(), newRootId, detachedBounds);
@@ -720,26 +938,28 @@ public final class DockManager {
     private void snapActiveRoot() {
         FloatingRoot active = rootById(activeRootId);
         DockRect bounds = active.bounds();
-        int snappedX = closestSnap(bounds.x(), 0, screenWidth - bounds.width());
-        int snappedY = closestSnap(bounds.y(), 0, screenHeight - bounds.height());
+        var xCandidates = new ArrayList<Integer>();
+        var yCandidates = new ArrayList<Integer>();
+        xCandidates.add(0);
+        xCandidates.add(screenWidth - bounds.width());
+        yCandidates.add(0);
+        yCandidates.add(screenHeight - bounds.height());
 
-        for (FloatingRoot target : workspace.roots()) {
+        for (FloatingRoot target : viewportWorkspace.roots()) {
             if (target.rootId().equals(active.rootId()) || !LayoutTrees.hasVisibleLeaf(target.content())) {
                 continue;
             }
-            snappedX = closestSnap(
-                    snappedX,
-                    target.bounds().x(),
-                    target.bounds().right(),
-                    target.bounds().x() - bounds.width(),
-                    target.bounds().right() - bounds.width());
-            snappedY = closestSnap(
-                    snappedY,
-                    target.bounds().y(),
-                    target.bounds().bottom(),
-                    target.bounds().y() - bounds.height(),
-                    target.bounds().bottom() - bounds.height());
+            xCandidates.add(target.bounds().x());
+            xCandidates.add(target.bounds().right());
+            xCandidates.add(target.bounds().x() - bounds.width());
+            xCandidates.add(target.bounds().right() - bounds.width());
+            yCandidates.add(target.bounds().y());
+            yCandidates.add(target.bounds().bottom());
+            yCandidates.add(target.bounds().y() - bounds.height());
+            yCandidates.add(target.bounds().bottom() - bounds.height());
         }
+        int snappedX = closestSnap(bounds.x(), xCandidates);
+        int snappedY = closestSnap(bounds.y(), yCandidates);
         DockRect snapped = clampRectToViewport(
                 new DockRect(snappedX, snappedY, bounds.width(), bounds.height()),
                 rootMinimum(active.rootId()));
@@ -759,9 +979,22 @@ public final class DockManager {
         return result;
     }
 
+    private static int closestSnap(int current, List<Integer> candidates) {
+        int result = current;
+        int distance = SNAP_DISTANCE + 1;
+        for (int candidate : candidates) {
+            int candidateDistance = Math.abs(candidate - current);
+            if (candidateDistance < distance) {
+                result = candidate;
+                distance = candidateDistance;
+            }
+        }
+        return result;
+    }
+
     private FloatingRoot topRootAt(double mouseX, double mouseY, String excludedRootId) {
-        for (int i = workspace.roots().size() - 1; i >= 0; i--) {
-            FloatingRoot root = workspace.roots().get(i);
+        for (int i = viewportWorkspace.roots().size() - 1; i >= 0; i--) {
+            FloatingRoot root = viewportWorkspace.roots().get(i);
             if (root.rootId().equals(excludedRootId) || !LayoutTrees.hasVisibleLeaf(root.content())) {
                 continue;
             }
@@ -846,7 +1079,7 @@ public final class DockManager {
     }
 
     private FloatingRoot rootById(String rootId) {
-        return workspace.roots().stream()
+        return viewportWorkspace.roots().stream()
                 .filter(root -> root.rootId().equals(rootId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("unknown root: " + rootId));
@@ -927,6 +1160,44 @@ public final class DockManager {
                 && mouseX < bounds.x() + (double) bounds.width()
                 && mouseY >= bounds.y()
                 && mouseY < bounds.y() + (double) bounds.height();
+    }
+
+    private static boolean contains(DockRect outer, DockRect inner) {
+        return inner.x() >= outer.x()
+                && inner.y() >= outer.y()
+                && inner.right() <= outer.right()
+                && inner.bottom() <= outer.bottom();
+    }
+
+    static boolean isAreaUnobscured(List<FloatingRoot> roots, String ownerRootId, DockRect area) {
+        int ownerIndex = -1;
+        for (int i = 0; i < roots.size(); i++) {
+            FloatingRoot root = roots.get(i);
+            if (root.rootId().equals(ownerRootId)) {
+                if (!LayoutTrees.hasVisibleLeaf(root.content()) || !contains(root.bounds(), area)) {
+                    return false;
+                }
+                ownerIndex = i;
+                break;
+            }
+        }
+        if (ownerIndex < 0) {
+            return false;
+        }
+        for (int i = ownerIndex + 1; i < roots.size(); i++) {
+            FloatingRoot higher = roots.get(i);
+            if (LayoutTrees.hasVisibleLeaf(higher.content()) && intersects(higher.bounds(), area)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean intersects(DockRect first, DockRect second) {
+        return first.x() < second.right()
+                && first.right() > second.x()
+                && first.y() < second.bottom()
+                && first.bottom() > second.y();
     }
 
     private static int positiveViewport(int extent) {

@@ -1,6 +1,7 @@
 package com.lhy.mest.client.dock.model;
 
-import java.util.HashSet;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 /** Strict structural validation used at persistence and mutation boundaries. */
@@ -11,41 +12,72 @@ public final class WorkspaceValidator {
     private WorkspaceValidator() {
     }
 
-    public static void validateStrict(DockWorkspace workspace, ModuleCatalog catalog) {
+    /**
+     * Validates the parts of a workspace that are independent of the currently registered module
+     * catalog.
+     *
+     * <p>Persisted layouts are allowed to outlive a module registration. In that case an old leaf
+     * can reference a module that is no longer present and the persistence layer can reconcile it
+     * before applying the stricter runtime validation. Keeping this check separate from
+     * {@link #validateStrict(DockWorkspace, ModuleCatalog)} prevents a single removed module from
+     * invalidating the whole document.</p>
+     *
+     * @return the distinct module ids in traversal order
+     */
+    public static Set<String> validateStructure(DockWorkspace workspace) {
         if (workspace == null) {
             throw new WorkspaceValidationException("workspace must not be null");
         }
+
+        var identifiers = new LinkedHashSet<String>();
+        var moduleIds = new LinkedHashSet<String>();
+        var nodeCount = new Counter();
+        for (FloatingRoot root : workspace.roots()) {
+            if (root == null) {
+                throw new WorkspaceValidationException("workspace contains a null root");
+            }
+            if (!identifiers.add(root.rootId())) {
+                throw new WorkspaceValidationException("duplicate identifier: " + root.rootId());
+            }
+            validateNodeStructure(root.content(), identifiers, moduleIds, nodeCount, 1);
+        }
+        return Collections.unmodifiableSet(moduleIds);
+    }
+
+    public static void validateStrict(DockWorkspace workspace, ModuleCatalog catalog) {
         if (catalog == null) {
             throw new WorkspaceValidationException("module catalog must not be null");
         }
 
-        var identifiers = new HashSet<String>();
-        var moduleIds = new HashSet<String>();
-        var nodeCount = new Counter();
-        for (FloatingRoot root : workspace.roots()) {
-            if (!identifiers.add(root.rootId())) {
-                throw new WorkspaceValidationException("duplicate identifier: " + root.rootId());
-            }
-            validateNode(root.content(), catalog, identifiers, moduleIds, nodeCount, 1);
-        }
+        Set<String> moduleIds = validateStructure(workspace);
 
         if (!moduleIds.equals(catalog.moduleIds())) {
-            Set<String> missing = new HashSet<>(catalog.moduleIds());
+            Set<String> missing = new LinkedHashSet<>(catalog.moduleIds());
             missing.removeAll(moduleIds);
-            Set<String> unexpected = new HashSet<>(moduleIds);
+            Set<String> unexpected = new LinkedHashSet<>(moduleIds);
             unexpected.removeAll(catalog.moduleIds());
             throw new WorkspaceValidationException(
                     "module set differs from catalog; missing=" + missing + ", unexpected=" + unexpected);
         }
+
+        for (String moduleId : moduleIds) {
+            if (!catalog.contains(moduleId)) {
+                // Keep the explicit unknown-module diagnostic used by callers that validate a
+                // workspace against a catalog with a mismatched set.
+                throw new WorkspaceValidationException("unknown module: " + moduleId);
+            }
+        }
     }
 
-    private static void validateNode(
+    private static void validateNodeStructure(
             LayoutNode node,
-            ModuleCatalog catalog,
             Set<String> identifiers,
             Set<String> moduleIds,
             Counter nodeCount,
             int depth) {
+        if (node == null) {
+            throw new WorkspaceValidationException("workspace contains a null node");
+        }
         if (depth > MAX_DEPTH) {
             throw new WorkspaceValidationException("layout exceeds maximum depth " + MAX_DEPTH);
         }
@@ -57,9 +89,6 @@ public final class WorkspaceValidator {
         }
 
         if (node instanceof LeafNode leaf) {
-            if (!catalog.contains(leaf.moduleId())) {
-                throw new WorkspaceValidationException("unknown module: " + leaf.moduleId());
-            }
             if (!moduleIds.add(leaf.moduleId())) {
                 throw new WorkspaceValidationException("duplicate module: " + leaf.moduleId());
             }
@@ -67,8 +96,8 @@ public final class WorkspaceValidator {
         }
 
         var split = (SplitNode) node;
-        validateNode(split.first(), catalog, identifiers, moduleIds, nodeCount, depth + 1);
-        validateNode(split.second(), catalog, identifiers, moduleIds, nodeCount, depth + 1);
+        validateNodeStructure(split.first(), identifiers, moduleIds, nodeCount, depth + 1);
+        validateNodeStructure(split.second(), identifiers, moduleIds, nodeCount, depth + 1);
     }
 
     private static final class Counter {
