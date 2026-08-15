@@ -32,9 +32,11 @@ workspace whose modules can be moved, resized, split and rejoined.
   splice-zone highlights while dragging.
 - Provides module visibility toggles, a session-only layout lock, one-step undo,
   a compact floating preset and a reset-to-default action.
-- Stores tree structure, split ratios, window geometry, visibility and z-order
-  in `config/mesplicedterminal/layout.json` using the v2 format. Legacy
-  unversioned v1 layouts are migrated when loaded.
+- Stores tree structure, split ratios, window geometry, per-module interaction
+  policy and z-order in `config/mesplicedterminal/layout.json` using the v3
+  format. Module policy is the sole authority for visibility, movement and
+  resizing; legacy leaf visibility is migrated into that policy. Legacy
+  unversioned v1 and versioned v2 layouts are migrated when loaded.
 - Writes only dirty layout revisions and replaces the JSON file atomically when
   the platform supports atomic moves. The session lock and undo snapshot are
   intentionally not persisted.
@@ -64,10 +66,12 @@ workspace whose modules can be moved, resized, split and rejoined.
   click exchanges a provider slot with the carried encoded pattern; right click
   transfers toward the player inventory while preserving any remainder.
 - Synchronizes provider state per open menu with epochs, epoch-scoped provider
-  IDs, revisions and bounded chunks. The server rejects stale actions,
-  rate-limits requests against server game time and tears down subscriptions
-  when the menu closes. The client also clears its session state when leaving
-  the terminal, including disconnect and screen-replacement paths.
+  IDs, revisions and bounded chunks. Common packet registration and server
+  validation remain free of client UI classes; a client-installed bridge owns
+  screen/session updates. The server rejects stale actions, rate-limits requests
+  against server game time and tears down subscriptions when the menu closes.
+  The client also clears its session state when leaving the terminal, including
+  disconnect and screen-replacement paths.
 
 ## JEI And EMI
 
@@ -90,10 +94,12 @@ workspace whose modules can be moved, resized, split and rejoined.
 - Layout persistence is client-local UI preference, while ME inventory, crafting
   and pattern mutations remain server-authoritative.
 - Automated tests cover the layout model and codec, atomic storage, ME
-  interaction policy, recipe-target selection, provider client state and
-  conserving inventory transfers. Compilation and unit tests do not replace
-  in-game checks across GUI scales, nested layouts, reconnects and optional
-  viewer combinations.
+  interaction policy, recipe-target selection, provider client state, chunk
+  planning, conserving inventory transfers and resource path/key consistency.
+  Dependency locks are committed, archives use deterministic ordering and
+  timestamps, and CI validates the wrapper before building with Java 21.
+  Compilation and unit tests do not replace in-game checks across GUI scales,
+  nested layouts, reconnects and optional viewer combinations.
 
 ## Verification
 

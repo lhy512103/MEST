@@ -41,5 +41,7 @@ repo/
 !**/src/**/repo/
 .agents/
 .uploads/
+.reasonix/
+reasonix.toml
 .eclipse/
 .vscode/

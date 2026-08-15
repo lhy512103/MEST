@@ -17,7 +17,7 @@ A spliceable, drag-and-drop ME terminal that unifies AE2 wireless terminal modul
 [[dependencies.${mod_id}]]
     modId="neoforge"
     type="required"
-    versionRange="[${neo_version},)"
+    versionRange="[${neo_version},21.2)"
     ordering="NONE"
     side="BOTH"
 
@@ -32,7 +32,7 @@ A spliceable, drag-and-drop ME terminal that unifies AE2 wireless terminal modul
 [[dependencies.${mod_id}]]
     modId="ae2"
     type="required"
-    versionRange="[19.2.0,)"
+    versionRange="[19.2.17,20)"
     ordering="AFTER"
     side="BOTH"
 
@@ -40,7 +40,7 @@ A spliceable, drag-and-drop ME terminal that unifies AE2 wireless terminal modul
 [[dependencies.${mod_id}]]
     modId="ae2wtlib"
     type="required"
-    versionRange="[19.5.0,)"
+    versionRange="[19.5.0,20)"
     ordering="AFTER"
     side="BOTH"
 

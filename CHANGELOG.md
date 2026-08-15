@@ -16,8 +16,10 @@
   including edge drop zones, nested joining, divider resizing and branch detach.
 - Added z-order-aware rendering and input, effective leaf visibility, panel slot
   ownership, click-through blocking and viewport clamping.
-- Added the v2 layout format with legacy v1 migration, strict validation, atomic
-  replacement and dirty-revision saves.
+- Added the v3 layout format with per-module visibility/movement/resize policies,
+  v1/v2 migration, strict validation, atomic replacement and dirty-revision saves.
+  Module policy is now the only visibility and interaction authority; legacy leaf
+  visibility is migration-only compatibility data.
 - Added a session-only layout lock, one-step undo, compact floating preset and
   reset-to-default control.
 - Restyled the workspace with AE2-native panel backgrounds, search fields,
@@ -53,6 +55,10 @@
 - Cleared client provider-session state on terminal close, screen replacement
   and disconnect, while preserving updates during the processing-amount
   sub-screen.
+- Removed client UI linkage from common packet classes by routing S2C handling
+  through a client-installed bridge, keeping dedicated-server class loading safe.
+- Corrected menu-derived stonecutting selection and fluid-substitution state
+  refreshes, and reduced provider chunk preparation to one defensive copy.
 
 ### Integrations And Acquisition
 
@@ -71,7 +77,12 @@
 ### Verification
 
 - Added focused tests for recursive layout editing and persistence, v1 migration,
-  ME interaction policy, recipe-transfer targeting, provider protocol state and
-  lossless inventory transfer behavior.
+  ME interaction policy, recipe-transfer targeting, provider protocol state,
+  provider chunk planning, resource consistency and lossless inventory transfer
+  behavior.
+- Corrected the recipe advancement resource path, removed unused client style and
+  configuration files, and pruned orphaned translations.
+- Added dependency locking, reproducible archive settings, bounded dependency
+  metadata and Java 21 CI wrapper validation with retained build artifacts.
 - Full in-game GUI, reconnect/provider-churn and JEI/EMI combination checks remain
   part of the release verification matrix.
