@@ -92,16 +92,16 @@ public final class DockWorkspaceEditor {
 
     public DockWorkspace setLeafVisible(DockWorkspace workspace, String leafNodeId, boolean visible) {
         validate(workspace);
-        var roots = new ArrayList<>(workspace.roots());
-        for (int i = 0; i < roots.size(); i++) {
-            FloatingRoot root = roots.get(i);
-            VisibilityChange change = setVisible(root.content(), leafNodeId, visible);
-            if (change.found()) {
-                roots.set(i, root.withContent(change.node()));
-                return validated(new DockWorkspace(roots, workspace.policies()));
-            }
+        LayoutNode node = findRequired(workspace, leafNodeId);
+        if (!(node instanceof LeafNode leaf)) {
+            throw new IllegalArgumentException("node is not a leaf: " + leafNodeId);
         }
-        throw new IllegalArgumentException("unknown leaf node: " + leafNodeId);
+        var policies = new java.util.LinkedHashMap<>(workspace.policies());
+        ModuleLayoutPolicy current = workspace.policyFor(leaf.moduleId());
+        policies.put(
+                leaf.moduleId(),
+                new ModuleLayoutPolicy(visible, current.movable(), current.resizable()));
+        return validated(new DockWorkspace(workspace.roots(), policies));
     }
 
     public DockWorkspace setRootBounds(DockWorkspace workspace, String rootId, DockRect bounds) {
@@ -225,27 +225,6 @@ public final class DockWorkspaceEditor {
         return new Replace(node, false);
     }
 
-    private static VisibilityChange setVisible(LayoutNode node, String leafNodeId, boolean visible) {
-        if (node.nodeId().equals(leafNodeId)) {
-            if (!(node instanceof LeafNode leaf)) {
-                throw new IllegalArgumentException("node is not a leaf: " + leafNodeId);
-            }
-            return new VisibilityChange(leaf.withVisible(visible), true);
-        }
-        if (!(node instanceof SplitNode split)) {
-            return new VisibilityChange(node, false);
-        }
-        VisibilityChange first = setVisible(split.first(), leafNodeId, visible);
-        if (first.found()) {
-            return new VisibilityChange(split.withChildren(first.node(), split.second()), true);
-        }
-        VisibilityChange second = setVisible(split.second(), leafNodeId, visible);
-        if (second.found()) {
-            return new VisibilityChange(split.withChildren(split.first(), second.node()), true);
-        }
-        return new VisibilityChange(node, false);
-    }
-
     private static RatioChange setRatio(LayoutNode node, String splitNodeId, double ratio) {
         if (node.nodeId().equals(splitNodeId)) {
             if (!(node instanceof SplitNode split)) {
@@ -271,9 +250,6 @@ public final class DockWorkspaceEditor {
     }
 
     private record Replace(LayoutNode node, boolean replaced) {
-    }
-
-    private record VisibilityChange(LayoutNode node, boolean found) {
     }
 
     private record RatioChange(LayoutNode node, boolean found) {

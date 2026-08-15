@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -48,7 +49,8 @@ class DockWorkspaceEditorTest {
         DockWorkspace hidden = editor.setLeafVisible(joined, "leaf-a", false);
         SplitNode split = assertInstanceOf(SplitNode.class, hidden.roots().getFirst().content());
         assertEquals("split-ab", split.nodeId(), "visibility must not rewrite the tree");
-        assertFalse(((LeafNode) split.first()).visible());
+        assertTrue(((LeafNode) split.first()).visible(), "tree visibility is normalized structural data");
+        assertFalse(hidden.policyFor("a").visible());
 
         LayoutProjection projection = new LayoutEngine(
                 catalog,

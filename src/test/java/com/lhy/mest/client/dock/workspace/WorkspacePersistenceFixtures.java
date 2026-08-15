@@ -11,6 +11,7 @@ import com.lhy.mest.client.dock.model.DockWorkspace;
 import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.dock.model.LeafNode;
 import com.lhy.mest.client.dock.model.ModuleCatalog;
+import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
 import com.lhy.mest.client.dock.model.ModuleMetrics;
 import com.lhy.mest.client.dock.model.SplitNode;
 
@@ -41,11 +42,11 @@ final class WorkspacePersistenceFixtures {
     }
 
     static DockWorkspace workspace() {
-        return new DockWorkspace(List.of(
+        var roots = List.of(
                 new FloatingRoot(
                         "root-a",
                         new DockRect(10, 20, 100, 80),
-                        new LeafNode("leaf-a", "a", false)),
+                        new LeafNode("leaf-a", "a", true)),
                 new FloatingRoot(
                         "root-bc",
                         new DockRect(160, 40, 220, 140),
@@ -54,6 +55,11 @@ final class WorkspacePersistenceFixtures {
                                 DockAxis.VERTICAL,
                                 0.35,
                                 new LeafNode("leaf-b", "b", true),
-                                new LeafNode("leaf-c", "c", true)))));
+                                new LeafNode("leaf-c", "c", true))));
+        var policies = new LinkedHashMap<String, ModuleLayoutPolicy>();
+        policies.put("a", new ModuleLayoutPolicy(false, true, true));
+        policies.put("b", ModuleLayoutPolicy.defaults());
+        policies.put("c", ModuleLayoutPolicy.defaults());
+        return new DockWorkspace(roots, policies);
     }
 }

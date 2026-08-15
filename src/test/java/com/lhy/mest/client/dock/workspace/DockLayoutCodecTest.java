@@ -41,6 +41,61 @@ class DockLayoutCodecTest {
         assertEquals(new ModuleLayoutPolicy(true, false, true), decoded.policyFor("a"));
         assertEquals(ModuleLayoutPolicy.defaults(), decoded.policyFor("b"));
     }
+
+    @Test
+    void migratesV2LeafVisibilityIntoV3ModulePolicy() throws Exception {
+        String persisted = """
+                {
+                  "version": 2,
+                  "roots": [{
+                    "rootId": "root-a",
+                    "bounds": {"x": 0, "y": 0, "width": 100, "height": 80},
+                    "content": {
+                      "type": "leaf", "nodeId": "leaf-a", "moduleId": "a", "visible": false
+                    }
+                  }]
+                }
+                """;
+
+        DockLayoutCodec.DecodedLayout decoded = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog("a"),
+                WorkspacePersistenceFixtures.migrationContext()).decode(persisted);
+        LeafNode leaf = assertInstanceOf(LeafNode.class, decoded.workspace().roots().getFirst().content());
+
+        assertEquals(2, decoded.sourceVersion());
+        assertTrue(decoded.needsRewrite());
+        assertTrue(leaf.visible(), "v3 normalizes structural leaf visibility");
+        assertFalse(decoded.workspace().policyFor("a").visible());
+    }
+
+    @Test
+    void v3PolicyIsTheSingleVisibilitySource() throws Exception {
+        String persisted = """
+                {
+                  "version": 3,
+                  "roots": [{
+                    "rootId": "root-a",
+                    "bounds": {"x": 0, "y": 0, "width": 100, "height": 80},
+                    "content": {
+                      "type": "leaf", "nodeId": "leaf-a", "moduleId": "a", "visible": false
+                    }
+                  }],
+                  "policies": {
+                    "a": {"visible": true, "movable": false, "resizable": true}
+                  }
+                }
+                """;
+
+        DockLayoutCodec.DecodedLayout decoded = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog("a"),
+                WorkspacePersistenceFixtures.migrationContext()).decode(persisted);
+        LeafNode leaf = assertInstanceOf(LeafNode.class, decoded.workspace().roots().getFirst().content());
+
+        assertTrue(decoded.needsRewrite());
+        assertTrue(leaf.visible());
+        assertEquals(new ModuleLayoutPolicy(true, false, true), decoded.workspace().policyFor("a"));
+    }
+
     @Test
     void migratesLegacyPairsDeterministicallyAndPreservesFileOrder() throws Exception {
         String legacy = """
@@ -80,7 +135,8 @@ class DockLayoutCodecTest {
                 LeafNode.class,
                 first.workspace().roots().get(1).content());
         assertEquals("a", standalone.moduleId());
-        assertFalse(standalone.visible());
+        assertTrue(standalone.visible());
+        assertFalse(first.workspace().policyFor("a").visible());
 
         assertEquals(first.workspace(), codec.decode(codec.encode(first.workspace())).workspace());
     }
@@ -124,7 +180,7 @@ class DockLayoutCodecTest {
     void rejectsUnsupportedVersion() {
         assertThrows(
                 DockLayoutFormatException.class,
-                () -> codec().decode("{\"version\":3,\"roots\":[]}"));
+                () -> codec().decode("{\"version\":4,\"roots\":[]}"));
     }
 
     @Test
@@ -162,7 +218,8 @@ class DockLayoutCodecTest {
                 LeafNode.class,
                 decoded.workspace().roots().getFirst().content());
         assertEquals("a", retained.moduleId());
-        assertFalse(retained.visible());
+        assertTrue(retained.visible());
+        assertFalse(decoded.workspace().policyFor("a").visible());
         LeafNode added = assertInstanceOf(
                 LeafNode.class,
                 decoded.workspace().roots().getLast().content());

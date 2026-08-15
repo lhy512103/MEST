@@ -35,7 +35,7 @@ import com.lhy.mest.client.dock.workspace.DockLayoutDto.PolicyDto;
 import com.lhy.mest.client.dock.workspace.DockLayoutDto.RootDto;
 import com.lhy.mest.client.dock.workspace.DockLayoutDto.SplitDto;
 
-/** Strict v2 codec plus deterministic migration of the current unversioned v1 map. */
+/** Strict versioned codec plus deterministic migration of legacy v1 and v2 layouts. */
 public final class DockLayoutCodec {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Set<String> V2_FIELDS = Set.of("version", "roots");
@@ -71,7 +71,7 @@ public final class DockLayoutCodec {
             }
             JsonObject object = parsed.getAsJsonObject();
             if (object.has("version")) {
-                DockLayoutDto dto = readV2(object);
+                DockLayoutDto dto = readVersioned(object);
                 Reconciliation reconciliation = reconcile(fromDtoRaw(dto));
                 return new DecodedLayout(
                         reconciliation.workspace(),
@@ -131,6 +131,11 @@ public final class DockLayoutCodec {
                         root.bounds(),
                         fromDto(root.content(), budget, 1)));
             }
+            if (dto.version() == 2) {
+                DockWorkspace workspace = new DockWorkspace(roots);
+                WorkspaceValidator.validateStructure(workspace);
+                return workspace;
+            }
             var policies = new java.util.LinkedHashMap<String, ModuleLayoutPolicy>();
             if (dto.policies() != null) {
                 dto.policies().forEach((moduleId, policy) -> {
@@ -144,7 +149,7 @@ public final class DockLayoutCodec {
             WorkspaceValidator.validateStructure(workspace);
             return workspace;
         } catch (IllegalArgumentException | NullPointerException e) {
-            throw new DockLayoutFormatException("invalid v2 DTO: " + e.getMessage(), e);
+            throw new DockLayoutFormatException("invalid versioned DTO: " + e.getMessage(), e);
         }
     }
 
@@ -209,7 +214,7 @@ public final class DockLayoutCodec {
 
     private LayoutNode reconcileNode(LayoutNode node) {
         if (node instanceof LeafNode leaf) {
-            return catalog.contains(leaf.moduleId()) ? leaf : null;
+            return catalog.contains(leaf.moduleId()) ? leaf.withVisible(true) : null;
         }
         SplitNode split = (SplitNode) node;
         LayoutNode first = reconcileNode(split.first());
@@ -333,7 +338,7 @@ public final class DockLayoutCodec {
         return object;
     }
 
-    private DockLayoutDto readV2(JsonObject object) throws DockLayoutFormatException {
+    private DockLayoutDto readVersioned(JsonObject object) throws DockLayoutFormatException {
         int version = integer(object, "version", "document");
         if (version != 2 && version != DockLayoutDto.CURRENT_VERSION) {
             throw new DockLayoutFormatException("unsupported layout version: " + version);
@@ -471,11 +476,7 @@ public final class DockLayoutCodec {
             index++;
         }
 
-        var policies = new java.util.LinkedHashMap<String, ModuleLayoutPolicy>();
-        for (String moduleId : catalog.moduleIds()) {
-            policies.put(moduleId, ModuleLayoutPolicy.defaults());
-        }
-        DockWorkspace workspace = new DockWorkspace(roots, policies);
+        DockWorkspace workspace = new DockWorkspace(roots);
         try {
             WorkspaceValidator.validateStructure(workspace);
         } catch (WorkspaceValidationException e) {

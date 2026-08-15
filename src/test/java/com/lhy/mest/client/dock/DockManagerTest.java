@@ -51,9 +51,9 @@ class DockManagerTest {
         FloatingRoot higher = root("higher", new DockRect(80, 0, 100, 80), true);
 
         assertFalse(DockManager.isAreaUnobscured(
-                List.of(owner, higher), owner.rootId(), new DockRect(82, 1, 16, 18)));
+                new DockWorkspace(List.of(owner, higher)), owner.rootId(), new DockRect(82, 1, 16, 18)));
         assertTrue(DockManager.isAreaUnobscured(
-                List.of(owner, higher), owner.rootId(), new DockRect(60, 1, 16, 18)));
+                new DockWorkspace(List.of(owner, higher)), owner.rootId(), new DockRect(60, 1, 16, 18)));
     }
 
     @Test
@@ -62,7 +62,7 @@ class DockManagerTest {
         FloatingRoot hiddenHigher = root("higher", new DockRect(80, 0, 100, 80), false);
 
         assertTrue(DockManager.isAreaUnobscured(
-                List.of(owner, hiddenHigher), owner.rootId(), new DockRect(82, 1, 16, 18)));
+                new DockWorkspace(List.of(owner, hiddenHigher)), owner.rootId(), new DockRect(82, 1, 16, 18)));
     }
 
     @Test
@@ -70,9 +70,9 @@ class DockManagerTest {
         FloatingRoot owner = root("owner", new DockRect(0, 0, 100, 80), true);
 
         assertFalse(DockManager.isAreaUnobscured(
-                List.of(owner), owner.rootId(), new DockRect(90, 1, 16, 18)));
+                new DockWorkspace(List.of(owner)), owner.rootId(), new DockRect(90, 1, 16, 18)));
         assertFalse(DockManager.isAreaUnobscured(
-                List.of(owner), "missing", new DockRect(10, 1, 16, 18)));
+                new DockWorkspace(List.of(owner)), "missing", new DockRect(10, 1, 16, 18)));
     }
 
     private static FloatingRoot root(String id, DockRect bounds, boolean visible) {

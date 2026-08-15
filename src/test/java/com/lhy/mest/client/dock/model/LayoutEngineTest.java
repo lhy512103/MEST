@@ -22,10 +22,14 @@ class LayoutEngineTest {
                         "split-inner",
                         DockAxis.VERTICAL,
                         0.5,
-                        new LeafNode("leaf-b", "b", false),
+                        new LeafNode("leaf-b", "b", true),
                         new LeafNode("leaf-c", "c", true)));
+        var policies = new LinkedHashMap<String, ModuleLayoutPolicy>();
+        policies.put("a", ModuleLayoutPolicy.defaults());
+        policies.put("b", new ModuleLayoutPolicy(false, true, true));
+        policies.put("c", ModuleLayoutPolicy.defaults());
         DockWorkspace workspace = new DockWorkspace(List.of(
-                new FloatingRoot("root-main", new DockRect(0, 0, 200, 100), nested)));
+                new FloatingRoot("root-main", new DockRect(0, 0, 200, 100), nested)), policies);
 
         LayoutProjection projection = new LayoutEngine(
                 catalog,

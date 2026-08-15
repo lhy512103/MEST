@@ -39,6 +39,7 @@ import com.lhy.mest.client.dock.model.NodeIds;
 import com.lhy.mest.client.dock.model.SplitNode;
 import com.lhy.mest.client.dock.workspace.AtomicFileDockLayoutStore;
 import com.lhy.mest.client.dock.workspace.DockLayoutCodec;
+import com.lhy.mest.client.dock.workspace.DockLayoutDto;
 import com.lhy.mest.client.dock.workspace.DockLayoutPersistence;
 import com.lhy.mest.client.dock.workspace.DockWorkspaceDefaults;
 import com.lhy.mest.client.dock.workspace.LegacyMigrationContext;
@@ -178,7 +179,7 @@ public final class DockManager {
                 .resolve("layout.json");
         persistence = new AtomicFileDockLayoutStore(path, codec);
 
-        boolean loadedCleanV2 = false;
+        boolean loadedCurrentLayout = false;
         boolean rewriteMigratedLayout = false;
         persistenceBlockedAfterLoadFailure = false;
         try {
@@ -193,12 +194,15 @@ public final class DockManager {
                 DockLayoutCodec.DecodedLayout decoded = loaded.get();
                 workspace = decoded.workspace();
                 rewriteMigratedLayout = decoded.needsRewrite();
-                loadedCleanV2 = !decoded.needsRewrite();
+                loadedCurrentLayout = !decoded.needsRewrite();
             } else {
                 workspace = DockWorkspaceDefaults.create(persistenceCatalog, migrationContext);
             }
         } catch (IOException | RuntimeException e) {
-            MESplicedterminal.LOGGER.warn("Failed to load terminal layout v2, using defaults", e);
+            MESplicedterminal.LOGGER.warn(
+                    "Failed to load terminal layout v{}, using defaults",
+                    DockLayoutDto.CURRENT_VERSION,
+                    e);
             // This also covers a failed quarantine move. In that case the original file may still
             // exist, so it is especially important that a later close hook cannot overwrite it.
             persistenceBlockedAfterLoadFailure = true;
@@ -207,7 +211,7 @@ public final class DockManager {
 
         viewportWorkspace = clampWorkspaceToViewport(workspace);
         workspaceRevision = 1;
-        persistedRevision = loadedCleanV2 ? workspaceRevision : -1;
+        persistedRevision = loadedCurrentLayout ? workspaceRevision : -1;
         undoWorkspace = null;
         gestureStartWorkspace = null;
         pendingFocusWorkspace = null;
@@ -321,7 +325,10 @@ public final class DockManager {
     public void toggleVisible(ModulePanel panel) {
         LeafNode leaf = leafForPanel(panel);
         rememberUndoPoint(workspace);
-        DockWorkspace changed = editor.setLeafVisible(workspace, leaf.nodeId(), !leaf.visible());
+        DockWorkspace changed = editor.setLeafVisible(
+                workspace,
+                leaf.nodeId(),
+                !workspace.policyFor(leaf.moduleId()).visible());
         replaceWorkspace(changed, false);
         save();
     }
@@ -510,7 +517,7 @@ public final class DockManager {
             return false;
         }
         String ownerRootId = rootContainingNode(viewportWorkspace, leaf.nodeId()).rootId();
-        return isAreaUnobscured(viewportWorkspace.roots(), ownerRootId, area);
+        return isAreaUnobscured(viewportWorkspace, ownerRootId, area);
     }
 
     /**
@@ -833,7 +840,10 @@ public final class DockManager {
             persistence.save(workspace);
             persistedRevision = workspaceRevision;
         } catch (IOException | RuntimeException e) {
-            MESplicedterminal.LOGGER.warn("Failed to write terminal layout v2", e);
+            MESplicedterminal.LOGGER.warn(
+                    "Failed to write terminal layout v{}",
+                    DockLayoutDto.CURRENT_VERSION,
+                    e);
         }
     }
 
@@ -847,25 +857,6 @@ public final class DockManager {
         }
         SplitNode split = (SplitNode) node;
         return canResizeNode(split.first()) && canResizeNode(split.second());
-    }
-
-    private DockWorkspace applyPolicies(DockWorkspace source) {
-        var roots = new ArrayList<FloatingRoot>();
-        for (FloatingRoot root : source.roots()) {
-            roots.add(root.withContent(applyPolicies(root.content(), source)));
-        }
-        return new DockWorkspace(roots, source.policies());
-    }
-
-    private LayoutNode applyPolicies(LayoutNode node, DockWorkspace source) {
-        if (node instanceof LeafNode leaf) {
-            ModuleLayoutPolicy policy = source.policyFor(leaf.moduleId());
-            return new LeafNode(leaf.nodeId(), leaf.moduleId(), leaf.visible() && policy.visible());
-        }
-        SplitNode split = (SplitNode) node;
-        return split.withChildren(
-                applyPolicies(split.first(), source),
-                applyPolicies(split.second(), source));
     }
 
     private void ensureProjection() {
@@ -958,7 +949,7 @@ public final class DockManager {
         for (FloatingRoot root : source.roots()) {
             sanitizedRoots.add(root.withBounds(clampRectToViewport(root.bounds(), DockSize.ZERO)));
         }
-        DockWorkspace sanitized = applyPolicies(new DockWorkspace(sanitizedRoots, source.policies()));
+        DockWorkspace sanitized = new DockWorkspace(sanitizedRoots, source.policies());
         LayoutProjection measured = layoutEngine.project(sanitized);
 
         var clampedRoots = new ArrayList<FloatingRoot>();
@@ -970,7 +961,7 @@ public final class DockManager {
                     .orElse(DockSize.ZERO);
             clampedRoots.add(root.withBounds(clampRectToViewport(root.bounds(), minimum)));
         }
-        return applyPolicies(new DockWorkspace(clampedRoots, source.policies()));
+        return new DockWorkspace(clampedRoots, source.policies());
     }
 
     private DockRect clampRectToViewport(DockRect bounds, DockSize minimum) {
@@ -1378,12 +1369,13 @@ public final class DockManager {
                 && inner.bottom() <= outer.bottom();
     }
 
-    static boolean isAreaUnobscured(List<FloatingRoot> roots, String ownerRootId, DockRect area) {
+    static boolean isAreaUnobscured(DockWorkspace workspace, String ownerRootId, DockRect area) {
+        List<FloatingRoot> roots = workspace.roots();
         int ownerIndex = -1;
         for (int i = 0; i < roots.size(); i++) {
             FloatingRoot root = roots.get(i);
             if (root.rootId().equals(ownerRootId)) {
-                if (!LayoutTrees.hasVisibleLeaf(root.content()) || !contains(root.bounds(), area)) {
+                if (!hasVisibleLeaf(workspace, root.content()) || !contains(root.bounds(), area)) {
                     return false;
                 }
                 ownerIndex = i;
@@ -1395,11 +1387,19 @@ public final class DockManager {
         }
         for (int i = ownerIndex + 1; i < roots.size(); i++) {
             FloatingRoot higher = roots.get(i);
-            if (LayoutTrees.hasVisibleLeaf(higher.content()) && intersects(higher.bounds(), area)) {
+            if (hasVisibleLeaf(workspace, higher.content()) && intersects(higher.bounds(), area)) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static boolean hasVisibleLeaf(DockWorkspace workspace, LayoutNode node) {
+        if (node instanceof LeafNode leaf) {
+            return workspace.policyFor(leaf.moduleId()).visible();
+        }
+        SplitNode split = (SplitNode) node;
+        return hasVisibleLeaf(workspace, split.first()) || hasVisibleLeaf(workspace, split.second());
     }
 
     private static boolean intersects(DockRect first, DockRect second) {

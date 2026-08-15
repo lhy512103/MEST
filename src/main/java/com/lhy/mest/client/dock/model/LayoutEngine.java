@@ -23,7 +23,7 @@ public final class LayoutEngine {
         var builder = new ProjectionBuilder();
 
         for (FloatingRoot root : workspace.roots()) {
-            DockSize contentMinimum = measure(root.content(), builder.minimumSizes);
+            DockSize contentMinimum = measure(workspace, root.content(), builder.minimumSizes);
             DockSize rootMinimum = contentMinimum.isEmpty()
                     ? DockSize.ZERO
                     : new DockSize(
@@ -41,14 +41,19 @@ public final class LayoutEngine {
         return builder.build();
     }
 
-    private DockSize measure(LayoutNode node, Map<String, DockSize> measurements) {
+    private DockSize measure(
+            DockWorkspace workspace,
+            LayoutNode node,
+            Map<String, DockSize> measurements) {
         DockSize result;
         if (node instanceof LeafNode leaf) {
-            result = leaf.visible() ? catalog.metrics(leaf.moduleId()).minimumSize() : DockSize.ZERO;
+            result = workspace.policyFor(leaf.moduleId()).visible()
+                    ? catalog.metrics(leaf.moduleId()).minimumSize()
+                    : DockSize.ZERO;
         } else {
             var split = (SplitNode) node;
-            DockSize first = measure(split.first(), measurements);
-            DockSize second = measure(split.second(), measurements);
+            DockSize first = measure(workspace, split.first(), measurements);
+            DockSize second = measure(workspace, split.second(), measurements);
             if (first.isEmpty()) {
                 result = second;
             } else if (second.isEmpty()) {

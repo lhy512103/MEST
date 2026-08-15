@@ -22,7 +22,9 @@ public record DockWorkspace(List<FloatingRoot> roots, Map<String, ModuleLayoutPo
 
     private static void collectPolicies(LayoutNode node, Map<String, ModuleLayoutPolicy> policies) {
         if (node instanceof LeafNode leaf) {
-            policies.putIfAbsent(leaf.moduleId(), ModuleLayoutPolicy.defaults());
+            policies.putIfAbsent(
+                    leaf.moduleId(),
+                    new ModuleLayoutPolicy(leaf.visible(), true, true));
         } else if (node instanceof SplitNode split) {
             collectPolicies(split.first(), policies);
             collectPolicies(split.second(), policies);
