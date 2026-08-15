@@ -5,10 +5,9 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
 import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.config.ModConfig;
 
+import com.lhy.mest.network.MestPackets;
 import com.lhy.mest.registry.ModItems;
 import com.lhy.mest.registry.ModMenus;
 import com.lhy.mest.terminal.MestTerminal;
@@ -23,7 +22,7 @@ public class MESplicedterminal {
 
     // The constructor for the mod class is the first code that is run when your mod is loaded.
     // FML will recognize some parameter types like IEventBus or ModContainer and pass them in automatically.
-    public MESplicedterminal(IEventBus modEventBus, ModContainer modContainer) {
+    public MESplicedterminal(IEventBus modEventBus) {
         // Register all deferred registries to the mod event bus.
         ModItems.ITEMS.register(modEventBus);
         ModMenus.MENUS.register(modEventBus);
@@ -35,8 +34,7 @@ public class MESplicedterminal {
         MestTerminal.registerTerminal();
         modEventBus.addListener(MestTerminal::onRegisterCapabilities);
         modEventBus.addListener(MestTerminal::onCommonSetup);
+        modEventBus.addListener(MestPackets::register);
 
-        // Register our mod's ModConfigSpec so that FML can create and load the config file for us
-        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
     }
 }

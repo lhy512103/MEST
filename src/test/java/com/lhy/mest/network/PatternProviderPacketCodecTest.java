@@ -155,7 +155,7 @@ class PatternProviderPacketCodecTest {
                     return null;
                 });
 
-        PatternProviderListPacket.handle(PatternProviderListPacket.reset(23, 0), context);
+        PatternProviderClientBridge.handle(PatternProviderListPacket.reset(23, 0), context);
 
         assertEquals(0, calls.get());
     }

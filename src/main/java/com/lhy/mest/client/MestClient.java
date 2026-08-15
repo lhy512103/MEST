@@ -5,6 +5,7 @@ import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 
 import appeng.init.client.InitScreens;
 
+import com.lhy.mest.network.PatternProviderClientBridge;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -15,6 +16,7 @@ public final class MestClient {
     private MestClient() {}
 
     public static void init(IEventBus modEventBus) {
+        PatternProviderClientBridge.install(PatternProviderClientHandler::handle);
         modEventBus.addListener(MestClient::onRegisterScreens);
     }
 

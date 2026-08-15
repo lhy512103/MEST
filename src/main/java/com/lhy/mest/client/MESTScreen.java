@@ -53,6 +53,7 @@ import appeng.util.Platform;
 import de.mari_023.ae2wtlib.api.terminal.IUniversalTerminalCapable;
 import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
 
+import com.lhy.mest.client.PatternProviderClientHandler.Entry;
 import com.lhy.mest.client.dock.DockManager;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.model.DockRect;
@@ -63,7 +64,6 @@ import com.lhy.mest.client.panel.PatternAccessPanel;
 import com.lhy.mest.client.panel.PatternEncodingPanel;
 import com.lhy.mest.client.panel.SlotGridPanel;
 import com.lhy.mest.integration.MestRecipeTransferContext;
-import com.lhy.mest.network.PatternProviderListPacket;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -96,6 +96,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     public MESTScreen(MESTMenu menu, Inventory playerInventory, Component title, ScreenStyle style) {
         super(menu, playerInventory, title, style);
+        menu.getProcessingOutputSlots()[0].setIcon(Icon.BACKGROUND_PRIMARY_OUTPUT);
         // Create the ME list panel (and thus register the client repo) in the constructor, matching
         // AE2's MEStorageScreen. Doing this in init() would be too late: the server's first full
         // inventory update can arrive before init() runs and would be dropped (null client repo).
@@ -702,7 +703,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         return dock.topPanelAt(mx, my) != null || super.mouseScrolled(mx, my, scrollX, scrollY);
     }
 
-    public void updatePatternProviders(List<PatternProviderListPacket.Entry> entries) {
+    public void updatePatternProviders(List<Entry> entries) {
         if (patternAccessPanel != null) {
             patternAccessPanel.setProviders(entries);
         }

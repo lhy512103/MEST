@@ -1,16 +1,12 @@
 package com.lhy.mest.network;
 
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 
 import com.lhy.mest.MESplicedterminal;
 
-@EventBusSubscriber(modid = MESplicedterminal.MODID)
 public final class MestPackets {
     private MestPackets() {}
 
-    @SubscribeEvent
     public static void register(RegisterPayloadHandlersEvent event) {
         var registrar = event.registrar(MESplicedterminal.MODID);
 
@@ -27,6 +23,6 @@ public final class MestPackets {
         registrar.playToClient(
                 PatternProviderListPacket.TYPE,
                 PatternProviderListPacket.STREAM_CODEC,
-                PatternProviderListPacket::handle);
+                PatternProviderClientBridge::handle);
     }
 }

@@ -1,16 +1,11 @@
 package com.lhy.mest.network;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-
 import org.jetbrains.annotations.Nullable;
 
 import io.netty.buffer.ByteBuf;
 import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -18,16 +13,11 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import appeng.api.implementations.blockentities.PatternContainerGroup;
-import appeng.client.gui.AESubScreen;
 
 import com.lhy.mest.MESplicedterminal;
-import com.lhy.mest.client.MESTScreen;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -159,7 +149,7 @@ public record PatternProviderListPacket(
         SlotsCodecHolder.CODEC.encode(buf, slots);
     }
 
-    boolean isWellFormed() {
+    public boolean isWellFormed() {
         if (containerId < 0 || epoch <= 0 || operation == null || slots == null) {
             return false;
         }
@@ -217,61 +207,6 @@ public record PatternProviderListPacket(
         }
     }
 
-    public static void handle(PatternProviderListPacket packet, IPayloadContext context) {
-        if (!packet.isWellFormed()) {
-            return;
-        }
-        context.enqueueWork(() -> handleClient(packet));
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    public static void beginClientSubscription(MESTMenu menu) {
-        ClientStateHolder.INSTANCE.beginSession(menu);
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    public static void endClientSubscription(MESTMenu menu) {
-        ClientStateHolder.INSTANCE.endSession(menu);
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    private static void handleClient(PatternProviderListPacket packet) {
-        var minecraft = Minecraft.getInstance();
-        MESTScreen screen;
-        if (minecraft.screen instanceof MESTScreen currentScreen) {
-            screen = currentScreen;
-        } else if (minecraft.screen instanceof AESubScreen<?, ?> subScreen
-                && subScreen.getParent() instanceof MESTScreen parentScreen) {
-            screen = parentScreen;
-        } else {
-            return;
-        }
-        if (minecraft.player == null
-                || !(minecraft.player.containerMenu instanceof MESTMenu menu)
-                || menu.containerId != packet.containerId()) {
-            return;
-        }
-
-        var result = ClientStateHolder.INSTANCE.apply(packet);
-        if (result.requestResync()) {
-            PacketDistributor.sendToServer(new Request(menu.containerId, true));
-        }
-        if (result.entries() != null) {
-            screen.updatePatternProviders(result.entries());
-        }
-    }
-
-    /** Client-side immutable view consumed by {@link com.lhy.mest.client.panel.PatternAccessPanel}. */
-    public record Entry(
-            long epoch,
-            long providerId,
-            long revision,
-            PatternContainerGroup group,
-            int inventorySize,
-            long sortOrder,
-            Int2ObjectMap<ItemStack> slots) {
-    }
-
     public record Request(int containerId, boolean subscribe) implements CustomPacketPayload {
         public static final Type<Request> TYPE =
                 new Type<>(ResourceLocation.fromNamespaceAndPath(MESplicedterminal.MODID,
@@ -325,95 +260,6 @@ public record PatternProviderListPacket(
         }
     }
 
-    @OnlyIn(Dist.CLIENT)
-    private static final class ClientState {
-        /** Caches {@code group().name().getString()} so sorting does not recompute it per comparison. */
-        private record SortableEntry(String sortKey, Entry entry) {
-        }
-
-        private static final Comparator<SortableEntry> ENTRY_ORDER = Comparator
-                .comparing(SortableEntry::sortKey, String.CASE_INSENSITIVE_ORDER)
-                .thenComparingLong(sortable -> sortable.entry().sortOrder())
-                .thenComparingLong(sortable -> sortable.entry().providerId());
-
-        private final PatternProviderClientState<ItemStack, PatternContainerGroup> state =
-                new PatternProviderClientState<>(new PatternProviderClientState.ValueOps<>() {
-                    @Override
-                    public ItemStack copy(ItemStack value) {
-                        return value.copy();
-                    }
-
-                    @Override
-                    public boolean isEmpty(ItemStack value) {
-                        return value.isEmpty();
-                    }
-
-                    @Override
-                    public boolean matches(ItemStack left, ItemStack right) {
-                        return ItemStack.matches(left, right);
-                    }
-                });
-        @Nullable
-        private MESTMenu activeMenu;
-
-        void beginSession(MESTMenu menu) {
-            boolean continueExistingEpoch = activeMenu == menu;
-            activeMenu = menu;
-            state.beginSession(menu.containerId, continueExistingEpoch);
-        }
-
-        void endSession(MESTMenu menu) {
-            if (activeMenu == menu) {
-                activeMenu = null;
-                state.endSession();
-            }
-        }
-
-        ClientApplyResult apply(PatternProviderListPacket packet) {
-            var slots = new java.util.HashMap<Integer, ItemStack>();
-            for (var entry : packet.slots().int2ObjectEntrySet()) {
-                slots.put(entry.getIntKey(), entry.getValue());
-            }
-            var update = new PatternProviderClientState.Update<>(
-                    packet.containerId(),
-                    packet.epoch(),
-                    PatternProviderClientState.Operation.valueOf(packet.operation().name()),
-                    packet.providerId(),
-                    packet.revision(),
-                    packet.chunkIndex(),
-                    packet.chunkCount(),
-                    packet.inventorySize(),
-                    packet.sortOrder(),
-                    packet.group(),
-                    slots);
-            var result = state.apply(update);
-            boolean requestResync = result.outcome() == PatternProviderClientState.Outcome.RESYNC_REQUIRED;
-            if (result.outcome() != PatternProviderClientState.Outcome.CHANGED) {
-                return new ClientApplyResult(null, requestResync);
-            }
-
-            var sortableEntries = new ArrayList<SortableEntry>(result.providers().size());
-            for (var provider : result.providers()) {
-                var providerSlots = new Int2ObjectArrayMap<ItemStack>();
-                for (var slot : provider.slots().entrySet()) {
-                    providerSlots.put(slot.getKey().intValue(), slot.getValue().copy());
-                }
-                var entry = new Entry(provider.epoch(), provider.providerId(), provider.revision(),
-                        provider.metadata(), provider.inventorySize(), provider.sortOrder(), providerSlots);
-                sortableEntries.add(new SortableEntry(entry.group().name().getString(), entry));
-            }
-            sortableEntries.sort(ENTRY_ORDER);
-            var entries = new ArrayList<Entry>(sortableEntries.size());
-            for (var sortable : sortableEntries) {
-                entries.add(sortable.entry());
-            }
-            return new ClientApplyResult(entries, requestResync);
-        }
-    }
-
-    private record ClientApplyResult(@Nullable List<Entry> entries, boolean requestResync) {
-    }
-
     /**
      * ItemStack's stream codec touches bootstrapped registries during initialization. Keep it out of
      * RESET and rejected-packet decode paths, which do not contain slot data.
@@ -424,10 +270,5 @@ public record PatternProviderListPacket(
                         ByteBufCodecs.SHORT.map(Short::intValue, Integer::shortValue),
                         ItemStack.OPTIONAL_STREAM_CODEC,
                         MAX_SLOTS_PER_PACKET);
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    private static final class ClientStateHolder {
-        private static final ClientState INSTANCE = new ClientState();
     }
 }

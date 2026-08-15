@@ -14,6 +14,8 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import appeng.api.crafting.PatternDetailsHelper;
 import appeng.api.stacks.AEItemKey;
 
+import com.lhy.mest.client.PatternProviderClientHandler;
+import com.lhy.mest.client.PatternProviderClientHandler.Entry;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.Scrollbar;
 import com.lhy.mest.network.PatternProviderActionPacket;
@@ -32,7 +34,7 @@ public class PatternAccessPanel extends ModulePanel {
     private static final int SCROLLBAR_GAP = 2;
     private static final int REQUIRED_CONTENT_WIDTH = COLUMNS * SLOT + SCROLLBAR_GAP + SCROLLBAR_WIDTH;
 
-    private final List<PatternProviderListPacket.Entry> providers = new ArrayList<>();
+    private final List<Entry> providers = new ArrayList<>();
     private final Scrollbar scrollbar = new Scrollbar();
     private int scrollRows;
     private int subscribedContainerId = -1;
@@ -74,7 +76,7 @@ public class PatternAccessPanel extends ModulePanel {
         updateSubscription();
     }
 
-    public void setProviders(List<PatternProviderListPacket.Entry> entries) {
+    public void setProviders(List<Entry> entries) {
         if (subscribedContainerId < 0) {
             return;
         }
@@ -94,7 +96,7 @@ public class PatternAccessPanel extends ModulePanel {
             unsubscribe();
             subscribedContainerId = menu.containerId;
             subscribedMenu = menu;
-            PatternProviderListPacket.beginClientSubscription(menu);
+            PatternProviderClientHandler.beginSubscription(menu);
         }
         PacketDistributor.sendToServer(new PatternProviderListPacket.Request(menu.containerId, true));
     }
@@ -115,7 +117,7 @@ public class PatternAccessPanel extends ModulePanel {
             unsubscribe();
             subscribedContainerId = menu.containerId;
             subscribedMenu = menu;
-            PatternProviderListPacket.beginClientSubscription(menu);
+            PatternProviderClientHandler.beginSubscription(menu);
             PacketDistributor.sendToServer(new PatternProviderListPacket.Request(menu.containerId, true));
         }
     }
@@ -135,7 +137,7 @@ public class PatternAccessPanel extends ModulePanel {
                     new PatternProviderListPacket.Request(subscribedContainerId, false));
         }
         if (subscribedMenu != null) {
-            PatternProviderListPacket.endClientSubscription(subscribedMenu);
+            PatternProviderClientHandler.endSubscription(subscribedMenu);
         }
         subscribedContainerId = -1;
         subscribedMenu = null;
@@ -200,7 +202,7 @@ public class PatternAccessPanel extends ModulePanel {
         }
     }
 
-    private void renderProviderHeader(GuiGraphics g, Font font, PatternProviderListPacket.Entry provider,
+    private void renderProviderHeader(GuiGraphics g, Font font, Entry provider,
             int row, int mouseX, int mouseY) {
         int x = contentLeft();
         int y = contentTop() + row * ROW;
@@ -223,7 +225,7 @@ public class PatternAccessPanel extends ModulePanel {
         }
     }
 
-    private void renderProviderSlotRow(GuiGraphics g, Font font, PatternProviderListPacket.Entry provider,
+    private void renderProviderSlotRow(GuiGraphics g, Font font, Entry provider,
             int slotRow, int visibleRow, int mouseX, int mouseY) {
         int x = contentLeft();
         int y = contentTop() + visibleRow * ROW;

@@ -16,7 +16,7 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Bounded, transport-independent state machine for chunked pattern-provider updates.
  */
-final class PatternProviderClientState<V, M> {
+public final class PatternProviderClientState<V, M> {
     static final int MAX_PROVIDERS = 1024;
     static final int MAX_INVENTORY_SIZE = 4096;
     static final int MAX_TOTAL_INVENTORY_SLOTS = 32768;
@@ -31,20 +31,20 @@ final class PatternProviderClientState<V, M> {
     private static final int MAX_RETIRED_PROVIDER_IDS = 4096;
     private static final long MAX_PENDING_AGE_PACKETS = 2048;
 
-    enum Operation {
+    public enum Operation {
         RESET,
         FULL,
         DELTA,
         REMOVE
     }
 
-    enum Outcome {
+    public enum Outcome {
         IGNORED,
         CHANGED,
         RESYNC_REQUIRED
     }
 
-    interface ValueOps<V> {
+    public interface ValueOps<V> {
         V copy(V value);
 
         boolean isEmpty(V value);
@@ -52,7 +52,7 @@ final class PatternProviderClientState<V, M> {
         boolean matches(V left, V right);
     }
 
-    record Update<V, M>(
+    public record Update<V, M>(
             int containerId,
             long epoch,
             Operation operation,
@@ -64,13 +64,13 @@ final class PatternProviderClientState<V, M> {
             long sortOrder,
             @Nullable M metadata,
             Map<Integer, V> slots) {
-        Update {
+        public Update {
             Objects.requireNonNull(operation, "operation");
             Objects.requireNonNull(slots, "slots");
         }
     }
 
-    record Provider<V, M>(
+    public record Provider<V, M>(
             long epoch,
             long providerId,
             long revision,
@@ -80,7 +80,7 @@ final class PatternProviderClientState<V, M> {
             Map<Integer, V> slots) {
     }
 
-    record Result<V, M>(Outcome outcome, List<Provider<V, M>> providers) {
+    public record Result<V, M>(Outcome outcome, List<Provider<V, M>> providers) {
     }
 
     private final ValueOps<V> values;
@@ -95,15 +95,15 @@ final class PatternProviderClientState<V, M> {
     private boolean desynchronized;
     private boolean resyncReported;
 
-    PatternProviderClientState(ValueOps<V> values) {
+    public PatternProviderClientState(ValueOps<V> values) {
         this.values = Objects.requireNonNull(values);
     }
 
-    void beginSession(int expectedContainerId) {
+    public void beginSession(int expectedContainerId) {
         beginSession(expectedContainerId, false);
     }
 
-    void beginSession(int expectedContainerId, boolean continueExistingEpoch) {
+    public void beginSession(int expectedContainerId, boolean continueExistingEpoch) {
         if (!continueExistingEpoch || containerId != expectedContainerId) {
             epoch = 0;
         }
@@ -116,7 +116,7 @@ final class PatternProviderClientState<V, M> {
         resyncReported = false;
     }
 
-    void endSession() {
+    public void endSession() {
         containerId = -1;
         epoch = 0;
         packetSequence = 0;
@@ -128,7 +128,7 @@ final class PatternProviderClientState<V, M> {
         resyncReported = false;
     }
 
-    Result<V, M> apply(Update<V, M> update) {
+    public Result<V, M> apply(Update<V, M> update) {
         packetSequence++;
 
         if (containerId != update.containerId()) {

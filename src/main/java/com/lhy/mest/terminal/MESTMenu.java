@@ -27,7 +27,6 @@ import it.unimi.dsi.fastutil.ints.IntSet;
 import appeng.api.networking.IGridNode;
 import appeng.api.stacks.AEItemKey;
 import appeng.api.stacks.GenericStack;
-import appeng.client.gui.Icon;
 import appeng.api.crafting.PatternDetailsHelper;
 import appeng.core.definitions.AEItems;
 import appeng.crafting.pattern.AECraftingPattern;
@@ -191,6 +190,7 @@ public class MESTMenu extends CraftingTermMenu {
                 updateStonecuttingRecipes();
             }
             updatePatternCraftingOutput();
+            checkFluidSubstitutionSupport();
             applyPatternEncodingSlotActivation();
             broadcastChanges();
         }
@@ -218,11 +218,13 @@ public class MESTMenu extends CraftingTermMenu {
     public void setPatternFluidSubstitute(boolean substitute) {
         if (isClientSide()) {
             patternSubstituteFluids = substitute;
+            checkFluidSubstitutionSupport();
             sendClientAction(ACTION_SET_PATTERN_FLUID_SUBSTITUTION, substitute);
             return;
         }
         patternEncodingLogic.setFluidSubstitution(substitute);
         patternSubstituteFluids = substitute;
+        checkFluidSubstitutionSupport();
         broadcastChanges();
     }
 
@@ -408,8 +410,12 @@ public class MESTMenu extends CraftingTermMenu {
             sendClientAction(ACTION_SET_STONECUTTING_RECIPE_ID, id);
             return;
         }
-        patternEncodingLogic.setStonecuttingRecipeId(id);
-        stonecuttingRecipeId = id;
+
+        updateStonecuttingRecipes();
+        ResourceLocation validatedId = stonecuttingRecipes.stream()
+                .anyMatch(recipe -> recipe.id().equals(id)) ? id : null;
+        patternEncodingLogic.setStonecuttingRecipeId(validatedId);
+        stonecuttingRecipeId = validatedId;
         updatePatternCraftingOutput();
         broadcastChanges();
     }
@@ -433,7 +439,6 @@ public class MESTMenu extends CraftingTermMenu {
             this.addSlot(this.processingOutputSlots[i] = new FakeSlot(encodedOutputs, i),
                     MestSlotSemantics.PATTERN_PROCESSING_OUTPUTS);
         }
-        this.processingOutputSlots[0].setIcon(Icon.BACKGROUND_PRIMARY_OUTPUT);
 
         this.addSlot(this.stonecuttingInputSlot = new FakeSlot(encodedInputs, 0),
                 MestSlotSemantics.PATTERN_STONECUTTING_INPUT);
@@ -504,8 +509,8 @@ public class MESTMenu extends CraftingTermMenu {
                         .orElse(null);
             }
             this.currentPatternMode = this.patternEncodingMode;
-            checkFluidSubstitutionSupport();
         }
+        checkFluidSubstitutionSupport();
 
         final ItemStack result;
         if (this.currentPatternCraftingRecipe == null) {
@@ -521,7 +526,7 @@ public class MESTMenu extends CraftingTermMenu {
     private void checkFluidSubstitutionSupport() {
         this.patternSlotsSupportingFluidSubstitution.clear();
 
-        if (this.currentPatternCraftingRecipe == null) {
+        if (this.patternEncodingMode != EncodingMode.CRAFTING || this.currentPatternCraftingRecipe == null) {
             return;
         }
 
@@ -677,6 +682,9 @@ public class MESTMenu extends CraftingTermMenu {
 
         if (stonecuttingRecipeId != null
                 && stonecuttingRecipes.stream().noneMatch(r -> r.id().equals(stonecuttingRecipeId))) {
+            if (isServerSide()) {
+                patternEncodingLogic.setStonecuttingRecipeId(null);
+            }
             stonecuttingRecipeId = null;
         }
     }
@@ -774,6 +782,9 @@ public class MESTMenu extends CraftingTermMenu {
             currentPatternMode = patternEncodingMode;
             updatePatternCraftingOutput();
             updateStonecuttingRecipes();
+        }
+        if (updatedFields.contains((short) 91) || updatedFields.contains((short) 92)) {
+            checkFluidSubstitutionSupport();
         }
         applyPatternEncodingSlotActivation();
     }
