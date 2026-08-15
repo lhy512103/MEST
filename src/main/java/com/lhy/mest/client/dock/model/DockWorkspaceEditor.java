@@ -60,7 +60,7 @@ public final class DockWorkspaceEditor {
             throw new IllegalStateException("target disappeared during split insertion");
         }
         roots.set(targetRootIndex, targetRoot.withContent(replacementResult.node()));
-        return validated(new DockWorkspace(roots));
+        return validated(new DockWorkspace(roots, workspace.policies()));
     }
 
     public DockWorkspace detach(
@@ -87,7 +87,7 @@ public final class DockWorkspaceEditor {
         }
         roots.set(rootIndex, sourceRoot.withContent(removal.remaining()));
         roots.add(new FloatingRoot(newRootId, newBounds, removal.removed()));
-        return validated(new DockWorkspace(roots));
+        return validated(new DockWorkspace(roots, workspace.policies()));
     }
 
     public DockWorkspace setLeafVisible(DockWorkspace workspace, String leafNodeId, boolean visible) {
@@ -98,7 +98,7 @@ public final class DockWorkspaceEditor {
             VisibilityChange change = setVisible(root.content(), leafNodeId, visible);
             if (change.found()) {
                 roots.set(i, root.withContent(change.node()));
-                return validated(new DockWorkspace(roots));
+                return validated(new DockWorkspace(roots, workspace.policies()));
             }
         }
         throw new IllegalArgumentException("unknown leaf node: " + leafNodeId);
@@ -110,7 +110,7 @@ public final class DockWorkspaceEditor {
         for (int i = 0; i < roots.size(); i++) {
             if (roots.get(i).rootId().equals(rootId)) {
                 roots.set(i, roots.get(i).withBounds(bounds));
-                return validated(new DockWorkspace(roots));
+                return validated(new DockWorkspace(roots, workspace.policies()));
             }
         }
         throw new IllegalArgumentException("unknown root: " + rootId);
@@ -125,7 +125,7 @@ public final class DockWorkspaceEditor {
             RatioChange change = setRatio(root.content(), splitNodeId, ratio);
             if (change.found()) {
                 roots.set(i, root.withContent(change.node()));
-                return validated(new DockWorkspace(roots));
+                return validated(new DockWorkspace(roots, workspace.policies()));
             }
         }
         throw new IllegalArgumentException("unknown split node: " + splitNodeId);
@@ -138,7 +138,7 @@ public final class DockWorkspaceEditor {
             if (roots.get(i).rootId().equals(rootId)) {
                 FloatingRoot root = roots.remove(i);
                 roots.add(root);
-                return validated(new DockWorkspace(roots));
+                return validated(new DockWorkspace(roots, workspace.policies()));
             }
         }
         throw new IllegalArgumentException("unknown root: " + rootId);

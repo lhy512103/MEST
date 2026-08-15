@@ -26,6 +26,10 @@ workspace whose modules can be moved, resized, split and rejoined.
   detaching a split branch back into its own floating window.
 - Keeps floating windows movable and resizable, applies viewport clamping and
   routes rendering and input according to visible leaf ownership and z-order.
+- Ships a full-canvas AE2-styled layout editor: the live floating workspace is
+  edited on a dark grid canvas with a module palette sidebar (press-and-drag an
+  entry to place or reveal a module), a property inspector and four-way
+  splice-zone highlights while dragging.
 - Provides module visibility toggles, a session-only layout lock, one-step undo,
   a compact floating preset and a reset-to-default action.
 - Stores tree structure, split ratios, window geometry, visibility and z-order

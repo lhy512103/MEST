@@ -302,6 +302,16 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         addRenderableWidget(reset);
         panelButtons.add(reset);
         by += 22;
+
+        var editor = new ToolbarIconButton(
+                Icon.TERMINAL_STYLE_SMALL,
+                Component.translatable("gui.mesplicedterminal.edit_layout"),
+                b -> Minecraft.getInstance().setScreen(new MESTLayoutEditorScreen(this, dock)));
+        editor.setX(toolbarX);
+        editor.setY(by);
+        addRenderableWidget(editor);
+        panelButtons.add(editor);
+        by += 22;
         toolbarHeight = by - toolbarY - 2;
     }
 
@@ -406,7 +416,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         return zones;
     }
 
-    private static Icon iconForPanel(ModulePanel panel) {
+    /** Shared AE2 icon mapping for a module panel; also used by the layout editor sidebar. */
+    public static Icon iconForPanel(ModulePanel panel) {
         return switch (panel.id()) {
             case "me_list" -> Icon.BACKGROUND_WIRELESS_TERM;
             case "crafting" -> Icon.CRAFT_HAMMER;

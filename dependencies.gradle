@@ -1,5 +1,8 @@
 def mestRunJei = !project.hasProperty("mestRunJei") || project.property("mestRunJei").toString().toBoolean()
 def mestRunEmi = !project.hasProperty("mestRunEmi") || project.property("mestRunEmi").toString().toBoolean()
+// Modern UI replaces the client text/tooltip pipeline; a development switch makes it easy to
+// bisect GUI rendering issues between Modern UI and vanilla rendering.
+def mestRunMui = !project.hasProperty("mestRunMui") || project.property("mestRunMui").toString().toBoolean()
 
 // localRuntime is shared by client and dedicated-server launches. Keep client-only
 // recipe viewers out unconditionally, including copies pulled transitively by Create.
@@ -95,7 +98,9 @@ dependencies {
     }
 
     // Client-only local runtime UI and input helpers
-    clientLocalRuntime "curse.maven:modern-ui-352491:${modern_ui_file}"
+    if (mestRunMui) {
+        clientLocalRuntime "curse.maven:modern-ui-352491:${modern_ui_file}"
+    }
     clientLocalRuntime "curse.maven:mouse-tweaks-60089:${mouse_tweaks_file}"
     clientLocalRuntime "curse.maven:configured-457570:${configured_file}"
     clientLocalRuntime "curse.maven:searchables-858542:${searchables_file}"

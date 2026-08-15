@@ -9,18 +9,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 import com.lhy.mest.client.dock.model.LeafNode;
+import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
 import com.lhy.mest.client.dock.model.SplitNode;
 
 class DockLayoutCodecTest {
     @Test
-    void roundTripsV2WithoutLosingRootOrderOrTreeState() throws Exception {
+    void roundTripsV3WithoutLosingRootOrderTreeStateOrPolicies() throws Exception {
         DockLayoutCodec codec = codec();
         var original = WorkspacePersistenceFixtures.workspace();
 
         String encoded = codec.encode(original);
         DockLayoutCodec.DecodedLayout decoded = codec.decode(encoded);
 
-        assertEquals(2, decoded.sourceVersion());
+        assertEquals(3, decoded.sourceVersion());
         assertFalse(decoded.migrated());
         assertFalse(decoded.reconciled());
         assertFalse(decoded.needsRewrite());
@@ -28,6 +29,18 @@ class DockLayoutCodecTest {
         assertTrue(encoded.indexOf("root-a") < encoded.indexOf("root-bc"));
     }
 
+    @Test
+    void roundTripsPerModuleRuntimePolicy() throws Exception {
+        var base = WorkspacePersistenceFixtures.workspace();
+        var policies = new java.util.LinkedHashMap<>(base.policies());
+        policies.put("a", new ModuleLayoutPolicy(true, false, true));
+        var configured = new com.lhy.mest.client.dock.model.DockWorkspace(base.roots(), policies);
+
+        var decoded = codec().decode(codec().encode(configured)).workspace();
+
+        assertEquals(new ModuleLayoutPolicy(true, false, true), decoded.policyFor("a"));
+        assertEquals(ModuleLayoutPolicy.defaults(), decoded.policyFor("b"));
+    }
     @Test
     void migratesLegacyPairsDeterministicallyAndPreservesFileOrder() throws Exception {
         String legacy = """

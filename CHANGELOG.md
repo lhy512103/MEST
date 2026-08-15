@@ -4,6 +4,14 @@
 
 ### Workspace
 
+- Rebuilt the layout editor as a full-canvas, AE2-styled authoring surface: the real floating
+  workspace renders on a dark grid canvas surrounded by AE2 chrome (toolbar, module palette,
+  property inspector), and every drag/splice/resize/detach gesture works directly on the canvas.
+- Added press-and-drag palette placement: dragging a sidebar module entry reveals and places the
+  module, detaching it from composite splits when needed, with the same undo/save semantics as
+  in-canvas gestures.
+- Added visual-programming splice affordances: while a root is dragged, the four edge zones of
+  the hovered leaf light up and the zone that would receive the drop is emphasized.
 - Replaced the flat snap-based panel layout with floating recursive split trees,
   including edge drop zones, nested joining, divider resizing and branch detach.
 - Added z-order-aware rendering and input, effective leaf visibility, panel slot
