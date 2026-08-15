@@ -10,11 +10,8 @@
   "gui.mesplicedterminal.edit_layout": "编辑布局",
   "gui.mesplicedterminal.layout_editor": "终端布局编辑器",
   "gui.mesplicedterminal.layout_modules": "模块",
-  "gui.mesplicedterminal.layout_selected": "模块属性",
   "gui.mesplicedterminal.layout_save": "保存并返回",
   "gui.mesplicedterminal.layout_cancel": "取消",
-  "gui.mesplicedterminal.layout_reset": "恢复默认",
-  "gui.mesplicedterminal.layout_hint": "在此选择模块并设置运行时行为",
   "gui.mesplicedterminal.layout_properties": "模块属性",
   "gui.mesplicedterminal.layout_state_visible": "显示",
   "gui.mesplicedterminal.layout_state_movable": "允许拖动",
@@ -53,7 +50,5 @@
   "gui.mesplicedterminal.pattern_action.cycle": "轮换处理样板输出",
   "gui.mesplicedterminal.pattern_action.enabled": "已启用",
   "gui.mesplicedterminal.pattern_access.empty": "未找到可见样板供应器",
-  "gui.mesplicedterminal.pattern_access.click_hint": "左键取放/交换，右键取出",
-
-  "mesplicedterminal.configuration.title": "ME 拼接终端配置"
+  "gui.mesplicedterminal.pattern_access.click_hint": "左键取放/交换，右键取出"
 }

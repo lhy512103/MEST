@@ -404,7 +404,7 @@ public final class PatternAccessSession {
         var slots = new Int2ObjectArrayMap<ItemStack>();
         for (int slot = 0; slot < tracker.snapshot.length; slot++) {
             if (!tracker.snapshot[slot].isEmpty()) {
-                slots.put(slot, tracker.snapshot[slot].copy());
+                slots.put(slot, tracker.snapshot[slot]);
             }
         }
         var chunks = chunk(slots);
@@ -423,25 +423,12 @@ public final class PatternAccessSession {
     }
 
     private List<Int2ObjectMap<ItemStack>> chunk(Int2ObjectMap<ItemStack> source) {
-        var result = new ArrayList<Int2ObjectMap<ItemStack>>();
-        var current = new Int2ObjectArrayMap<ItemStack>();
-        int currentBytes = 0;
-        for (var entry : source.int2ObjectEntrySet()) {
-            int stackBytes = estimateEncodedSize(entry.getValue());
-            if (!current.isEmpty()
-                    && (current.size() >= PatternProviderListPacket.MAX_SLOTS_PER_PACKET
-                            || currentBytes + stackBytes > MAX_CHUNK_PAYLOAD_BYTES)) {
-                result.add(current);
-                current = new Int2ObjectArrayMap<>();
-                currentBytes = 0;
-            }
-            current.put(entry.getIntKey(), entry.getValue().copy());
-            currentBytes += stackBytes;
-        }
-        if (!current.isEmpty() || result.isEmpty()) {
-            result.add(current);
-        }
-        return result;
+        return PatternAccessChunkPlanner.chunk(
+                source,
+                PatternProviderListPacket.MAX_SLOTS_PER_PACKET,
+                MAX_CHUNK_PAYLOAD_BYTES,
+                this::estimateEncodedSize,
+                ItemStack::copy);
     }
 
     /**
