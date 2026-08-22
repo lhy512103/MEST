@@ -1,13 +1,22 @@
 package com.lhy.mest.client.dock.model;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Immutable workspace containing structure and per-module runtime interaction policy. */
-public record DockWorkspace(List<FloatingRoot> roots, Map<String, ModuleLayoutPolicy> policies) {
+public record DockWorkspace(
+        List<FloatingRoot> roots,
+        Map<String, ModuleLayoutPolicy> policies,
+        Map<String, DockSize> restoreSizes) {
     public DockWorkspace(List<FloatingRoot> roots) {
-        this(roots, defaultPolicies(roots));
+        this(roots, defaultPolicies(roots), Map.of());
+    }
+
+    public DockWorkspace(List<FloatingRoot> roots, Map<String, ModuleLayoutPolicy> policies) {
+        this(roots, policies, Map.of());
     }
 
     private static Map<String, ModuleLayoutPolicy> defaultPolicies(List<FloatingRoot> roots) {
@@ -32,14 +41,67 @@ public record DockWorkspace(List<FloatingRoot> roots, Map<String, ModuleLayoutPo
     }
 
     public DockWorkspace {
-        if (roots == null || policies == null) {
-            throw new NullPointerException("roots and policies");
+        if (roots == null || policies == null || restoreSizes == null) {
+            throw new NullPointerException("roots, policies and restoreSizes");
         }
         roots = List.copyOf(roots);
         policies = Map.copyOf(new LinkedHashMap<>(policies));
+        restoreSizes = Map.copyOf(new LinkedHashMap<>(restoreSizes));
     }
 
     public ModuleLayoutPolicy policyFor(String moduleId) {
         return policies.getOrDefault(moduleId, ModuleLayoutPolicy.defaults());
+    }
+
+    public DockWorkspace withRoots(List<FloatingRoot> newRoots) {
+        return new DockWorkspace(newRoots, policies, restoreSizes);
+    }
+
+    public DockWorkspace withPolicies(Map<String, ModuleLayoutPolicy> newPolicies) {
+        return new DockWorkspace(roots, newPolicies, restoreSizes);
+    }
+
+    public DockWorkspace withRestoreSizes(Map<String, DockSize> newRestoreSizes) {
+        return new DockWorkspace(roots, policies, newRestoreSizes);
+    }
+
+    /**
+     * Last standalone window size for {@code nodeId}, placed at {@code fallback}'s origin.
+     * Used when unsplicing so a panel does not keep the combined occupancy of its former siblings.
+     */
+    public DockRect restoredBounds(String nodeId, DockRect fallback) {
+        if (fallback == null) {
+            return null;
+        }
+        DockSize restore = restoreSizes.get(nodeId);
+        if (restore == null || restore.isEmpty()) {
+            return fallback;
+        }
+        return fallback.withSize(restore);
+    }
+
+    public static Map<String, DockSize> retainRestoreSizes(Map<String, DockSize> restoreSizes, List<FloatingRoot> roots) {
+        if (restoreSizes == null || restoreSizes.isEmpty() || roots == null) {
+            return Map.of();
+        }
+        Set<String> nodeIds = new LinkedHashSet<>();
+        for (FloatingRoot root : roots) {
+            collectNodeIds(root.content(), nodeIds);
+        }
+        var retained = new LinkedHashMap<String, DockSize>();
+        for (var entry : restoreSizes.entrySet()) {
+            if (nodeIds.contains(entry.getKey())) {
+                retained.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return retained;
+    }
+
+    private static void collectNodeIds(LayoutNode node, Set<String> nodeIds) {
+        nodeIds.add(node.nodeId());
+        if (node instanceof SplitNode split) {
+            collectNodeIds(split.first(), nodeIds);
+            collectNodeIds(split.second(), nodeIds);
+        }
     }
 }

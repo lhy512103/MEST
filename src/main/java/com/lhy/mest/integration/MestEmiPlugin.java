@@ -14,6 +14,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import dev.emi.emi.api.EmiEntrypoint;
 import dev.emi.emi.api.EmiPlugin;
 import dev.emi.emi.api.EmiRegistry;
+import dev.emi.emi.api.widget.Bounds;
 import dev.emi.emi.api.recipe.EmiPlayerInventory;
 import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.recipe.VanillaEmiRecipeCategories;
@@ -24,6 +25,7 @@ import appeng.integration.modules.emi.EmiStackHelper;
 import appeng.integration.modules.emi.EmiUseCraftingRecipeHandler;
 import appeng.menu.SlotSemantics;
 
+import com.lhy.mest.client.MESTScreen;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -43,6 +45,22 @@ import com.lhy.mest.terminal.MESTMenu;
 public class MestEmiPlugin implements EmiPlugin {
     @Override
     public void register(EmiRegistry registry) {
+        registry.addScreenBoundsProvider(MESTScreen.class, screen -> {
+            var bounds = screen.recipeViewerBounds();
+            if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0) {
+                return null;
+            }
+            return new Bounds(bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight());
+        });
+        registry.addExclusionArea(MESTScreen.class, (screen, consumer) -> {
+            var bounds = screen.recipeViewerBounds();
+            if (bounds.getWidth() > 0 && bounds.getHeight() > 0) {
+                consumer.accept(new Bounds(bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight()));
+            }
+            for (var zone : screen.getExclusionZones()) {
+                consumer.accept(new Bounds(zone.getX(), zone.getY(), zone.getWidth(), zone.getHeight()));
+            }
+        });
         registry.addRecipeHandler(MESTMenu.TYPE, new MestEmiPatternEncodingHandler());
         registry.addRecipeHandler(MESTMenu.TYPE, new EmiUseCraftingRecipeHandler<>(MESTMenu.class));
     }

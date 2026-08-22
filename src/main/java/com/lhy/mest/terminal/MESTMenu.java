@@ -42,7 +42,9 @@ import appeng.parts.encoding.EncodingMode;
 import appeng.parts.encoding.PatternEncodingLogic;
 import appeng.util.ConfigInventory;
 
+import de.mari_023.ae2wtlib.api.gui.AE2wtlibSlotSemantics;
 import de.mari_023.ae2wtlib.api.terminal.ItemWUT;
+import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.network.PatternAccessSession;
@@ -119,6 +121,12 @@ public class MESTMenu extends CraftingTermMenu {
         this.patternEncodingLogic = host.getLogic();
         this.encodedInputsInv = patternEncodingLogic.getEncodedInputInv();
         this.encodedOutputsInv = patternEncodingLogic.getEncodedOutputInv();
+
+        addSlot(new RestrictedInputSlot(
+                        RestrictedInputSlot.PlacableItemType.QE_SINGULARITY,
+                        host.getSubInventory(WTMenuHost.INV_SINGULARITY),
+                        0),
+                AE2wtlibSlotSemantics.SINGULARITY);
 
         addPatternEncodingSlots();
 

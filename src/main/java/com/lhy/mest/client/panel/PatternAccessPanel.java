@@ -69,7 +69,12 @@ public class PatternAccessPanel extends ModulePanel {
 
     @Override
     public int minHeight() {
-        return TITLE_BAR_HEIGHT + 2 * CONTENT_PADDING + 4 * ROW;
+        return TITLE_BAR_HEIGHT + CONTENT_PADDING + 4 * ROW;
+    }
+
+    @Override
+    public boolean expandsVertically() {
+        return true;
     }
 
     public void tick() {
@@ -179,7 +184,7 @@ public class PatternAccessPanel extends ModulePanel {
         scrollbar.render(g,
                 contentLeft() + contentWidth() - SCROLLBAR_WIDTH, contentTop(),
                 SCROLLBAR_WIDTH, contentHeight(),
-                maxScroll);
+                maxScroll, true);
     }
 
     @Override

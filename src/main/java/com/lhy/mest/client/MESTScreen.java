@@ -11,6 +11,7 @@ import org.lwjgl.glfw.GLFW;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.renderer.Rect2i;
@@ -25,44 +26,59 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import appeng.api.behaviors.ContainerItemStrategies;
 import appeng.api.behaviors.EmptyingAction;
 import appeng.api.client.AEKeyRendering;
+import appeng.api.config.ActionItems;
 import appeng.api.config.Settings;
 import appeng.api.stacks.AEItemKey;
 import appeng.api.stacks.AEKey;
 import appeng.api.stacks.AmountFormat;
 import appeng.api.stacks.GenericStack;
 import appeng.api.storage.AEKeyFilter;
+import appeng.api.upgrades.IUpgradeableObject;
 import appeng.client.gui.AEBaseScreen;
 import appeng.client.gui.Icon;
 import appeng.client.gui.me.common.RepoSlot;
 import appeng.client.gui.me.common.StackSizeRenderer;
 import appeng.client.gui.style.ScreenStyle;
+import appeng.client.gui.widgets.AETextField;
+import appeng.client.gui.widgets.ActionButton;
 import appeng.client.gui.widgets.IconButton;
+import appeng.client.gui.widgets.KeyTypeSelectionButton;
+import appeng.client.gui.widgets.OpenGuideButton;
 import appeng.client.gui.widgets.SettingToggleButton;
+import appeng.client.gui.widgets.ITooltip;
+import appeng.client.gui.widgets.TabButton;
 import appeng.core.AEConfig;
-import appeng.core.AppEng;
 import appeng.core.localization.ButtonToolTips;
+import appeng.core.localization.GuiText;
 import appeng.core.localization.Tooltips;
+import appeng.core.network.ServerboundPacket;
 import appeng.core.network.bidirectional.ConfigValuePacket;
 import appeng.core.network.serverbound.InventoryActionPacket;
+import appeng.core.network.serverbound.SwitchGuisPacket;
+import appeng.menu.me.crafting.CraftingStatusMenu;
 import appeng.helpers.InventoryAction;
 import appeng.items.storage.ViewCellItem;
 import appeng.menu.SlotSemantics;
 import appeng.menu.me.common.GridInventoryEntry;
 import appeng.util.Platform;
 
+import de.mari_023.ae2wtlib.api.gui.AE2wtlibSlotSemantics;
 import de.mari_023.ae2wtlib.api.terminal.IUniversalTerminalCapable;
 import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
 
 import com.lhy.mest.client.PatternProviderClientHandler.Entry;
 import com.lhy.mest.client.dock.DockManager;
+import com.lhy.mest.client.dock.ExtraChrome;
+import com.lhy.mest.client.dock.ExtraSlotColumn;
 import com.lhy.mest.client.dock.ModulePanel;
+import com.lhy.mest.client.dock.PanelSideBar;
+import com.lhy.mest.client.dock.ScrollingUpgradeColumn;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.panel.CraftingPanel;
 import com.lhy.mest.client.panel.InventoryPanel;
 import com.lhy.mest.client.panel.MEListPanel;
 import com.lhy.mest.client.panel.PatternAccessPanel;
 import com.lhy.mest.client.panel.PatternEncodingPanel;
-import com.lhy.mest.client.panel.SlotGridPanel;
 import com.lhy.mest.integration.MestRecipeTransferContext;
 import com.lhy.mest.terminal.MESTMenu;
 
@@ -76,23 +92,26 @@ import com.lhy.mest.terminal.MESTMenu;
  */
 public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerminalCapable {
     private final DockManager dock = new DockManager();
-    private final List<Button> panelButtons = new ArrayList<>();
     private final List<SettingToggleButton<?>> meSettingButtons = new ArrayList<>();
+    private final PanelSideBar meSideBar = new PanelSideBar();
+    private ExtraChrome upgradeColumn;
+    private ExtraSlotColumn viewCellColumn;
+    private ToolbarIconButton lockLayoutBtn;
+    private ToolbarIconButton undoLayoutBtn;
+    private AETextField searchField;
+    private TabButton craftingStatusBtn;
     private final List<ItemStack> currentViewCells = new ArrayList<>();
     private final Set<AEKey> craftableKeys = new HashSet<>();
     /**
-     * True only while drawing slot icons inside the per-panel render pass. Distinguishes that pass (draw the
-     * icon) from the vanilla per-slot loop (skip panel-owned icons, since the panel pass already drew them).
+     * True only while drawing slot icons inside the per-panel / extra-column render pass. Distinguishes that
+     * pass (draw the icon) from the vanilla per-slot loop (skip those icons, since the chrome pass already
+     * drew them).
      */
     private boolean drawingPanelSlots = false;
     private MEListPanel meListPanel;
     private CraftingPanel craftingPanel;
     private PatternEncodingPanel patternEncodingPanel;
     private PatternAccessPanel patternAccessPanel;
-    private int toolbarX;
-    private int toolbarY;
-    private int toolbarHeight;
-    private int dockStructureVersion = -1;
 
     public MESTScreen(MESTMenu menu, Inventory playerInventory, Component title, ScreenStyle style) {
         super(menu, playerInventory, title, style);
@@ -105,26 +124,77 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         getMenu().setGui(this::onMenuReceivedClientUpdate);
         MestRecipeTransferContext.beginMenu(menu);
 
-        // ME list control buttons (sort order / view mode / sort direction). These reuse AE2's icon
-        // buttons but are repositioned each frame to sit on the ME panel's title bar, so they travel
-        // with the floating panel instead of docking to a fixed global toolbar.
+        this.searchField = widgets.addTextField("search");
+        this.meListPanel.attachSearch(searchField);
+
+        this.craftingStatusBtn = new TabButton(Icon.CRAFT_HAMMER,
+                GuiText.CraftingStatus.text(), btn -> showCraftingStatus());
+        this.meListPanel.attachCraftingStatus(craftingStatusBtn);
+
         var cm = getMenu().getConfigManager();
-        meSettingButtons.add(new SettingToggleButton<>(Settings.SORT_BY,
+        addMeSideButton(new OpenGuideButton(btn -> openHelp()));
+        addMeSideButton(new SettingToggleButton<>(Settings.SORT_BY,
                 cm.getSetting(Settings.SORT_BY), Platform::isSortOrderAvailable, this::toggleServerSetting));
-        meSettingButtons.add(new SettingToggleButton<>(Settings.VIEW_MODE,
+        addMeSideButton(new SettingToggleButton<>(Settings.VIEW_MODE,
                 cm.getSetting(Settings.VIEW_MODE), this::toggleServerSetting));
-        meSettingButtons.add(new SettingToggleButton<>(Settings.SORT_DIRECTION,
-                cm.getSetting(Settings.SORT_DIRECTION), this::toggleServerSetting));
-        for (SettingToggleButton<?> button : meSettingButtons) {
-            // IconButton's stock background is rendered at 18x20 around a 16x16 widget. The ME
-            // title bar is only 18px tall and already supplies the button surface, so drawing that
-            // background would bleed into the panel content (and would not match the hit box).
-            button.setDisableBackground(true);
-            // AbstractWidget exposes a safe mutable height. Cover the full title-bar height so the
-            // bottom two pixels do not unexpectedly start a panel drag instead of pressing the
-            // visible icon.
-            button.setHeight(ModulePanel.TITLE_BAR_HEIGHT);
+        if (getMenu().canConfigureTypeFilter()) {
+            addMeSideButton(KeyTypeSelectionButton.create(
+                    this, getMenu().getHost(), GuiText.ConfigureVisibleTypes.text()));
         }
+        addMeSideButton(new SettingToggleButton<>(Settings.SORT_DIRECTION,
+                cm.getSetting(Settings.SORT_DIRECTION), this::toggleServerSetting));
+        addMeSideButton(new ActionButton(ActionItems.TERMINAL_SETTINGS, this::showSettings));
+        addMeSideButton(new SettingToggleButton<>(Settings.TERMINAL_STYLE,
+                AEConfig.instance().getTerminalStyle(), this::toggleTerminalStyle));
+        addLayoutActions();
+    }
+
+    /**
+     * Extension point for the AE2-style left rail. Settings, guide and layout actions all
+     * go through {@link #addMeSideButton(Button)} so extra controls stay in one column.
+     */
+    private void addLayoutActions() {
+        lockLayoutBtn = addMeSideButton(new ToolbarIconButton(
+                dock.isLayoutLocked() ? Icon.LOCKED : Icon.UNLOCKED,
+                layoutLockMessage(),
+                b -> dock.toggleLayoutLocked()));
+        undoLayoutBtn = addMeSideButton(new ToolbarIconButton(
+                Icon.BACK,
+                Component.translatable("gui.mesplicedterminal.undo_layout"),
+                b -> dock.undoLayout()));
+        undoLayoutBtn.active = dock.canUndoLayout();
+        addMeSideButton(new ToolbarIconButton(
+                Icon.TERMINAL_STYLE_SMALL,
+                Component.translatable("gui.mesplicedterminal.edit_layout"),
+                b -> Minecraft.getInstance().setScreen(new MESTLayoutEditorScreen(this, dock))));
+    }
+
+    private ToolbarIconButton addMeSideButton(ToolbarIconButton button) {
+        addMeSideButton((Button) button);
+        return button;
+    }
+
+    private void addMeSideButton(Button button) {
+        meSideBar.add(button);
+        if (button instanceof SettingToggleButton<?> settingButton
+                && settingButton.getSetting() != Settings.TERMINAL_STYLE) {
+            meSettingButtons.add(settingButton);
+        }
+    }
+
+    private void showCraftingStatus() {
+        ServerboundPacket message = SwitchGuisPacket.openSubMenu(CraftingStatusMenu.TYPE);
+        PacketDistributor.sendToServer(message);
+    }
+
+    private void showSettings() {
+        switchToScreen(new MestTerminalSettingsScreen(this));
+    }
+
+    private void toggleTerminalStyle(SettingToggleButton<appeng.api.config.TerminalStyle> btn, boolean backwards) {
+        appeng.api.config.TerminalStyle next = btn.getNextValue(backwards);
+        AEConfig.instance().setTerminalStyle(next);
+        btn.set(next);
     }
 
     private <SE extends Enum<SE>> void toggleServerSetting(SettingToggleButton<SE> btn, boolean backwards) {
@@ -151,8 +221,17 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     protected boolean shouldAddToolbar() {
-        // We do not use AE2's fixed vertical toolbar; controls live on the floating panels instead.
+        // We do not use AE2's fixed vertical toolbar; it is pinned to leftPos/topPos (0,0)
+        // and would hang off the screen. The same buttons auto-attach to the spliced group.
         return false;
+    }
+
+    @Override
+    protected <P extends AEBaseScreen<MESTMenu>> void onReturnFromSubScreen(
+            appeng.client.gui.AESubScreen<MESTMenu, P> subScreen) {
+        if (subScreen instanceof MestTerminalSettingsScreen && meListPanel != null) {
+            meListPanel.tick(hasShiftDown());
+        }
     }
 
     @Override
@@ -164,11 +243,13 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         this.imageHeight = 0;
 
         super.init();
-        // super.init() clears registered widgets, but this bookkeeping list survives screen resize.
-        panelButtons.clear();
 
         this.leftPos = 0;
         this.topPos = 0;
+
+        if (searchField != null) {
+            removeWidget(searchField);
+        }
 
         // The screen is registered with AE2's stock wireless_terminal style, which inherits text labels
         // (player inventory title, dialog title, item-count) anchored to a fixed GUI layout that doesn't
@@ -177,7 +258,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         setTextHidden("dialog_title", true);
         setTextHidden("entriesShown", true);
 
-        if (dock.isEmpty()) {
+        boolean firstOpen = dock.isEmpty();
+        if (firstOpen) {
             List<ModulePanel> panels = new ArrayList<>();
             panels.add(meListPanel);
             craftingPanel = new CraftingPanel(getMenu());
@@ -187,133 +269,34 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             patternAccessPanel = new PatternAccessPanel();
             panels.add(patternAccessPanel);
             panels.add(new InventoryPanel(getMenu()));
-            var upgrades = new SlotGridPanel("upgrades",
-                    Component.translatable("gui.mesplicedterminal.upgrades"),
-                    getMenu().getSlots(SlotSemantics.UPGRADE), 2);
-            if (upgrades.hasSlots()) {
-                panels.add(upgrades);
-            }
-            var viewCells = new SlotGridPanel("view_cells",
-                    Component.translatable("gui.mesplicedterminal.view_cells"),
-                    getMenu().getSlots(SlotSemantics.VIEW_CELL), 5);
-            if (viewCells.hasSlots()) {
-                panels.add(viewCells);
-            }
             dock.init(panels, this.width, this.height);
         } else {
             dock.updateViewport(this.width, this.height);
         }
 
         dock.layoutAll();
+        dock.applyPendingCenter();
+        dock.relayoutAllSlots();
+        if (upgradeColumn == null && getMenu().getHost() instanceof IUpgradeableObject upgradeable) {
+            List<Slot> upgradeSlots = new ArrayList<>();
+            upgradeSlots.addAll(getMenu().getSlots(AE2wtlibSlotSemantics.SINGULARITY));
+            upgradeSlots.addAll(getMenu().getSlots(SlotSemantics.UPGRADE));
+            upgradeColumn = new ScrollingUpgradeColumn(upgradeSlots, upgradeable);
+        }
+        if (viewCellColumn == null) {
+            viewCellColumn = new ExtraSlotColumn(
+                    getMenu().getSlots(SlotSemantics.VIEW_CELL),
+                    () -> List.of(GuiText.TerminalViewCellsTooltip.text()));
+        }
+        attachMeSideBar();
+        attachExtraSlotColumns();
+        refreshRecipeTransferAvailability();
         selectVisibleRecipeTargetIfNeeded();
-        // Register the ME control buttons as renderable widgets; positioned each frame in layout pass.
-        for (SettingToggleButton<?> b : meSettingButtons) {
-            addRenderableWidget(b);
+        if (firstOpen && meListPanel != null && searchField != null
+                && AEConfig.instance().isAutoFocusSearch()
+                && !AEConfig.instance().isUseExternalSearch()) {
+            meListPanel.setSearchFocused(true);
         }
-        repositionMeButtons();
-        buildToolbar();
-        dockStructureVersion = dock.structureVersion();
-    }
-
-    /** Place the ME list control buttons on the ME panel's title bar (right-aligned), or hide them. */
-    private void repositionMeButtons() {
-        boolean panelVisible = meListPanel != null && dock.isEffectivelyVisible(meListPanel);
-        // With the oversized IconButton background disabled, the 16px icon fits inside the
-        // AE2-style 18px title header at y + 1 (or y + 2 while hovered).
-        int bx = meListPanel != null ? meListPanel.x + meListPanel.width - 18 : 0;
-        int by = meListPanel != null ? meListPanel.y : 0;
-        for (SettingToggleButton<?> b : meSettingButtons) {
-            b.setX(bx);
-            b.setY(by);
-            boolean show = panelVisible && dock.isAreaUnobscured(
-                    meListPanel,
-                    new DockRect(bx, by, b.getWidth(), b.getHeight()));
-            b.visible = show;
-            b.active = show;
-            bx -= 18;
-        }
-    }
-
-    /** AE2-style vertical icon toolbar: module visibility and workspace controls. */
-    private void buildToolbar() {
-        toolbarX = Math.max(4, this.width - 20);
-        toolbarY = 6;
-        int by = toolbarY;
-        for (ModulePanel p : dock.panels()) {
-            var btn = new PanelToolbarButton(p, b -> {
-                dock.toggleVisible(p);
-                selectVisibleRecipeTargetIfNeeded();
-                rebuildToolbar();
-            });
-            btn.setX(toolbarX);
-            btn.setY(by);
-            addRenderableWidget(btn);
-            panelButtons.add(btn);
-            by += 22;
-        }
-        var lock = new ToolbarIconButton(
-                dock.isLayoutLocked() ? Icon.LOCKED : Icon.UNLOCKED,
-                Component.translatable(dock.isLayoutLocked()
-                        ? "gui.mesplicedterminal.unlock_layout"
-                        : "gui.mesplicedterminal.lock_layout"),
-                b -> {
-                    dock.toggleLayoutLocked();
-                    rebuildToolbar();
-                });
-        lock.setX(toolbarX);
-        lock.setY(by);
-        addRenderableWidget(lock);
-        panelButtons.add(lock);
-        by += 22;
-
-        var undo = new ToolbarIconButton(
-                Icon.BACK,
-                Component.translatable("gui.mesplicedterminal.undo_layout"),
-                b -> {
-                    dock.undoLayout();
-                    rebuildToolbar();
-                });
-        undo.active = dock.canUndoLayout();
-        undo.setX(toolbarX);
-        undo.setY(by);
-        addRenderableWidget(undo);
-        panelButtons.add(undo);
-        by += 22;
-
-        var compact = new ToolbarIconButton(
-                Icon.TERMINAL_STYLE_SMALL,
-                Component.translatable("gui.mesplicedterminal.compact_layout"),
-                b -> {
-                    dock.applyCompactPreset();
-                    rebuildToolbar();
-                });
-        compact.setX(toolbarX);
-        compact.setY(by);
-        addRenderableWidget(compact);
-        panelButtons.add(compact);
-        by += 22;
-
-        var reset = new ToolbarIconButton(Icon.SCHEDULING_ROUND_ROBIN,
-                Component.translatable("gui.mesplicedterminal.reset_layout"), b -> {
-            dock.resetLayout();
-            rebuildToolbar();
-        });
-        reset.setX(toolbarX);
-        reset.setY(by);
-        addRenderableWidget(reset);
-        panelButtons.add(reset);
-        by += 22;
-
-        var editor = new ToolbarIconButton(
-                Icon.TERMINAL_STYLE_SMALL,
-                Component.translatable("gui.mesplicedterminal.edit_layout"),
-                b -> Minecraft.getInstance().setScreen(new MESTLayoutEditorScreen(this, dock)));
-        editor.setX(toolbarX);
-        editor.setY(by);
-        addRenderableWidget(editor);
-        panelButtons.add(editor);
-        by += 22;
-        toolbarHeight = by - toolbarY - 2;
     }
 
     private void selectVisibleRecipeTargetIfNeeded() {
@@ -331,22 +314,26 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
     }
 
-    private void rebuildToolbar() {
-        // Remove only our own panel buttons (leave AE2's vertical toolbar intact).
-        for (Button b : panelButtons) {
-            removeWidget(b);
+    private Component layoutLockMessage() {
+        return Component.translatable(dock.isLayoutLocked()
+                ? "gui.mesplicedterminal.unlock_layout"
+                : "gui.mesplicedterminal.lock_layout");
+    }
+
+    private void refreshLayoutActions() {
+        if (lockLayoutBtn != null) {
+            lockLayoutBtn.setIcon(dock.isLayoutLocked() ? Icon.LOCKED : Icon.UNLOCKED);
+            lockLayoutBtn.setMessage(layoutLockMessage());
         }
-        panelButtons.clear();
-        buildToolbar();
-        dockStructureVersion = dock.structureVersion();
+        if (undoLayoutBtn != null) {
+            undoLayoutBtn.active = dock.canUndoLayout();
+        }
     }
 
     @Override
     protected void updateBeforeRender() {
         super.updateBeforeRender();
-        if (dockStructureVersion != dock.structureVersion()) {
-            rebuildToolbar();
-        }
+        refreshLayoutActions();
         if (meListPanel != null && dock.isEffectivelyVisible(meListPanel)) {
             meListPanel.tick(hasShiftDown());
             updateViewCellFilter();
@@ -357,8 +344,67 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (patternAccessPanel != null && dock.isEffectivelyVisible(patternAccessPanel)) {
             patternAccessPanel.tick();
         }
-        // Keep the ME control buttons glued to the (possibly moved/resized) ME panel.
-        repositionMeButtons();
+        attachMeSideBar();
+        attachExtraSlotColumns();
+        refreshRecipeTransferAvailability();
+    }
+
+    private void refreshRecipeTransferAvailability() {
+        MestRecipeTransferContext.updateAvailability(
+                getMenu(),
+                patternEncodingPanel != null && dock.isEffectivelyVisible(patternEncodingPanel),
+                craftingPanel != null && dock.isEffectivelyVisible(craftingPanel));
+    }
+
+    private void attachMeSideBar() {
+        DockRect group = dock.anchoredGroupBounds();
+        if (group == null) {
+            meSideBar.hide();
+            return;
+        }
+        meSideBar.layoutAgainst(group.x(), group.y(), true);
+    }
+
+    private void attachExtraSlotColumns() {
+        DockRect group = dock.anchoredGroupBounds();
+        if (group == null) {
+            if (upgradeColumn != null) {
+                upgradeColumn.hide();
+            }
+            if (viewCellColumn != null) {
+                viewCellColumn.hide();
+            }
+            return;
+        }
+        int attachX = extraColumnAttachX(group);
+        int attachY = group.y() - 1;
+        if (upgradeColumn instanceof ScrollingUpgradeColumn scrolling) {
+            scrolling.setMaxRows(Math.max(2, (group.height() / 2 - 10) / 18));
+        }
+        if (upgradeColumn != null && upgradeColumn.hasSlots()) {
+            upgradeColumn.layoutAgainst(attachX, attachY, true);
+            attachX = upgradeColumn.nextColumnX();
+        } else if (upgradeColumn != null) {
+            upgradeColumn.hide();
+        }
+        if (viewCellColumn != null && viewCellColumn.hasSlots()) {
+            viewCellColumn.layoutAgainst(attachX, attachY, true);
+        } else if (viewCellColumn != null) {
+            viewCellColumn.hide();
+        }
+    }
+
+    /** Right of the spliced group, past hanging tabs/scroller; tuck 1px into the frame when flush. */
+    private int extraColumnAttachX(DockRect group) {
+        int right = group.right();
+        for (ModulePanel panel : dock.panels()) {
+            if (!dock.isEffectivelyVisible(panel) || dock.policyFor(panel).floating()) {
+                continue;
+            }
+            right = Math.max(right, panel.x + panel.width + panel.outsideHitWidth());
+        }
+        // Vanilla extra panel JSON uses right: 2; extra pixels tuck the well into the frame.
+        return right > group.right() ? right - 2 : group.right() - 4;
     }
 
     private void updateViewCellFilter() {
@@ -377,13 +423,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         // are drawn here (in the panel pass) instead of in the vanilla per-slot loop to get z-order right.
         drawingPanelSlots = true;
         try {
-            dock.renderBackground(g, this.font, mouseX, mouseY, partialTicks, this::drawPanelSlot);
+            dock.renderBackground(
+                    g, this.font, mouseX, mouseY, partialTicks, this::drawPanelSlot, this::renderAnchoredChrome);
         } finally {
             drawingPanelSlots = false;
-        }
-        if (!panelButtons.isEmpty()) {
-            g.blitSprite(AppEng.makeId("vertical_buttons_bg"), toolbarX - 3, toolbarY - 3,
-                    1, 21, toolbarHeight + 6);
         }
     }
 
@@ -397,42 +440,191 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public void drawFG(GuiGraphics g, int offsetX, int offsetY, int mouseX, int mouseY) {
-        dock.renderForeground(g, this.font, mouseX, mouseY, 0);
+        drawingPanelSlots = true;
+        try {
+            dock.renderForeground(g, this.font, mouseX, mouseY, 0, this::drawPanelSlot);
+        } finally {
+            drawingPanelSlots = false;
+        }
+    }
+
+    @Override
+    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTicks) {
+        super.render(g, mouseX, mouseY, partialTicks);
+        g.pose().pushPose();
+        try {
+            g.pose().translate(0.0F, 0.0F, 4500.0F);
+            renderAttachedChromeTooltips(g, mouseX, mouseY);
+        } finally {
+            g.pose().popPose();
+        }
+        ItemStack carried = getMenu().getCarried();
+        if (!carried.isEmpty()) {
+            g.pose().pushPose();
+            try {
+                // Vanilla draws the carried stack at the default pose after slots, so extra chrome
+                // (z≈layer*400) covers it. Redraw above that chrome but below the GUI far plane —
+                // z=4500 clips the 3D item model and the icon looks cut off.
+                g.pose().translate(0.0F, 0.0F, dock.cursorItemZ());
+                g.renderItem(carried, mouseX - 8, mouseY - 8);
+                g.renderItemDecorations(this.font, carried, mouseX - 8, mouseY - 8);
+            } finally {
+                g.pose().popPose();
+            }
+        }
+    }
+
+    private void renderAttachedChromeTooltips(GuiGraphics g, int mouseX, int mouseY) {
+        ModulePanel top = dock.topPanelAt(mouseX, mouseY);
+        if (top != null && dock.isFloatingWindow(top)) {
+            return;
+        }
+        ExtraChrome extra = extraColumnAt(mouseX, mouseY);
+        if (extra != null) {
+            List<Component> lines = extra.chromeTooltipAt(mouseX, mouseY);
+            if (!lines.isEmpty()) {
+                drawTooltipWithHeader(g, mouseX, mouseY, lines);
+                return;
+            }
+        }
+        ITooltip sidebar = meSideBar.hoveredTooltip(mouseX, mouseY);
+        if (sidebar != null && sidebar.isTooltipAreaVisible() && !sidebar.getTooltipMessage().isEmpty()) {
+            drawTooltipWithHeader(g, mouseX, mouseY, sidebar.getTooltipMessage());
+            return;
+        }
+        if (meListPanel != null) {
+            ITooltip craftingStatus = meListPanel.hoveredCraftingStatusTooltip(mouseX, mouseY);
+            if (craftingStatus != null && !craftingStatus.getTooltipMessage().isEmpty()) {
+                drawTooltipWithHeader(g, mouseX, mouseY, craftingStatus.getTooltipMessage());
+            }
+        }
     }
 
     /**
-     * Report each visible floating panel as a JEI/EMI exclusion zone so the recipe viewer keeps its
-     * panels clear of our panels. The base dialog rect is 0x0 (see {@link #init()}), so it contributes
-     * no occlusion on its own.
+     * Left toolbar and extra slot columns belong to the anchored terminal group, so they paint
+     * with that group and stay under floating windows.
      */
+    private void renderAnchoredChrome(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
+        if (meSideBar.isVisible()) {
+            meSideBar.renderBackground(g);
+            for (Button button : meSideBar.buttons()) {
+                button.render(g, mouseX, mouseY, partialTicks);
+            }
+        }
+        drawingPanelSlots = true;
+        try {
+            if (upgradeColumn != null && upgradeColumn.isVisible()) {
+                upgradeColumn.renderBackground(g);
+                upgradeColumn.renderSlots(g, this::drawPanelSlot);
+            }
+            if (viewCellColumn != null && viewCellColumn.isVisible()) {
+                viewCellColumn.renderBackground(g);
+                viewCellColumn.renderSlots(g, this::drawPanelSlot);
+            }
+        } finally {
+            drawingPanelSlots = false;
+        }
+    }
+
+    /**
+     * Screen-space rectangle of the spliced terminal plus attached chrome. Used by JEI/EMI to
+     * park their sidebars without reading {@code leftPos} (slots are absolute, so leftPos stays 0).
+     */
+    public Rect2i recipeViewerBounds() {
+        DockRect group = dock.anchoredGroupBounds();
+        if (group == null) {
+            return new Rect2i(0, 0, 0, 0);
+        }
+        int left = group.x();
+        int top = group.y();
+        int right = group.right();
+        int bottom = group.bottom();
+        if (meSideBar.isVisible()) {
+            Rect2i rail = meSideBar.bounds();
+            left = Math.min(left, rail.getX() - 2);
+            top = Math.min(top, rail.getY() - 1);
+            bottom = Math.max(bottom, rail.getY() + rail.getHeight() + 3);
+        }
+        if (meListPanel != null && dock.isEffectivelyVisible(meListPanel)) {
+            right = Math.max(right, meListPanel.x + meListPanel.width + meListPanel.outsideHitWidth());
+            top = Math.min(top, meListPanel.y - meListPanel.outsideHitTop());
+        }
+        if (patternEncodingPanel != null && dock.isEffectivelyVisible(patternEncodingPanel)) {
+            right = Math.max(right, patternEncodingPanel.x + patternEncodingPanel.width
+                    + patternEncodingPanel.outsideHitWidth());
+        }
+        if (upgradeColumn != null && upgradeColumn.isVisible()) {
+            Rect2i extra = upgradeColumn.bounds();
+            right = Math.max(right, extra.getX() + extra.getWidth());
+            bottom = Math.max(bottom, extra.getY() + extra.getHeight());
+        }
+        if (viewCellColumn != null && viewCellColumn.isVisible()) {
+            Rect2i extra = viewCellColumn.bounds();
+            right = Math.max(right, extra.getX() + extra.getWidth());
+            bottom = Math.max(bottom, extra.getY() + extra.getHeight());
+        }
+        return new Rect2i(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+    }
     @Override
     public List<Rect2i> getExclusionZones() {
         List<Rect2i> zones = new ArrayList<>();
         for (DockRect bounds : dock.exclusionBounds()) {
             zones.add(new Rect2i(bounds.x(), bounds.y(), bounds.width(), bounds.height()));
         }
-        if (!panelButtons.isEmpty()) {
-            zones.add(new Rect2i(toolbarX - 3, toolbarY - 3, 21, toolbarHeight + 6));
+        if (meSideBar.isVisible()) {
+            Rect2i rail = meSideBar.bounds();
+            zones.add(new Rect2i(rail.getX() - 2, rail.getY() - 1, rail.getWidth() + 1, rail.getHeight() + 4));
         }
+        if (meListPanel != null && dock.isEffectivelyVisible(meListPanel)) {
+            if (meListPanel.outsideHitWidth() > 0) {
+                zones.add(new Rect2i(
+                        meListPanel.x + meListPanel.width,
+                        meListPanel.y - 1,
+                        meListPanel.outsideHitWidth(),
+                        meListPanel.height + 1));
+            }
+            if (meListPanel.outsideHitTop() > 0) {
+                zones.add(new Rect2i(
+                        meListPanel.x + meListPanel.width + meListPanel.outsideHitWidth() - 24,
+                        meListPanel.y - meListPanel.outsideHitTop(),
+                        20,
+                        meListPanel.outsideHitTop() + 20));
+            }
+        }
+        if (patternEncodingPanel != null && dock.isEffectivelyVisible(patternEncodingPanel)
+                && patternEncodingPanel.outsideHitWidth() > 0) {
+            zones.add(new Rect2i(
+                    patternEncodingPanel.x + patternEncodingPanel.width,
+                    patternEncodingPanel.y,
+                    patternEncodingPanel.outsideHitWidth(),
+                    patternEncodingPanel.height));
+        }
+        addExtraColumnExclusion(zones, upgradeColumn);
+        addExtraColumnExclusion(zones, viewCellColumn);
         return zones;
+    }
+
+    private static void addExtraColumnExclusion(List<Rect2i> zones, ExtraChrome column) {
+        if (column != null && column.isVisible()) {
+            Rect2i extra = column.bounds();
+            zones.add(new Rect2i(extra.getX(), extra.getY(), extra.getWidth(), extra.getHeight()));
+        }
     }
 
     /** Shared AE2 icon mapping for a module panel; also used by the layout editor sidebar. */
     public static Icon iconForPanel(ModulePanel panel) {
         return switch (panel.id()) {
-            case "me_list" -> Icon.BACKGROUND_WIRELESS_TERM;
+            case "me_list" -> Icon.VIEW_MODE_ALL;
             case "crafting" -> Icon.CRAFT_HAMMER;
-            case "pattern_encoding" -> Icon.BACKGROUND_ENCODED_PATTERN;
+            case "pattern_encoding" -> Icon.TAB_CRAFTING;
             case "pattern_access" -> Icon.PATTERN_ACCESS_SHOW;
-            case "inventory" -> Icon.BACKGROUND_STORAGE_CELL;
-            case "upgrades" -> Icon.BACKGROUND_UPGRADE;
-            case "view_cells" -> Icon.BACKGROUND_VIEW_CELL;
+            case "inventory" -> Icon.S_STORAGE;
             default -> Icon.COG;
         };
     }
 
     private static class ToolbarIconButton extends IconButton {
-        private final Icon icon;
+        private Icon icon;
 
         ToolbarIconButton(Icon icon, Component tooltip, OnPress onPress) {
             super(onPress);
@@ -440,15 +632,37 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             setMessage(tooltip);
         }
 
+        void setIcon(Icon icon) {
+            this.icon = icon;
+        }
+
         @Override
         protected Icon getIcon() {
             return icon;
         }
-    }
 
-    private static final class PanelToolbarButton extends ToolbarIconButton {
-        PanelToolbarButton(ModulePanel panel, OnPress onPress) {
-            super(iconForPanel(panel), panel.title(), onPress);
+        @Override
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partial) {
+            if (!visible) {
+                return;
+            }
+            int yOffset = isHovered() ? 1 : 0;
+            if (!isDisableBackground()) {
+                Icon bgIcon = isHovered()
+                        ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER
+                        : isFocused() ? Icon.TOOLBAR_BUTTON_BACKGROUND_FOCUS : Icon.TOOLBAR_BUTTON_BACKGROUND;
+                bgIcon.getBlitter()
+                        .dest(getX() - 1, getY() + yOffset, 18, 20)
+                        .zOffset(2)
+                        .blit(guiGraphics);
+            }
+            int ix = getX() + (16 - icon.width) / 2;
+            int iy = getY() + 1 + yOffset + (16 - icon.height) / 2;
+            var blitter = icon.getBlitter();
+            if (!active) {
+                blitter.opacity(0.5f);
+            }
+            blitter.dest(ix, iy).zOffset(3).blit(guiGraphics);
         }
     }
 
@@ -463,8 +677,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
      */
     @Override
     public void renderSlot(GuiGraphics g, Slot s) {
-        if (!drawingPanelSlots && dock.panelForSlot(s) != null) {
-            // Vanilla per-slot loop: panel already drew this slot in its own pass. Skip.
+        if (!drawingPanelSlots && (dock.panelForSlot(s) != null || extraColumnOwns(s))) {
+            // Vanilla per-slot loop: chrome pass already drew this slot. Skip.
             return;
         }
         if (s instanceof RepoSlot repoSlot) {
@@ -478,7 +692,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             GenericStack stack = GenericStack.fromItemStack(s.getItem());
             var repo = getMenu().getClientRepo();
             if (stack != null && repo != null && isCraftable(stack.what())) {
-                StackSizeRenderer.renderSizeLabel(g, font, s.x - 11, s.y - 11, "+", false);
+                StackSizeRenderer.renderSizeLabel(g, font, ModulePanel.slotScreenX(s) - 11,
+                        ModulePanel.slotScreenY(s) - 11, "+", false);
             }
         }
     }
@@ -492,12 +707,45 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     @Override
     protected boolean isHovering(Slot slot, double mx, double my) {
         ModulePanel top = dock.topPanelAt(mx, my);
+        if (top == null || !dock.isFloatingWindow(top)) {
+            ExtraChrome extra = extraColumnAt(mx, my);
+            if (extra != null) {
+                return extra.ownsSlot(slot) && super.isHovering(slot, mx, my);
+            }
+            if (isMouseOverToolbarWidget(mx, my)) {
+                return false;
+            }
+        }
         if (top != null) {
-            // Only the top panel's slots are hoverable. panelForSlot is backed by the dock's
-            // per-projection slot cache, so this per-slot-per-frame call stays cheap.
             return dock.panelForSlot(slot) == top && super.isHovering(slot, mx, my);
         }
         return super.isHovering(slot, mx, my);
+    }
+
+    @Override
+    protected void renderSlotHighlight(GuiGraphics g, Slot slot, int mouseX, int mouseY, float partialTick) {
+        if (extraColumnOwns(slot)) {
+            g.pose().pushPose();
+            try {
+                g.pose().translate(0.0F, 0.0F, dock.anchoredChromeZ() + 200.0F);
+                super.renderSlotHighlight(g, slot, mouseX, mouseY, partialTick);
+            } finally {
+                g.pose().popPose();
+            }
+            return;
+        }
+        ModulePanel panel = dock.panelForSlot(slot);
+        if (panel == null) {
+            super.renderSlotHighlight(g, slot, mouseX, mouseY, partialTick);
+            return;
+        }
+        g.pose().pushPose();
+        try {
+            g.pose().translate(0.0F, 0.0F, dock.slotHighlightZ(panel));
+            super.renderSlotHighlight(g, slot, mouseX, mouseY, partialTick);
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     private Slot panelSlotAt(ModulePanel panel, double mouseX, double mouseY) {
@@ -506,8 +754,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         for (Slot slot : getMenu().slots) {
             if (panel.ownsSlot(slot) && slot.isActive()
-                    && mouseX >= slot.x && mouseX < slot.x + 16
-                    && mouseY >= slot.y && mouseY < slot.y + 16) {
+                    && mouseX >= ModulePanel.slotScreenX(slot) && mouseX < ModulePanel.slotScreenX(slot) + 16
+                    && mouseY >= ModulePanel.slotScreenY(slot) && mouseY < ModulePanel.slotScreenY(slot) + 16) {
                 return slot;
             }
         }
@@ -535,7 +783,14 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             if (meListPanel != null) {
                 meListPanel.setSearchFocused(false);
             }
-            return super.mouseClicked(mx, my, button);
+            if (mouseClickedSideBar(mx, my, button)) {
+                return true;
+            }
+            if (mouseClickedExtraChrome(mx, my, button)) {
+                return true;
+            }
+            boolean handled = super.mouseClicked(mx, my, button);
+            return handled || extraColumnAt(mx, my) != null || meSideBar.isMouseOver(mx, my);
         }
 
         // Raise the pointed root before dispatching to panel-owned controls. A finally block commits
@@ -551,15 +806,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private boolean mouseClickedInWorkspace(double mx, double my, int button) {
         ModulePanel target = dock.topLeafAt(mx, my);
 
-        // ME header controls render above panel chrome, but still belong to the ME root and therefore
-        // participate in its pre-dispatch focus transaction.
-        if (isMouseOverMeSettingButton(mx, my)) {
-            if (meListPanel != null) {
-                meListPanel.setSearchFocused(false);
-            }
-            return super.mouseClicked(mx, my, button);
-        }
-
         if (target == craftingPanel) {
             MestRecipeTransferContext.select(
                     getMenu(), MestRecipeTransferContext.Target.CRAFTING);
@@ -568,18 +814,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                     getMenu(), MestRecipeTransferContext.Target.PATTERN_ENCODING);
         }
 
-        // Search focus and custom controls are scoped to the topmost leaf only.
-        if (target == meListPanel) {
-            if (button == 0 && meListPanel.inSearchField(mx, my)) {
-                meListPanel.setSearchFocused(true);
-                // Put the insertion point where the user clicked instead of always appending to the
-                // previous query. The panel accounts for horizontal clipping and code-point
-                // boundaries itself.
-                meListPanel.placeSearchCursor(mx, this.font);
-                return true;
-            }
-            meListPanel.setSearchFocused(false);
-        } else if (meListPanel != null) {
+        if (target != null && target.mouseClicked(mx, my, button)) {
+            return true;
+        }
+        if (target != meListPanel && meListPanel != null) {
             meListPanel.setSearchFocused(false);
         }
 
@@ -617,16 +855,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (button == 0 && target != null && target.scrollbarPressed(mx, my)) {
             return true;
         }
-        if (target == craftingPanel && craftingPanel.mouseClicked(mx, my, button)) {
-            return true;
-        }
         if (dock.mouseClicked(mx, my, button)) {
-            return true;
-        }
-        if (target == patternEncodingPanel && patternEncodingPanel.mouseClicked(mx, my, button)) {
-            return true;
-        }
-        if (target == patternAccessPanel && patternAccessPanel.mouseClicked(mx, my, button)) {
             return true;
         }
 
@@ -636,25 +865,73 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     private boolean isMouseOverToolbarWidget(double mx, double my) {
-        for (Button button : panelButtons) {
-            if (button.visible && button.isMouseOver(mx, my)) {
+        ModulePanel top = dock.topPanelAt(mx, my);
+        if (top != null && dock.isFloatingWindow(top)) {
+            return false;
+        }
+        return meSideBar.isMouseOver(mx, my) || extraColumnAt(mx, my) != null;
+    }
+
+    private boolean mouseClickedSideBar(double mx, double my, int button) {
+        for (Button widget : meSideBar.buttons()) {
+            if (widget.visible && widget.mouseClicked(mx, my, button)) {
                 return true;
             }
         }
         return false;
     }
 
-    private boolean isMouseOverMeSettingButton(double mx, double my) {
-        for (SettingToggleButton<?> button : meSettingButtons) {
-            if (button.visible && button.isMouseOver(mx, my)) {
+    private boolean mouseReleasedSideBar(double mx, double my, int button) {
+        boolean handled = false;
+        for (Button widget : meSideBar.buttons()) {
+            handled |= widget.mouseReleased(mx, my, button);
+        }
+        return handled;
+    }
+
+    private ExtraChrome extraColumnAt(double mx, double my) {
+        List<ExtraChrome> columns = extraColumns();
+        for (int i = columns.size() - 1; i >= 0; i--) {
+            ExtraChrome column = columns.get(i);
+            if (column.contains(mx, my)) {
+                return column;
+            }
+        }
+        return null;
+    }
+
+    private boolean extraColumnOwns(Slot slot) {
+        for (ExtraChrome column : extraColumns()) {
+            if (column.ownsSlot(slot)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private boolean mouseClickedExtraChrome(double mx, double my, int button) {
+        ExtraChrome column = extraColumnAt(mx, my);
+        return column != null && column.mouseClicked(mx, my, button);
+    }
+
+    private List<ExtraChrome> extraColumns() {
+        List<ExtraChrome> columns = new ArrayList<>(2);
+        if (upgradeColumn != null) {
+            columns.add(upgradeColumn);
+        }
+        if (viewCellColumn != null) {
+            columns.add(viewCellColumn);
+        }
+        return columns;
     }
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY) {
+        for (ExtraChrome column : extraColumns()) {
+            if (column.mouseDragged(mx, my)) {
+                return true;
+            }
+        }
         for (ModulePanel panel : dock.panels()) {
             if (panel.scrollbarDragged(mx, my)) {
                 return true;
@@ -668,12 +945,17 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean mouseReleased(double mx, double my, int button) {
-        boolean wasDraggingScrollbar = false;
+        boolean scrollbarDrag = false;
         for (ModulePanel panel : dock.panels()) {
-            wasDraggingScrollbar |= panel.scrollbarDragging();
+            scrollbarDrag |= panel.scrollbarDragging();
             panel.scrollbarReleased();
         }
-        if (wasDraggingScrollbar) {
+        boolean extraDrag = false;
+        for (ExtraChrome column : extraColumns()) {
+            extraDrag |= column.mouseReleased(mx, my, button);
+        }
+        mouseReleasedSideBar(mx, my, button);
+        if (scrollbarDrag || extraDrag) {
             return true;
         }
         if (dock.mouseReleased(mx, my, button)) {
@@ -684,6 +966,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean mouseScrolled(double mx, double my, double scrollX, double scrollY) {
+        ExtraChrome extra = extraColumnAt(mx, my);
+        if (extra != null && extra.mouseScrolled(mx, my, scrollY)) {
+            return true;
+        }
         ModulePanel target = dock.topLeafAt(mx, my);
         // Shift+scroll over an ME entry rolls single items in/out of the network instead of
         // scrolling the grid; this screen-level interaction runs before the panel's own scroll.
@@ -838,6 +1124,16 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     protected void renderTooltip(GuiGraphics g, int x, int y) {
+        g.pose().pushPose();
+        try {
+            g.pose().translate(0.0F, 0.0F, 4500.0F);
+            renderTooltipAtOverlay(g, x, y);
+        } finally {
+            g.pose().popPose();
+        }
+    }
+
+    private void renderTooltipAtOverlay(GuiGraphics g, int x, int y) {
         ModulePanel target = dock.topLeafAt(x, y);
         if (target == patternEncodingPanel && getMenu().getCarried().isEmpty()) {
             Slot slot = panelSlotAt(patternEncodingPanel, x, y);
@@ -902,7 +1198,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean charTyped(char character, int modifiers) {
-        if (meListPanel != null && meListPanel.isSearchFocused() && meListPanel.searchCharTyped(character)) {
+        if (meListPanel != null && meListPanel.searchCharTyped(character, modifiers)) {
             return true;
         }
         return super.charTyped(character, modifiers);
@@ -910,61 +1206,13 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // Search field editing while focused. Keep this handling ahead of AE2/vanilla hotkeys: while
-        // the query owns focus, navigation and clipboard shortcuts must never activate a terminal
-        // action or close the screen.
         if (meListPanel != null && meListPanel.isSearchFocused()) {
-            boolean selecting = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
-            boolean control = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0
-                    || (modifiers & GLFW.GLFW_MOD_SUPER) != 0;
-
-            switch (keyCode) {
-                case GLFW.GLFW_KEY_BACKSPACE -> {
-                    return meListPanel.searchBackspace();
-                }
-                case GLFW.GLFW_KEY_DELETE -> {
-                    return meListPanel.searchDeleteForward();
-                }
-                case GLFW.GLFW_KEY_LEFT -> {
-                    return meListPanel.searchMoveCursor(-1, selecting);
-                }
-                case GLFW.GLFW_KEY_RIGHT -> {
-                    return meListPanel.searchMoveCursor(1, selecting);
-                }
-                case GLFW.GLFW_KEY_HOME -> {
-                    return meListPanel.searchMoveHome(selecting);
-                }
-                case GLFW.GLFW_KEY_END -> {
-                    return meListPanel.searchMoveEnd(selecting);
-                }
-                case GLFW.GLFW_KEY_A -> {
-                    if (control) {
-                        return meListPanel.searchSelectAll();
-                    }
-                }
-                case GLFW.GLFW_KEY_C -> {
-                    if (control) {
-                        return meListPanel.searchCopySelection();
-                    }
-                }
-                case GLFW.GLFW_KEY_X -> {
-                    if (control) {
-                        return meListPanel.searchCutSelection();
-                    }
-                }
-                case GLFW.GLFW_KEY_V -> {
-                    if (control) {
-                        return meListPanel.searchPasteClipboard();
-                    }
-                }
-                case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_ESCAPE -> {
-                    meListPanel.setSearchFocused(false);
-                    return true;
-                }
-                default -> {
-                    // Swallow all other key presses while the field is focused. This prevents
-                    // function keys and terminal shortcuts from leaking through during editing.
-                }
+            if (meListPanel.searchKeyPressed(keyCode, scanCode, modifiers)) {
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                meListPanel.setSearchFocused(false);
+                return true;
             }
             return true;
         }
@@ -1008,6 +1256,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             getMenu().clearCraftingGrid();
             getMenu().clearPatternEncoding();
         }
+        if (meListPanel != null) {
+            meListPanel.rememberSearch();
+        }
         clearRecipeTransferContext();
         super.onClose();
     }
@@ -1015,7 +1266,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     @Override
     public void removed() {
         closePatternAccessSubscription();
-        clearRecipeTransferContext();
         dock.save();
         super.removed();
     }

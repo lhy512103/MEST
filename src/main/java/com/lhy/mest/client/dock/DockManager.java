@@ -1,7 +1,10 @@
 package com.lhy.mest.client.dock;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -13,8 +16,12 @@ import java.util.Map;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.Slot;
 import net.neoforged.fml.loading.FMLPaths;
+
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.client.dock.model.DockAxis;
@@ -52,12 +59,13 @@ import com.lhy.mest.client.dock.workspace.LegacyMigrationContext;
  * revision, and slot coordinates are rewritten only when a leaf's effective geometry changes.
  */
 public final class DockManager {
-    private static final int DIVIDER_THICKNESS = 4;
-    private static final int DIVIDER_HIT_PADDING = 2;
-    private static final int DROP_ZONE_MIN = 12;
-    private static final int DROP_ZONE_MAX = 32;
+    private static final int DIVIDER_THICKNESS = 0;
+    private static final int DIVIDER_HIT_PADDING = 3;
+    private static final int DROP_ZONE_MIN = 8;
+    private static final int DROP_ZONE_MAX = 16;
     private static final int SNAP_DISTANCE = 8;
     private static final int LEAF_DRAG_THRESHOLD = 4;
+    private static final int MAX_UNDO_HISTORY = 32;
 
     private static final int DIVIDER_COLOR = 0xFF777B8C;
     private static final int DIVIDER_HOVER_COLOR = 0xFFACE9FF;
@@ -65,6 +73,15 @@ public final class DockManager {
     private static final int DROP_BORDER_COLOR = 0xDDACE9FF;
     /** Faint fill for the four possible splice zones shown while a root drag hovers a leaf. */
     private static final int DROP_ZONE_FILL_COLOR = 0x33ACE9FF;
+    /**
+     * {@link net.minecraft.client.gui.GuiGraphics#renderItem} draws at local z=150 and count
+     * labels at z=200. Panel chrome uses the current pose z, so each floating root must sit on
+     * its own layer or every lower window's items composite above every later window's frame.
+     */
+    private static final float ROOT_LAYER_Z = 400.0F;
+    /** Lift per-root foreground (buttons, labels) above that root's own item icons. */
+    private static final float FOREGROUND_Z = 250.0F;
+    private int anchoredChromeLayer;
 
     private static final LayoutStyle LAYOUT_STYLE =
             new LayoutStyle(DockInsets.NONE, DIVIDER_THICKNESS);
@@ -110,7 +127,7 @@ public final class DockManager {
     private int structureVersion;
     private int screenWidth;
     private int screenHeight;
-    private DockWorkspace undoWorkspace;
+    private final ArrayDeque<DockWorkspace> undoStack = new ArrayDeque<>();
     private DockWorkspace gestureStartWorkspace;
     /**
      * Original workspace captured when the screen raises a root before dispatching a click to a
@@ -122,6 +139,13 @@ public final class DockManager {
     private boolean layoutLocked;
     private boolean editingLayout;
     private DockWorkspace editingOriginal;
+    private boolean centerOnReturn = true;
+    private boolean pendingCenterOnReturn;
+    private Path preferencesPath;
+    private int editorInsetLeft;
+    private int editorInsetTop;
+    private int editorInsetRight;
+    private int editorInsetBottom;
 
     private enum Mode {
         NONE,
@@ -139,6 +163,7 @@ public final class DockManager {
     private double grabOffsetY;
     private double pressX;
     private double pressY;
+    private boolean moveAllRoots;
     private DropCandidate dropCandidate;
     /** Bounds of the leaf under the pointer while dragging a root; drives the splice-zone affordances. */
     private DockRect dragHoverBounds;
@@ -177,6 +202,8 @@ public final class DockManager {
         Path path = FMLPaths.CONFIGDIR.get()
                 .resolve(MESplicedterminal.MODID)
                 .resolve("layout.json");
+        preferencesPath = path.getParent().resolve("preferences.json");
+        loadPreferences();
         persistence = new AtomicFileDockLayoutStore(path, codec);
 
         boolean loadedCurrentLayout = false;
@@ -212,10 +239,9 @@ public final class DockManager {
         viewportWorkspace = clampWorkspaceToViewport(workspace);
         workspaceRevision = 1;
         persistedRevision = loadedCurrentLayout ? workspaceRevision : -1;
-        undoWorkspace = null;
+        undoStack.clear();
         gestureStartWorkspace = null;
         pendingFocusWorkspace = null;
-        layoutLocked = false;
         mode = Mode.NONE;
         activeRootId = null;
         activeLeafNodeId = null;
@@ -264,6 +290,7 @@ public final class DockManager {
         if (editingLayout && editingOriginal != null && !editingOriginal.equals(workspace)) {
             replaceWorkspace(editingOriginal, true);
         }
+        clearEditorCanvasInsets();
         editingLayout = false;
         editingOriginal = null;
         // The editor can be closed (Esc) in the middle of a gesture; dropping the gesture state
@@ -272,14 +299,121 @@ public final class DockManager {
     }
 
     public void commitLayoutEditing() {
+        clearEditorCanvasInsets();
         editingLayout = false;
         editingOriginal = null;
         resetGestureState();
+        if (centerOnReturn) {
+            centerVisibleWorkspace();
+            pendingCenterOnReturn = true;
+        }
         save();
+    }
+
+    /**
+     * Restricts editor-time clamping so title bars stay on the canvas instead of sliding under
+     * the editor chrome. Insets are transient and do not rewrite the canonical workspace until
+     * the player actually moves a window.
+     */
+    public void setEditorCanvasInsets(int left, int top, int right, int bottom) {
+        if (!editingLayout) {
+            return;
+        }
+        int newLeft = Math.max(0, left);
+        int newTop = Math.max(0, top);
+        int newRight = Math.max(0, right);
+        int newBottom = Math.max(0, bottom);
+        if (editorInsetLeft == newLeft && editorInsetTop == newTop
+                && editorInsetRight == newRight && editorInsetBottom == newBottom) {
+            return;
+        }
+        editorInsetLeft = newLeft;
+        editorInsetTop = newTop;
+        editorInsetRight = newRight;
+        editorInsetBottom = newBottom;
+        viewportWorkspace = clampWorkspaceToViewport(workspace);
+        projectionDirty = true;
     }
 
     public DockWorkspace workspaceSnapshot() {
         return workspace;
+    }
+
+    public boolean centerOnReturn() {
+        return centerOnReturn;
+    }
+
+    public void setCenterOnReturn(boolean value) {
+        if (centerOnReturn == value) {
+            return;
+        }
+        centerOnReturn = value;
+        savePreferences();
+    }
+
+    public void applyPendingCenter() {
+        if (!pendingCenterOnReturn || editingLayout) {
+            return;
+        }
+        pendingCenterOnReturn = false;
+        DockWorkspace before = workspace;
+        centerVisibleWorkspace();
+        if (workspace != before) {
+            save();
+        }
+    }
+
+    public void centerVisibleWorkspace() {
+        ensureProjection();
+        var movedRootIds = new java.util.LinkedHashSet<String>();
+        DockRect union = null;
+        for (FloatingRoot root : workspace.roots()) {
+            if (!rootInCenterGroup(root)) {
+                continue;
+            }
+            DockRect part = contentChromeBounds(root);
+            if (part == null || part.width() <= 0 || part.height() <= 0) {
+                continue;
+            }
+            movedRootIds.add(root.rootId());
+            union = union == null ? part : union.union(part);
+        }
+        DockWorkspace next = editor.centerRoots(workspace, movedRootIds, union, screenWidth, screenHeight);
+        if (!next.equals(workspace)) {
+            replaceWorkspace(next, true);
+        }
+    }
+
+    /** Visible framed windows only. Encoding tabs and the ME scroller well are outside chrome. */
+    public DockRect anchoredGroupBounds() {
+        ensureProjection();
+        DockRect union = null;
+        for (FloatingRoot root : workspace.roots()) {
+            if (!rootInCenterGroup(root)) {
+                continue;
+            }
+            DockRect part = contentChromeBounds(root);
+            if (part == null || part.width() <= 0 || part.height() <= 0) {
+                continue;
+            }
+            union = union == null ? part : union.union(part);
+        }
+        return union;
+    }
+
+    private boolean rootInCenterGroup(FloatingRoot root) {
+        if (!rootEffectivelyVisible(root.rootId())) {
+            return false;
+        }
+        for (LeafNode leaf : leavesOf(root)) {
+            if (projection.visibleLeaf(leaf.nodeId()).isEmpty()) {
+                continue;
+            }
+            if (!workspace.policyFor(leaf.moduleId()).floating()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public ModuleLayoutPolicy policyFor(ModulePanel panel) {
@@ -290,9 +424,30 @@ public final class DockManager {
         if (panel == null || policy == null) {
             throw new NullPointerException("panel and policy");
         }
-        var policies = new LinkedHashMap<>(workspace.policies());
+        LeafNode leaf = leafForPanel(panel);
+        ModuleLayoutPolicy current = workspace.policyFor(panel.id());
+        DockWorkspace next = workspace;
+        if (current.visible() != policy.visible()) {
+            DockRect previousBounds = current.visible() ? projectionBounds(leaf.nodeId()) : null;
+            next = editor.setLeafVisible(
+                    next, leaf.nodeId(), policy.visible(), previousBounds, null, previousBounds);
+        }
+        var policies = new LinkedHashMap<>(next.policies());
         policies.put(panel.id(), policy);
-        replaceWorkspace(new DockWorkspace(workspace.roots(), policies), false);
+        next = next.withPolicies(policies);
+        replaceWorkspace(next, false);
+    }
+
+    public void togglePinned(ModulePanel panel) {
+        if (panel == null || !panel.pinVisible()) {
+            return;
+        }
+        ModuleLayoutPolicy current = workspace.policyFor(panel.id());
+        if (!current.floating()) {
+            return;
+        }
+        setModulePolicy(panel, current.withPinned(!current.pinned()));
+        save();
     }
 
     public void applyEditedWorkspace(DockWorkspace edited) {
@@ -322,14 +477,23 @@ public final class DockManager {
         ensureProjection();
     }
 
+    public void relayoutAllSlots() {
+        ensureProjection();
+        for (ModulePanel panel : panels) {
+            panel.layoutSlots();
+        }
+    }
+
     public void toggleVisible(ModulePanel panel) {
         LeafNode leaf = leafForPanel(panel);
+        boolean currentlyVisible = workspace.policyFor(leaf.moduleId()).visible();
+        boolean nextVisible = !currentlyVisible;
+        DockRect previousBounds = currentlyVisible ? projectionBounds(leaf.nodeId()) : null;
         rememberUndoPoint(workspace);
-        DockWorkspace changed = editor.setLeafVisible(
-                workspace,
-                leaf.nodeId(),
-                !workspace.policyFor(leaf.moduleId()).visible());
-        replaceWorkspace(changed, false);
+        replaceWorkspace(
+                editor.setLeafVisible(
+                        workspace, leaf.nodeId(), nextVisible, previousBounds, null, previousBounds),
+                false);
         save();
     }
 
@@ -348,18 +512,18 @@ public final class DockManager {
         layoutLocked = !layoutLocked;
         resetGestureState();
         structureVersion++;
+        savePreferences();
     }
 
     public boolean canUndoLayout() {
-        return undoWorkspace != null;
+        return !undoStack.isEmpty();
     }
 
     public void undoLayout() {
-        if (undoWorkspace == null) {
+        if (undoStack.isEmpty()) {
             return;
         }
-        DockWorkspace restore = undoWorkspace;
-        undoWorkspace = null;
+        DockWorkspace restore = undoStack.removeFirst();
         persistenceBlockedAfterLoadFailure = false;
         structureVersion++;
         replaceWorkspace(restore, true);
@@ -401,6 +565,11 @@ public final class DockManager {
         save();
     }
 
+    @FunctionalInterface
+    public interface AnchoredChromeRenderer {
+        void render(GuiGraphics graphics, Font font, int mouseX, int mouseY, float partialTicks);
+    }
+
     public void renderBackground(
             GuiGraphics graphics,
             Font font,
@@ -408,33 +577,90 @@ public final class DockManager {
             int mouseY,
             float partialTicks,
             ModulePanel.PanelSlotRenderer slotRenderer) {
+        renderBackground(graphics, font, mouseX, mouseY, partialTicks, slotRenderer, null);
+    }
+
+    public void renderBackground(
+            GuiGraphics graphics,
+            Font font,
+            int mouseX,
+            int mouseY,
+            float partialTicks,
+            ModulePanel.PanelSlotRenderer slotRenderer,
+            AnchoredChromeRenderer anchoredChrome) {
         ensureProjection();
         ModulePanel hoveredLeaf = topLeafAt(mouseX, mouseY);
         FloatingRoot hoveredRoot = topRootAt(mouseX, mouseY, null);
         DividerHit hoveredDivider = hoveredRoot == null ? null : dividerAt(hoveredRoot, mouseX, mouseY);
 
-        for (FloatingRoot root : viewportWorkspace.roots()) {
-            if (!rootEffectivelyVisible(root.rootId())) {
-                continue;
-            }
-            for (LeafNode leaf : leavesOf(root)) {
-                var placement = projection.visibleLeaf(leaf.nodeId());
-                if (placement.isEmpty()) {
-                    continue;
+        int layer = 0;
+        boolean chromeDrawn = false;
+        for (FloatingRoot root : paintOrderRoots()) {
+            if (!chromeDrawn && !isAnchoredRoot(root)) {
+                anchoredChromeLayer = layer;
+                if (anchoredChrome != null) {
+                    int chromeLayer = layer++;
+                    withRootLayer(graphics, chromeLayer, 0.0F, () ->
+                            anchoredChrome.render(graphics, font, mouseX, mouseY, partialTicks));
                 }
-                ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
-                int routedMouseX = panel == hoveredLeaf ? mouseX : Integer.MIN_VALUE;
-                int routedMouseY = panel == hoveredLeaf ? mouseY : Integer.MIN_VALUE;
-                panel.renderFrame(graphics, font, routedMouseX, routedMouseY, partialTicks);
-                panel.renderBackgroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
-                panel.renderSlots(graphics, slotRenderer);
+                chromeDrawn = true;
             }
-            renderDividers(graphics, root, hoveredDivider);
-            // A composite root owns one resize affordance. Leaf panels deliberately do not draw
-            // their own grips, otherwise every leaf in a split would expose a dead handle.
-            ModulePanel.renderResizeGrip(graphics, root.bounds());
+            int rootLayer = layer++;
+            withRootLayer(graphics, rootLayer, 0.0F, () -> {
+                boolean composite = visibleLeafCount(root) > 1;
+                if (composite) {
+                    for (LeafNode leaf : leavesOf(root)) {
+                        var placement = projection.visibleLeaf(leaf.nodeId());
+                        if (placement.isEmpty()) {
+                            continue;
+                        }
+                        ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+                        int routedMouseX = panel == hoveredLeaf ? mouseX : Integer.MIN_VALUE;
+                        int routedMouseY = panel == hoveredLeaf ? mouseY : Integer.MIN_VALUE;
+                        panel.renderUnderlay(graphics, font, routedMouseX, routedMouseY, partialTicks);
+                    }
+                    boolean skipRightShadow = false;
+                    for (LeafNode leaf : leavesOf(root)) {
+                        ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+                        if (panel != null && panel.outsideHitWidth() > 0) {
+                            skipRightShadow = true;
+                            break;
+                        }
+                    }
+                    ModulePanel.renderRootChrome(graphics, contentChromeBounds(root), skipRightShadow);
+                }
+                for (LeafNode leaf : leavesOf(root)) {
+                    var placement = projection.visibleLeaf(leaf.nodeId());
+                    if (placement.isEmpty()) {
+                        continue;
+                    }
+                    ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+                    int routedMouseX = panel == hoveredLeaf ? mouseX : Integer.MIN_VALUE;
+                    int routedMouseY = panel == hoveredLeaf ? mouseY : Integer.MIN_VALUE;
+                    if (!composite) {
+                        panel.renderUnderlay(graphics, font, routedMouseX, routedMouseY, partialTicks);
+                        panel.renderFrame(graphics, font, routedMouseX, routedMouseY, partialTicks);
+                    } else if (!panel.isOutsideChrome()) {
+                        panel.renderSectionHeader(graphics, font);
+                    }
+                    panel.renderBackgroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
+                    if (isAnchoredRoot(root)) {
+                        panel.renderSlots(graphics, slotRenderer);
+                    }
+                }
+                renderDividers(graphics, root, hoveredDivider);
+                ModulePanel.renderResizeGrip(graphics, root.bounds());
+            });
         }
-        renderDropHighlight(graphics);
+        if (!chromeDrawn) {
+            anchoredChromeLayer = layer;
+            if (anchoredChrome != null) {
+                int chromeLayer = layer++;
+                withRootLayer(graphics, chromeLayer, 0.0F, () ->
+                        anchoredChrome.render(graphics, font, mouseX, mouseY, partialTicks));
+            }
+        }
+        withRootLayer(graphics, layer, 0.0F, () -> renderDropHighlight(graphics));
     }
 
     public void renderForeground(
@@ -443,25 +669,68 @@ public final class DockManager {
             int mouseX,
             int mouseY,
             float partialTicks) {
+        renderForeground(graphics, font, mouseX, mouseY, partialTicks, null);
+    }
+
+    public void renderForeground(
+            GuiGraphics graphics,
+            Font font,
+            int mouseX,
+            int mouseY,
+            float partialTicks,
+            ModulePanel.PanelSlotRenderer slotRenderer) {
         ensureProjection();
         FloatingRoot hoveredRoot = topRootAt(mouseX, mouseY, null);
         ModulePanel hoveredLeaf = topLeafAt(mouseX, mouseY);
         // Roots are stored back-to-front. Keep that order for compositing, but route the real
         // cursor only to the topmost root under it; a lower overlapping root must never emit a
         // tooltip/hover state on top of the root that visually owns the cursor.
-        for (FloatingRoot root : viewportWorkspace.roots()) {
-            if (!rootEffectivelyVisible(root.rootId())) {
-                continue;
+        int layer = 0;
+        boolean chromeDrawn = false;
+        for (FloatingRoot root : paintOrderRoots()) {
+            if (!chromeDrawn && !isAnchoredRoot(root)) {
+                anchoredChromeLayer = Math.max(anchoredChromeLayer, layer);
+                chromeDrawn = true;
+                layer++;
             }
-            for (LeafNode leaf : leavesOf(root)) {
-                if (projection.visibleLeaf(leaf.nodeId()).isEmpty()) {
-                    continue;
+            int rootLayer = layer++;
+            withRootLayer(graphics, rootLayer, FOREGROUND_Z, () -> {
+                for (LeafNode leaf : leavesOf(root)) {
+                    if (projection.visibleLeaf(leaf.nodeId()).isEmpty()) {
+                        continue;
+                    }
+                    ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+                    int routedMouseX = root == hoveredRoot && panel == hoveredLeaf ? mouseX : Integer.MIN_VALUE;
+                    int routedMouseY = root == hoveredRoot && panel == hoveredLeaf ? mouseY : Integer.MIN_VALUE;
+                    if (slotRenderer != null && !isAnchoredRoot(root)) {
+                        panel.renderSlots(graphics, slotRenderer);
+                    }
+                    panel.renderForegroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
+                    if (panel.pinVisible() && panel.inPinButton(routedMouseX, routedMouseY)) {
+                        graphics.renderComponentTooltip(
+                                font,
+                                List.of(Component.translatable(panel.pinned()
+                                        ? "gui.mesplicedterminal.unpin_panel"
+                                        : "gui.mesplicedterminal.pin_panel")),
+                                mouseX,
+                                mouseY);
+                    }
                 }
-                ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
-                int routedMouseX = root == hoveredRoot && panel == hoveredLeaf ? mouseX : Integer.MIN_VALUE;
-                int routedMouseY = root == hoveredRoot && panel == hoveredLeaf ? mouseY : Integer.MIN_VALUE;
-                panel.renderForegroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
-            }
+            });
+        }
+    }
+
+    /**
+     * Raise the current pose so this floating root composites as a single window above earlier
+     * roots. {@code extraZ} stacks same-root passes (foreground above that root's items).
+     */
+    private static void withRootLayer(GuiGraphics graphics, int layer, float extraZ, Runnable draw) {
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, layer * ROOT_LAYER_Z + extraZ);
+        try {
+            draw.run();
+        } finally {
+            graphics.pose().popPose();
         }
     }
 
@@ -531,11 +800,14 @@ public final class DockManager {
      */
     public void beginPanelInteraction(double mouseX, double mouseY) {
         ensureProjection();
-        if (layoutLocked || mode != Mode.NONE || pendingFocusWorkspace != null) {
+        if (mode != Mode.NONE || pendingFocusWorkspace != null) {
             return;
         }
         FloatingRoot root = topRootAt(mouseX, mouseY, null);
         if (root == null || viewportWorkspace.roots().getLast().rootId().equals(root.rootId())) {
+            return;
+        }
+        if (layoutLocked && isAnchoredRoot(root)) {
             return;
         }
         DockWorkspace beforeInteraction = workspace;
@@ -574,10 +846,9 @@ public final class DockManager {
         // into a palette: press-and-drag places the module even when its policy hid it.
         ModuleLayoutPolicy policy = workspace.policyFor(leaf.moduleId());
         if (!policy.visible()) {
-            var policies = new LinkedHashMap<>(workspace.policies());
-            policies.put(leaf.moduleId(),
-                    new ModuleLayoutPolicy(true, policy.movable(), policy.resizable()));
-            replaceWorkspace(new DockWorkspace(workspace.roots(), policies), false);
+            replaceWorkspace(
+                    editor.setLeafVisible(workspace, leaf.nodeId(), true, null, null, null),
+                    false);
         }
 
         FloatingRoot root = rootContainingNode(viewportWorkspace, leaf.nodeId());
@@ -591,7 +862,7 @@ public final class DockManager {
                 return false;
             }
             String newRootId = "root:" + NodeIds.random();
-            DockWorkspace detached = editor.detach(workspace, leaf.nodeId(), newRootId, leafBounds);
+            DockWorkspace detached = detachAndRestore(workspace, leaf.nodeId(), newRootId);
             detached = editor.raiseRoot(detached, newRootId);
             if (detached.equals(workspace)) {
                 return false;
@@ -613,6 +884,36 @@ public final class DockManager {
         dragHoverBounds = null;
         gestureStartWorkspace = before;
         return true;
+    }
+
+    /**
+     * Pose-stack Z used for the vanilla/AE2 slot hover overlay so it composites with the
+     * same floating root as the slot icons instead of falling behind a raised window.
+     */
+    public float slotHighlightZ(ModulePanel panel) {
+        ensureProjection();
+        LeafNode leaf = leafForPanel(panel);
+        FloatingRoot host = rootContainingNode(viewportWorkspace, leaf.nodeId());
+        if (host == null) {
+            return 200.0F;
+        }
+        return paintLayerOf(host) * ROOT_LAYER_Z + 200.0F;
+    }
+
+    private int paintLayerOf(FloatingRoot target) {
+        int layer = 0;
+        boolean chromeDrawn = false;
+        for (FloatingRoot root : paintOrderRoots()) {
+            if (!chromeDrawn && !isAnchoredRoot(root)) {
+                layer++;
+                chromeDrawn = true;
+            }
+            if (root.rootId().equals(target.rootId())) {
+                return layer;
+            }
+            layer++;
+        }
+        return 0;
     }
 
     public ModulePanel panelForSlot(Slot slot) {
@@ -643,7 +944,7 @@ public final class DockManager {
             return false;
         }
 
-        if (layoutLocked && !editingLayout) {
+        if (layoutLocked && !editingLayout && isAnchoredRoot(root)) {
             return false;
         }
 
@@ -689,6 +990,13 @@ public final class DockManager {
         }
 
         ModulePanel leaf = leafAt(root, mouseX, mouseY);
+        if (leaf != null && leaf.inPinButton(mouseX, mouseY)) {
+            togglePinned(leaf);
+            if (rootRaised) {
+                commitInteraction(beforeInteraction);
+            }
+            return true;
+        }
         if (leaf != null && leaf.inTitleBar(mouseX, mouseY)) {
             LeafNode leafNode = leafNodeAt(root, mouseX, mouseY);
             if (leafNode == null) {
@@ -706,9 +1014,22 @@ public final class DockManager {
             }
             pressX = mouseX;
             pressY = mouseY;
-            if (root.content().nodeId().equals(leafNode.nodeId())) {
+            if (editingLayout && Screen.hasControlDown()) {
+                // Ctrl+drag in the editor translates every floating root as one group.
+                mode = Mode.DRAG_ROOT;
+                moveAllRoots = true;
+                activeRootId = root.rootId();
+                grabOffsetX = mouseX - root.bounds().x();
+                grabOffsetY = mouseY - root.bounds().y();
+            } else if (root.content().nodeId().equals(leafNode.nodeId())) {
                 // A standalone leaf is itself the floating root, so retain the fast path that
                 // drags that root immediately.
+                mode = Mode.DRAG_ROOT;
+                activeRootId = root.rootId();
+                grabOffsetX = mouseX - root.bounds().x();
+                grabOffsetY = mouseY - root.bounds().y();
+            } else if (!editingLayout && !policyFor(leafNode).floating()) {
+                // Non-floating modules stay in the terminal window; drag the whole spliced root.
                 mode = Mode.DRAG_ROOT;
                 activeRootId = root.rootId();
                 grabOffsetX = mouseX - root.bounds().x();
@@ -761,6 +1082,12 @@ public final class DockManager {
             mode = Mode.DRAG_ROOT;
         }
         if (mode == Mode.DRAG_ROOT) {
+            if (moveAllRoots) {
+                translateAllRoots(mouseX, mouseY);
+                dropCandidate = null;
+                dragHoverBounds = null;
+                return true;
+            }
             FloatingRoot root = rootById(activeRootId);
             DockRect bounds = root.bounds();
             DockRect moved = clampRectToViewport(new DockRect(
@@ -802,7 +1129,7 @@ public final class DockManager {
             finishGesture();
             return true;
         }
-        if (mode == Mode.DRAG_ROOT) {
+        if (mode == Mode.DRAG_ROOT && !moveAllRoots) {
             if (dropCandidate != null) {
                 executeDrop(dropCandidate);
             } else {
@@ -819,11 +1146,68 @@ public final class DockManager {
         commitInteraction(beforeInteraction);
     }
 
+    private void translateAllRoots(double mouseX, double mouseY) {
+        FloatingRoot active = rootById(activeRootId);
+        int desiredDx = (int) Math.round(mouseX - grabOffsetX) - active.bounds().x();
+        int desiredDy = (int) Math.round(mouseY - grabOffsetY) - active.bounds().y();
+        int dx = clampedVisibleGroupDelta(desiredDx, true);
+        int dy = clampedVisibleGroupDelta(desiredDy, false);
+        if (dx == 0 && dy == 0) {
+            return;
+        }
+        DockWorkspace next = workspace;
+        for (FloatingRoot root : viewportWorkspace.roots()) {
+            DockRect bounds = root.bounds();
+            next = editor.setRootBounds(next, root.rootId(), new DockRect(
+                    bounds.x() + dx,
+                    bounds.y() + dy,
+                    bounds.width(),
+                    bounds.height()));
+        }
+        replaceWorkspace(next, false);
+    }
+
+    /**
+     * Shared translation for Ctrl+drag. Hidden roots keep their relative offset but must not
+     * shrink the allowed range: their leftover default geometry often fills the canvas and would
+     * otherwise pin the visible cluster to a few pixels.
+     */
+    int clampedVisibleGroupDelta(int desired, boolean horizontal) {
+        int minDelta = Integer.MIN_VALUE;
+        int maxDelta = Integer.MAX_VALUE;
+        boolean constrained = false;
+        for (FloatingRoot root : viewportWorkspace.roots()) {
+            if (!hasVisibleLeaf(workspace, root.content())) {
+                continue;
+            }
+            constrained = true;
+            DockRect bounds = root.bounds();
+            DockRect farthestPositive = clampRectToViewport(
+                    new DockRect(Integer.MAX_VALUE / 4, Integer.MAX_VALUE / 4, bounds.width(), bounds.height()),
+                    DockSize.ZERO);
+            DockRect farthestNegative = clampRectToViewport(
+                    new DockRect(Integer.MIN_VALUE / 4, Integer.MIN_VALUE / 4, bounds.width(), bounds.height()),
+                    DockSize.ZERO);
+            if (horizontal) {
+                minDelta = Math.max(minDelta, farthestNegative.x() - bounds.x());
+                maxDelta = Math.min(maxDelta, farthestPositive.x() - bounds.x());
+            } else {
+                minDelta = Math.max(minDelta, farthestNegative.y() - bounds.y());
+                maxDelta = Math.min(maxDelta, farthestPositive.y() - bounds.y());
+            }
+        }
+        if (!constrained) {
+            return 0;
+        }
+        return Math.max(minDelta, Math.min(maxDelta, desired));
+    }
+
     private void resetGestureState() {
         mode = Mode.NONE;
         activeRootId = null;
         activeLeafNodeId = null;
         activeSplitId = null;
+        moveAllRoots = false;
         dropCandidate = null;
         dragHoverBounds = null;
         gestureStartWorkspace = null;
@@ -844,6 +1228,40 @@ public final class DockManager {
                     "Failed to write terminal layout v{}",
                     DockLayoutDto.CURRENT_VERSION,
                     e);
+        }
+    }
+
+    private void loadPreferences() {
+        centerOnReturn = true;
+        layoutLocked = false;
+        if (preferencesPath == null || !Files.isRegularFile(preferencesPath)) {
+            return;
+        }
+        try {
+            JsonObject object = JsonParser.parseString(Files.readString(preferencesPath)).getAsJsonObject();
+            if (object.has("centerOnReturn")) {
+                centerOnReturn = object.get("centerOnReturn").getAsBoolean();
+            }
+            if (object.has("layoutLocked")) {
+                layoutLocked = object.get("layoutLocked").getAsBoolean();
+            }
+        } catch (IOException | RuntimeException e) {
+            MESplicedterminal.LOGGER.warn("Failed to read terminal layout preferences", e);
+        }
+    }
+
+    private void savePreferences() {
+        if (preferencesPath == null) {
+            return;
+        }
+        try {
+            Files.createDirectories(preferencesPath.getParent());
+            JsonObject object = new JsonObject();
+            object.addProperty("centerOnReturn", centerOnReturn);
+            object.addProperty("layoutLocked", layoutLocked);
+            Files.writeString(preferencesPath, object.toString(), StandardCharsets.UTF_8);
+        } catch (IOException | RuntimeException e) {
+            MESplicedterminal.LOGGER.warn("Failed to write terminal layout preferences", e);
         }
     }
 
@@ -868,6 +1286,14 @@ public final class DockManager {
         exclusionCache = null;
         LayoutProjection next = layoutEngine.project(viewportWorkspace);
         for (FloatingRoot root : viewportWorkspace.roots()) {
+            int visibleLeaves = 0;
+            for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+                if (next.visibleLeaf(leaf.nodeId()).isPresent()) {
+                    visibleLeaves++;
+                }
+            }
+            boolean composite = visibleLeaves > 1;
+            DockRect window = composite ? root.bounds() : null;
             for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
                 ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
                 var placement = next.visibleLeaf(leaf.nodeId());
@@ -884,9 +1310,27 @@ public final class DockManager {
                     panel.width = bounds.width();
                     panel.height = bounds.height();
                 }
-                boolean stateChanged = panel.visible != visible || panel.hosted;
+                boolean stateChanged = panel.visible != visible || panel.hosted || panel.spliced != composite
+                        || !java.util.Objects.equals(panel.splicedWindow, window);
                 panel.visible = visible;
                 panel.hosted = false;
+                panel.spliced = composite;
+                panel.splicedWindow = window;
+                int inset = panel.preferredContentRightInset();
+                stateChanged = stateChanged || panel.contentRightInset != inset;
+                panel.contentRightInset = inset;
+                boolean anchored = false;
+                for (LeafNode sibling : LayoutTrees.leaves(root.content())) {
+                    if (next.visibleLeaf(sibling.nodeId()).isEmpty()) {
+                        continue;
+                    }
+                    if (!workspace.policyFor(sibling.moduleId()).floating()) {
+                        anchored = true;
+                        break;
+                    }
+                }
+                ModuleLayoutPolicy policy = workspace.policyFor(leaf.moduleId());
+                panel.setPinControl(visible && !anchored && policy.floating(), policy.pinned());
                 if (geometryChanged || stateChanged) {
                     panel.layoutSlots();
                 }
@@ -915,12 +1359,18 @@ public final class DockManager {
     }
 
     private void rememberUndoPoint(DockWorkspace snapshot) {
-        if (snapshot == null || snapshot.equals(workspace) && snapshot.equals(undoWorkspace)) {
+        if (snapshot == null || snapshot.equals(workspace)) {
             return;
         }
-        boolean wasAvailable = undoWorkspace != null;
-        undoWorkspace = snapshot;
-        if (!wasAvailable) {
+        if (!undoStack.isEmpty() && snapshot.equals(undoStack.peekFirst())) {
+            return;
+        }
+        boolean wasEmpty = undoStack.isEmpty();
+        undoStack.addFirst(snapshot);
+        while (undoStack.size() > MAX_UNDO_HISTORY) {
+            undoStack.removeLast();
+        }
+        if (wasEmpty) {
             structureVersion++;
         }
     }
@@ -949,7 +1399,7 @@ public final class DockManager {
         for (FloatingRoot root : source.roots()) {
             sanitizedRoots.add(root.withBounds(clampRectToViewport(root.bounds(), DockSize.ZERO)));
         }
-        DockWorkspace sanitized = new DockWorkspace(sanitizedRoots, source.policies());
+        DockWorkspace sanitized = source.withRoots(sanitizedRoots);
         LayoutProjection measured = layoutEngine.project(sanitized);
 
         var clampedRoots = new ArrayList<FloatingRoot>();
@@ -961,19 +1411,36 @@ public final class DockManager {
                     .orElse(DockSize.ZERO);
             clampedRoots.add(root.withBounds(clampRectToViewport(root.bounds(), minimum)));
         }
-        return new DockWorkspace(clampedRoots, source.policies());
+        return source.withRoots(clampedRoots);
     }
 
     private DockRect clampRectToViewport(DockRect bounds, DockSize minimum) {
-        int width = Math.min(screenWidth, Math.max(bounds.width(), minimum.width()));
-        int height = Math.min(screenHeight, Math.max(bounds.height(), minimum.height()));
+        int minX = editingLayout ? editorInsetLeft : 0;
+        int minY = editingLayout ? editorInsetTop : 0;
+        int maxRight = Math.max(minX + 1, screenWidth - (editingLayout ? editorInsetRight : 0));
+        int maxBottom = Math.max(minY + 1, screenHeight - (editingLayout ? editorInsetBottom : 0));
+        int canvasWidth = Math.max(1, maxRight - minX);
+        int canvasHeight = Math.max(1, maxBottom - minY);
+        int width = Math.min(canvasWidth, Math.max(bounds.width(), minimum.width()));
+        int height = Math.min(canvasHeight, Math.max(bounds.height(), minimum.height()));
         width = Math.max(1, width);
         height = Math.max(1, height);
-        int maxX = Math.max(0, screenWidth - width);
-        int maxY = Math.max(0, screenHeight - height);
-        int x = (int) Math.max(0L, Math.min((long) bounds.x(), (long) maxX));
-        int y = (int) Math.max(0L, Math.min((long) bounds.y(), (long) maxY));
+        int maxX = Math.max(minX, maxRight - width);
+        int maxY = Math.max(minY, maxBottom - height);
+        int x = (int) Math.max((long) minX, Math.min((long) bounds.x(), (long) maxX));
+        int y = (int) Math.max((long) minY, Math.min((long) bounds.y(), (long) maxY));
         return new DockRect(x, y, width, height);
+    }
+
+    private void clearEditorCanvasInsets() {
+        editorInsetLeft = 0;
+        editorInsetTop = 0;
+        editorInsetRight = 0;
+        editorInsetBottom = 0;
+        if (workspace != null) {
+            viewportWorkspace = clampWorkspaceToViewport(workspace);
+            projectionDirty = true;
+        }
     }
 
     private void resizeDivider(double mouseX, double mouseY) {
@@ -1005,7 +1472,7 @@ public final class DockManager {
 
     private void updateDropCandidate(double mouseX, double mouseY) {
         FloatingRoot targetRoot = topRootAt(mouseX, mouseY, activeRootId);
-        if (targetRoot == null) {
+        if (targetRoot == null || (layoutLocked && !editingLayout && isAnchoredRoot(targetRoot))) {
             dropCandidate = null;
             dragHoverBounds = null;
             return;
@@ -1083,8 +1550,11 @@ public final class DockManager {
         }
         FloatingRoot sourceRoot = rootById(activeRootId);
         LayoutNode node = LayoutTrees.find(sourceRoot.content(), activeLeafNodeId).orElse(null);
-        if (!(node instanceof LeafNode)
+        if (!(node instanceof LeafNode leaf)
                 || sourceRoot.content().nodeId().equals(activeLeafNodeId)) {
+            return false;
+        }
+        if (!editingLayout && !policyFor(leaf).floating()) {
             return false;
         }
         DockRect leafBounds = projection.boundsFor(activeLeafNodeId).orElse(null);
@@ -1093,7 +1563,7 @@ public final class DockManager {
         }
 
         String newRootId = "root:" + NodeIds.random();
-        DockWorkspace changed = editor.detach(workspace, activeLeafNodeId, newRootId, leafBounds);
+        DockWorkspace changed = detachAndRestore(workspace, activeLeafNodeId, newRootId);
         changed = editor.raiseRoot(changed, newRootId);
         replaceWorkspace(changed, true);
         activeRootId = newRootId;
@@ -1107,18 +1577,108 @@ public final class DockManager {
             return;
         }
         LayoutNode detached = detachFirst ? split.first() : split.second();
-        LayoutNode remaining = detachFirst ? split.second() : split.first();
-        DockRect detachedBounds = projection.boundsFor(detached.nodeId()).orElse(sourceRoot.bounds());
-        DockRect remainingBounds = projection.boundsFor(remaining.nodeId()).orElse(sourceRoot.bounds());
-        String newRootId = "root:" + NodeIds.random();
-
-        DockWorkspace changed = editor.detach(workspace, detached.nodeId(), newRootId, detachedBounds);
-        if (sourceRoot.content().nodeId().equals(split.nodeId())) {
-            changed = editor.setRootBounds(changed, sourceRoot.rootId(), remainingBounds);
+        if (!editingLayout && !subtreeCanFloat(detached)) {
+            return;
         }
+        String newRootId = "root:" + NodeIds.random();
+        DockWorkspace changed = detachAndRestore(workspace, detached.nodeId(), newRootId);
         changed = editor.raiseRoot(changed, newRootId);
         replaceWorkspace(changed, true);
         save();
+    }
+
+    /**
+     * Splits {@code nodeId} into its own floating root and restores both windows to the standalone
+     * sizes captured at splice time. Without a stored size, remaining content keeps its projected
+     * slice instead of the combined host window.
+     */
+    private boolean subtreeCanFloat(LayoutNode node) {
+        for (LeafNode leaf : LayoutTrees.leaves(node)) {
+            if (projection.visibleLeaf(leaf.nodeId()).isEmpty()) {
+                continue;
+            }
+            if (!policyFor(leaf).floating()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private DockWorkspace detachAndRestore(DockWorkspace source, String nodeId, String newRootId) {
+        FloatingRoot sourceRoot = rootContainingNode(source, nodeId);
+        DockRect detachedProjected = projection.boundsFor(nodeId).orElse(sourceRoot.bounds());
+        DockRect detachedBounds = source.restoredBounds(nodeId, detachedProjected);
+        DockWorkspace changed = editor.detach(source, nodeId, newRootId, detachedBounds);
+        FloatingRoot remainingRoot = null;
+        for (FloatingRoot root : changed.roots()) {
+            if (root.rootId().equals(sourceRoot.rootId())) {
+                remainingRoot = root;
+                break;
+            }
+        }
+        if (remainingRoot == null) {
+            return changed;
+        }
+        DockRect remainingBounds = remainingBoundsAfterDetach(
+                source, sourceRoot, remainingRoot.content(), detachedProjected);
+        if (!remainingBounds.equals(remainingRoot.bounds())) {
+            changed = editor.setRootBounds(changed, remainingRoot.rootId(), remainingBounds);
+        }
+        return changed;
+    }
+
+    private DockRect remainingBoundsAfterDetach(
+            DockWorkspace source,
+            FloatingRoot sourceRoot,
+            LayoutNode remaining,
+            DockRect detachedProjected) {
+        DockRect remainingProjected = projection.boundsFor(remaining.nodeId()).orElse(sourceRoot.bounds());
+        if (source.restoreSizes().containsKey(remaining.nodeId())) {
+            return source.restoredBounds(remaining.nodeId(), remainingProjected);
+        }
+        if (remainingProjected.equals(sourceRoot.bounds())) {
+            DockRect shrunk = excludeSlice(sourceRoot.bounds(), detachedProjected);
+            if (!shrunk.equals(sourceRoot.bounds()) && shrunk.width() > 0 && shrunk.height() > 0) {
+                return shrunk;
+            }
+        }
+        return remainingProjected;
+    }
+
+    /** Drops a full-width or full-height detached slice from {@code root} along the split axis. */
+    private static DockRect excludeSlice(DockRect root, DockRect slice) {
+        if (slice == null || slice.width() <= 0 || slice.height() <= 0) {
+            return root;
+        }
+        boolean spansHeight = slice.y() <= root.y() && slice.bottom() >= root.bottom();
+        boolean spansWidth = slice.x() <= root.x() && slice.right() >= root.right();
+        if (spansHeight && slice.width() < root.width()) {
+            if (slice.x() <= root.x()) {
+                int width = root.right() - slice.right();
+                if (width > 0) {
+                    return new DockRect(slice.right(), root.y(), width, root.height());
+                }
+            } else if (slice.right() >= root.right()) {
+                int width = slice.x() - root.x();
+                if (width > 0) {
+                    return new DockRect(root.x(), root.y(), width, root.height());
+                }
+            }
+        }
+        if (spansWidth && slice.height() < root.height()) {
+            if (slice.y() <= root.y()) {
+                int height = root.bottom() - slice.bottom();
+                if (height > 0) {
+                    return new DockRect(root.x(), slice.bottom(), root.width(), height);
+                }
+            } else if (slice.bottom() >= root.bottom()) {
+                int height = slice.y() - root.y();
+                if (height > 0) {
+                    return new DockRect(root.x(), root.y(), root.width(), height);
+                }
+            }
+        }
+        return root;
     }
 
     private void snapActiveRoot() {
@@ -1132,7 +1692,7 @@ public final class DockManager {
         yCandidates.add(screenHeight - bounds.height());
 
         for (FloatingRoot target : viewportWorkspace.roots()) {
-            if (target.rootId().equals(active.rootId()) || !LayoutTrees.hasVisibleLeaf(target.content())) {
+            if (target.rootId().equals(active.rootId()) || !rootEffectivelyVisible(target.rootId())) {
                 continue;
             }
             xCandidates.add(target.bounds().x());
@@ -1176,16 +1736,110 @@ public final class DockManager {
     }
 
     private FloatingRoot topRootAt(double mouseX, double mouseY, String excludedRootId) {
-        for (int i = viewportWorkspace.roots().size() - 1; i >= 0; i--) {
-            FloatingRoot root = viewportWorkspace.roots().get(i);
-            if (root.rootId().equals(excludedRootId) || !LayoutTrees.hasVisibleLeaf(root.content())) {
+        List<FloatingRoot> order = paintOrderRoots();
+        for (int i = order.size() - 1; i >= 0; i--) {
+            FloatingRoot root = order.get(i);
+            if (root.rootId().equals(excludedRootId) || !rootEffectivelyVisible(root.rootId())) {
                 continue;
             }
-            if (contains(root.bounds(), mouseX, mouseY)) {
+            if (contains(root.bounds(), mouseX, mouseY) || rootOutsideHit(root, mouseX, mouseY)) {
                 return root;
             }
         }
         return null;
+    }
+
+    public boolean isFloatingWindow(ModulePanel panel) {
+        if (panel == null) {
+            return false;
+        }
+        LeafNode leaf = leafForPanel(panel);
+        FloatingRoot root = rootContainingNode(viewportWorkspace, leaf.nodeId());
+        return root != null && !isAnchoredRoot(root);
+    }
+
+    public float anchoredChromeZ() {
+        return anchoredChromeLayer * ROOT_LAYER_Z;
+    }
+
+    /**
+     * Z for the cursor stack. Must sit above extra chrome, but stay inside the GUI projection
+     * (very large translates clip 3D item models, which looks like a cut-off icon).
+     */
+    public float cursorItemZ() {
+        return Math.min(anchoredChromeZ() + ROOT_LAYER_Z + 300.0F, 1800.0F);
+    }
+
+    private List<FloatingRoot> paintOrderRoots() {
+        var anchored = new ArrayList<FloatingRoot>();
+        var floating = new ArrayList<FloatingRoot>();
+        var pinned = new ArrayList<FloatingRoot>();
+        for (FloatingRoot root : viewportWorkspace.roots()) {
+            if (!rootEffectivelyVisible(root.rootId())) {
+                continue;
+            }
+            if (isAnchoredRoot(root)) {
+                anchored.add(root);
+            } else if (isPinnedRoot(root)) {
+                pinned.add(root);
+            } else {
+                floating.add(root);
+            }
+        }
+        var order = new ArrayList<FloatingRoot>(anchored.size() + floating.size() + pinned.size());
+        order.addAll(anchored);
+        order.addAll(floating);
+        order.addAll(pinned);
+        return order;
+    }
+
+    private boolean isAnchoredRoot(FloatingRoot root) {
+        return rootInCenterGroup(root);
+    }
+
+    private boolean isPinnedRoot(FloatingRoot root) {
+        for (LeafNode leaf : leavesOf(root)) {
+            if (projection.visibleLeaf(leaf.nodeId()).isEmpty()) {
+                continue;
+            }
+            ModuleLayoutPolicy policy = workspace.policyFor(leaf.moduleId());
+            if (policy.floating() && policy.pinned()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean rootOutsideHit(FloatingRoot root, double mouseX, double mouseY) {
+        for (LeafNode leaf : leavesOf(root)) {
+            var placement = projection.visibleLeaf(leaf.nodeId());
+            if (placement.isEmpty()) {
+                continue;
+            }
+            ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+            DockRect bounds = placement.get().bounds();
+            DockRect hit = hitBounds(bounds, panel);
+            if ((hit.x() != bounds.x() || hit.y() != bounds.y()
+                    || hit.width() != bounds.width() || hit.height() != bounds.height())
+                    && contains(hit, mouseX, mouseY)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static DockRect hitBounds(DockRect bounds, ModulePanel panel) {
+        int left = panel == null ? 0 : panel.outsideHitLeftWidth();
+        int right = panel == null ? 0 : panel.outsideHitWidth();
+        int top = panel == null ? 0 : panel.outsideHitTop();
+        if (left == 0 && right == 0 && top == 0) {
+            return bounds;
+        }
+        return new DockRect(
+                bounds.x() - left,
+                bounds.y() - top,
+                bounds.width() + left + right,
+                bounds.height() + top);
     }
 
     private ModulePanel leafAt(FloatingRoot root, double mouseX, double mouseY) {
@@ -1198,7 +1852,12 @@ public final class DockManager {
         for (int i = leaves.size() - 1; i >= 0; i--) {
             LeafNode leaf = leaves.get(i);
             var placement = projection.visibleLeaf(leaf.nodeId());
-            if (placement.isPresent() && contains(placement.get().bounds(), mouseX, mouseY)) {
+            if (placement.isEmpty()) {
+                continue;
+            }
+            DockRect bounds = placement.get().bounds();
+            ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+            if (contains(hitBounds(bounds, panel), mouseX, mouseY)) {
                 return leaf;
             }
         }
@@ -1223,16 +1882,52 @@ public final class DockManager {
         return null;
     }
 
+    private int visibleLeafCount(FloatingRoot root) {
+        int count = 0;
+        for (LeafNode leaf : leavesOf(root)) {
+            if (projection.visibleLeaf(leaf.nodeId()).isPresent()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private DockRect contentChromeBounds(FloatingRoot root) {
+        DockRect union = null;
+        for (LeafNode leaf : leavesOf(root)) {
+            var placement = projection.visibleLeaf(leaf.nodeId());
+            if (placement.isEmpty()) {
+                continue;
+            }
+            ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+            if (panel != null && panel.isOutsideChrome()) {
+                continue;
+            }
+            // Leaf placement is the generated window only. Encoding tabs, the ME scroller well
+            // and other outsideHit* decoration must not widen return-centering or attach points.
+            DockRect bounds = placement.get().bounds();
+            union = union == null ? bounds : union.union(bounds);
+        }
+        return union;
+    }
+
     private void renderDividers(GuiGraphics graphics, FloatingRoot root, DividerHit hoveredDivider) {
+        if (hoveredDivider == null) {
+            return;
+        }
         for (LayoutProjection.DividerPlacement divider : projection.dividers()) {
-            if (!LayoutTrees.contains(root.content(), divider.splitNodeId())) {
+            if (!LayoutTrees.contains(root.content(), divider.splitNodeId())
+                    || !hoveredDivider.splitNodeId().equals(divider.splitNodeId())) {
                 continue;
             }
             DockRect bounds = divider.bounds();
-            int color = hoveredDivider != null && hoveredDivider.splitNodeId().equals(divider.splitNodeId())
-                    ? DIVIDER_HOVER_COLOR
-                    : DIVIDER_COLOR;
-            graphics.fill(bounds.x(), bounds.y(), bounds.right(), bounds.bottom(), color);
+            if (divider.axis() == DockAxis.HORIZONTAL) {
+                int x = bounds.x();
+                graphics.fill(x, bounds.y(), x + 1, bounds.bottom(), DIVIDER_HOVER_COLOR);
+            } else {
+                int y = bounds.y();
+                graphics.fill(bounds.x(), y, bounds.right(), y + 1, DIVIDER_HOVER_COLOR);
+            }
         }
     }
 
@@ -1240,9 +1935,8 @@ public final class DockManager {
         if (mode != Mode.DRAG_ROOT || dragHoverBounds == null) {
             return;
         }
-        // Visual-programming affordance: while a root is dragged, show all four splice zones of
-        // the leaf under the pointer so the user can see where the drop would land. The zone that
-        // would actually receive the drop is emphasized below.
+        // While a root is dragged, outline the thin splice bands of the leaf under the
+        // pointer. The band that would actually receive the drop is emphasized below.
         for (DockEdge edge : DockEdge.values()) {
             DockRect zone = dropBounds(dragHoverBounds, edge);
             graphics.fill(zone.x(), zone.y(), zone.right(), zone.bottom(), DROP_ZONE_FILL_COLOR);
@@ -1265,6 +1959,11 @@ public final class DockManager {
             }
         }
         return false;
+    }
+
+    private DockRect projectionBounds(String nodeId) {
+        ensureProjection();
+        return projection.boundsFor(nodeId).orElse(null);
     }
 
     private DockSize rootMinimum(String rootId) {
@@ -1316,10 +2015,14 @@ public final class DockManager {
                 .orElseThrow(() -> new IllegalArgumentException("unknown node: " + nodeId));
     }
 
-    private static DockEdge dropEdge(DockRect bounds, double mouseX, double mouseY) {
-        int zone = Math.max(
+    private static int dropZoneThickness(DockRect bounds) {
+        return Math.max(
                 DROP_ZONE_MIN,
-                Math.min(DROP_ZONE_MAX, Math.min(bounds.width(), bounds.height()) / 4));
+                Math.min(DROP_ZONE_MAX, Math.min(bounds.width(), bounds.height()) / 8));
+    }
+
+    private static DockEdge dropEdge(DockRect bounds, double mouseX, double mouseY) {
+        int zone = dropZoneThickness(bounds);
         double left = mouseX - bounds.x();
         double right = bounds.right() - mouseX;
         double top = mouseY - bounds.y();
@@ -1341,8 +2044,9 @@ public final class DockManager {
     }
 
     private static DockRect dropBounds(DockRect target, DockEdge edge) {
-        int width = edge.axis() == DockAxis.HORIZONTAL ? Math.max(1, target.width() / 3) : target.width();
-        int height = edge.axis() == DockAxis.VERTICAL ? Math.max(1, target.height() / 3) : target.height();
+        int zone = dropZoneThickness(target);
+        int width = edge.axis() == DockAxis.HORIZONTAL ? zone : target.width();
+        int height = edge.axis() == DockAxis.VERTICAL ? zone : target.height();
         int x = edge == DockEdge.RIGHT ? target.right() - width : target.x();
         int y = edge == DockEdge.BOTTOM ? target.bottom() - height : target.y();
         return new DockRect(x, y, width, height);
@@ -1424,7 +2128,8 @@ public final class DockManager {
                     panel.id(),
                     new ModuleMetrics(
                             new DockSize(minimumWidth, minimumHeight),
-                            new DockSize(defaultWidth, defaultHeight)));
+                            new DockSize(defaultWidth, defaultHeight),
+                            panel.expandsVertically()));
         }
         return new ModuleCatalog(entries);
     }

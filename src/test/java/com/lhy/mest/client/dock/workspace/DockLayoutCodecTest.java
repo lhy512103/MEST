@@ -43,6 +43,23 @@ class DockLayoutCodecTest {
     }
 
     @Test
+    void roundTripsRestoreSizes() throws Exception {
+        var base = WorkspacePersistenceFixtures.workspace();
+        var restoreSizes = new java.util.LinkedHashMap<String, com.lhy.mest.client.dock.model.DockSize>();
+        restoreSizes.put("leaf-a", new com.lhy.mest.client.dock.model.DockSize(100, 80));
+        restoreSizes.put("leaf-b", new com.lhy.mest.client.dock.model.DockSize(90, 60));
+        var original = new com.lhy.mest.client.dock.model.DockWorkspace(
+                base.roots(), base.policies(), restoreSizes);
+
+        String encoded = codec().encode(original);
+        var decoded = codec().decode(encoded).workspace();
+
+        assertEquals(original.restoreSizes(), decoded.restoreSizes());
+        assertTrue(encoded.contains("restoreSizes"));
+        assertFalse(codec().decode(encoded).needsRewrite());
+    }
+
+    @Test
     void migratesV2LeafVisibilityIntoV3ModulePolicy() throws Exception {
         String persisted = """
                 {

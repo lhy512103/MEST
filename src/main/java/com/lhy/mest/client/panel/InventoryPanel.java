@@ -52,7 +52,7 @@ public class InventoryPanel extends ModulePanel {
     @Override
     public int defaultHeight() {
         // 3 inventory rows + 1 hotbar row + a small gap.
-        return TITLE_BAR_HEIGHT + 2 * CONTENT_PADDING + 4 * SLOT + 4;
+        return TITLE_BAR_HEIGHT + CONTENT_PADDING + 4 * SLOT + 4;
     }
 
     @Override
@@ -62,7 +62,7 @@ public class InventoryPanel extends ModulePanel {
 
     @Override
     public int minHeight() {
-        return defaultHeight();
+        return TITLE_BAR_HEIGHT + 4 * SLOT + 4;
     }
 
     @Override
@@ -70,8 +70,7 @@ public class InventoryPanel extends ModulePanel {
         if (!visible) {
             // Move owned slots off-screen so a hidden panel cannot be interacted with.
             for (Slot s : ownedSlots()) {
-                s.x = -9999;
-                s.y = -9999;
+                hideSlot(s);
             }
             return;
         }
@@ -79,28 +78,41 @@ public class InventoryPanel extends ModulePanel {
         int top = contentTop();
         for (int i = 0; i < inventorySlots.size(); i++) {
             Slot s = inventorySlots.get(i);
-            s.x = left + (i % COLS) * SLOT;
-            s.y = top + (i / COLS) * SLOT;
+            placeSlot(s, left + (i % COLS) * SLOT, top + (i / COLS) * SLOT);
         }
         int hotbarTop = top + 3 * SLOT + 4;
         for (int i = 0; i < hotbarSlots.size(); i++) {
             Slot s = hotbarSlots.get(i);
-            s.x = left + (i % COLS) * SLOT;
-            s.y = hotbarTop;
+            placeSlot(s, left + (i % COLS) * SLOT, hotbarTop);
         }
     }
 
     @Override
     public void renderBackgroundContent(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
-        // Draw slot background cells so empty slots are visible.
         drawSlotCells(g, inventorySlots);
         drawSlotCells(g, hotbarSlots);
+        if (!inventorySlots.isEmpty()) {
+            Slot first = inventorySlots.get(0);
+            drawSlotGroupBorder(g, slotScreenX(first) - 1, slotScreenY(first) - 1, COLS, 3);
+        }
+        if (!hotbarSlots.isEmpty()) {
+            Slot first = hotbarSlots.get(0);
+            drawSlotGroupBorder(g, slotScreenX(first) - 1, slotScreenY(first) - 1, COLS, 1);
+        }
     }
 
     private void drawSlotCells(GuiGraphics g, List<Slot> slots) {
         for (Slot s : slots) {
-            // AE2 slot art's top-left is one pixel up-left of the 16x16 item area.
-            ModulePanel.drawSlot(g, s.x - 1, s.y - 1);
+            ModulePanel.drawSlot(g, slotScreenX(s) - 1, slotScreenY(s) - 1);
         }
+    }
+
+    private static void drawSlotGroupBorder(GuiGraphics g, int px, int py, int cols, int rows) {
+        int x1 = px + cols * SLOT;
+        int y1 = py + rows * SLOT;
+        g.hLine(px, x1, py - 1, 0xFFF2F2F2);
+        g.hLine(px, x1, y1, 0xFFF2F2F2);
+        g.vLine(px - 1, py - 1, y1, 0xFFF2F2F2);
+        g.vLine(x1, py - 1, y1, 0xFFF2F2F2);
     }
 }

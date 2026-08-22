@@ -1,16 +1,25 @@
 package com.lhy.mest.terminal;
 
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.neoforge.registries.RegisterEvent;
 
 import appeng.api.features.GridLinkables;
+import appeng.api.upgrades.Upgrades;
+import appeng.core.localization.GuiText;
+import appeng.items.materials.EnergyCardItem;
 import appeng.items.tools.powered.WirelessTerminalItem;
 import appeng.items.tools.powered.powersink.PoweredItemCapabilities;
 
+import de.mari_023.ae2wtlib.api.AE2wtlibAPI;
 import de.mari_023.ae2wtlib.api.gui.Icon;
 import de.mari_023.ae2wtlib.api.registration.AddTerminalEvent;
 
+import com.lhy.mest.item.ItemMEST;
 import com.lhy.mest.registry.ModItems;
 
 /**
@@ -33,6 +42,35 @@ public final class MestTerminal {
                 .builder(TERMINAL_NAME, MESTMenuHost::new, MESTMenu.TYPE, ModItems.SPLICED_TERMINAL.get(), Icon.CRAFTING)
                 .upgradeCount(3)
                 .addTerminal());
+    }
+
+    /**
+     * Runs before AE2wtlib_api's ITEM listener calls {@code AddTerminalEvent.run()}, so this
+     * handler is last and {@link ItemMEST#upgradeInventorySize()} already sees every terminal.
+     * Associations must be recorded <em>before</em> {@code UpgradeHelper.addUpgrades()} writes the
+     * per-terminal {@code upgradeCount} (3), because {@link Upgrades#getMaxInstallable} keeps the
+     * first match.
+     */
+    public static void onRegisterItems(RegisterEvent event) {
+        if (!event.getRegistryKey().equals(Registries.ITEM)) {
+            return;
+        }
+        AddTerminalEvent.register(ignored -> registerEnergyCardCapacities());
+    }
+
+    private static void registerEnergyCardCapacities() {
+        int count = ItemMEST.upgradeInventorySize();
+        var item = ModItems.SPLICED_TERMINAL.get();
+        String group = GuiText.WirelessTerminals.getTranslationKey();
+        for (var card : BuiltInRegistries.ITEM) {
+            if (card instanceof EnergyCardItem) {
+                Upgrades.add(card, item, count, group);
+            }
+        }
+        var magnet = BuiltInRegistries.ITEM.get(AE2wtlibAPI.id("magnet_card"));
+        if (magnet != Items.AIR) {
+            Upgrades.add(magnet, item, 1, group);
+        }
     }
 
     /** AE2 powered items must expose an energy capability for the wireless battery to work. */

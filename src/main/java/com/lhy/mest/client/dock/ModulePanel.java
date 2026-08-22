@@ -8,6 +8,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.Slot;
 
+import appeng.client.gui.Icon;
 import appeng.client.gui.style.BackgroundGenerator;
 import appeng.client.gui.style.Blitter;
 import appeng.core.AppEng;
@@ -26,7 +27,7 @@ import com.lhy.mest.client.dock.model.DockRect;
  * content rendering, slot layout and a stable {@link #id()} used for layout persistence.
  */
 public abstract class ModulePanel {
-    public static final int TITLE_BAR_HEIGHT = 18;
+    public static final int TITLE_BAR_HEIGHT = 17;
     public static final int CONTENT_PADDING = 7;
     public static final int RESIZE_HANDLE = 6;
 
@@ -39,6 +40,17 @@ public abstract class ModulePanel {
     // Compatibility flag for content-only hosts. The recursive dock keeps leaves unhosted so every
     // module retains its own title bar.
     public boolean hosted;
+    /** True when this leaf shares a window with at least one other visible module. */
+    public boolean spliced;
+    /** Shared window bounds while {@link #spliced}; otherwise null. */
+    public DockRect splicedWindow;
+    /** Extra right padding so a sibling does not draw into the ME scroller gutter. */
+    public int contentRightInset;
+
+    /** Reserved inner width on the right of this leaf (ME scroller when a sibling sits to the right). */
+    public int preferredContentRightInset() {
+        return 0;
+    }
 
     private final List<Slot> ownedSlots = new ArrayList<>();
 
@@ -54,7 +66,7 @@ public abstract class ModulePanel {
     }
 
     public int minHeight() {
-        return TITLE_BAR_HEIGHT + 2 * CONTENT_PADDING + 18;
+        return TITLE_BAR_HEIGHT + CONTENT_PADDING + 18;
     }
 
     /** Initial/default size when no saved layout exists. */
@@ -70,6 +82,24 @@ public abstract class ModulePanel {
         ownedSlots.add(slot);
     }
 
+    protected static void placeSlot(Slot slot, int screenX, int screenY) {
+        slot.x = screenX;
+        slot.y = screenY;
+    }
+
+    protected static void hideSlot(Slot slot) {
+        slot.x = -9999;
+        slot.y = -9999;
+    }
+
+    public static int slotScreenX(Slot slot) {
+        return slot.x;
+    }
+
+    public static int slotScreenY(Slot slot) {
+        return slot.y;
+    }
+
     // --- Geometry helpers -------------------------------------------------
 
     public int contentLeft() {
@@ -77,25 +107,123 @@ public abstract class ModulePanel {
     }
 
     public int contentTop() {
-        // Hosted children have no title bar — their whole rect is content (composite draws the chrome).
-        return hosted ? y + CONTENT_PADDING : y + TITLE_BAR_HEIGHT + CONTENT_PADDING;
+        return y + (drawsTitleBar() ? TITLE_BAR_HEIGHT : CONTENT_PADDING);
     }
 
     public int contentWidth() {
-        return width - 2 * CONTENT_PADDING;
+        return Math.max(0, width - 2 * CONTENT_PADDING - contentRightInset);
     }
 
     public int contentHeight() {
-        // Hosted children have no title bar — only vertical content padding applies.
-        return hosted ? height - 2 * CONTENT_PADDING : height - TITLE_BAR_HEIGHT - 2 * CONTENT_PADDING;
+        int top = drawsTitleBar() ? TITLE_BAR_HEIGHT : CONTENT_PADDING;
+        return height - top - contentBottomPad();
+    }
+
+    /**
+     * Spliced sections keep vanilla-tight spacing: only the bottom-most leaf in a window
+     * still reserves the AE2 7px bottom inset.
+     */
+    private int contentBottomPad() {
+        if (splicedWindow != null && y + height < splicedWindow.bottom()) {
+            return 0;
+        }
+        return CONTENT_PADDING;
+    }
+
+    /** True when leftover vertical space should go to this leaf instead of a sibling. */
+    public boolean expandsVertically() {
+        return false;
+    }
+
+    /** Standalone windows and composite sections keep a title strip; compact rails do not. */
+    protected boolean drawsTitleBar() {
+        return !hosted;
     }
 
     public boolean contains(double mx, double my) {
         return mx >= x && mx < x + width && my >= y && my < y + height;
     }
 
+    /**
+     * Extra width to the right of the framed panel that still belongs to this module for
+     * hit-testing (encoding mode tabs, ME scroller well). Not part of the window used for
+     * return-centering.
+     */
+    public int outsideHitWidth() {
+        return 0;
+    }
+
+    /**
+     * True when this module is chrome that should sit outside a spliced window
+     * (side toolbar), not be painted inside the shared frame.
+     */
+    public boolean isOutsideChrome() {
+        return false;
+    }
+
+    /** Extra width to the left of the framed panel (ME terminal sidebar). */
+    public int outsideHitLeftWidth() {
+        return 0;
+    }
+
+    /** Extra height above the framed panel (crafting-status tab). */
+    public int outsideHitTop() {
+        return 0;
+    }
+
+    private static final int PIN_SIZE = 12;
+    private boolean pinVisible;
+    private boolean pinned;
+
+    public void setPinControl(boolean visible, boolean pinned) {
+        this.pinVisible = visible;
+        this.pinned = pinned;
+    }
+
+    public boolean pinVisible() {
+        return pinVisible && drawsTitleBar();
+    }
+
+    public boolean pinned() {
+        return pinned;
+    }
+
+    public int pinButtonX() {
+        return x + width - PIN_SIZE - 4;
+    }
+
+    public int pinButtonY() {
+        return y + 3;
+    }
+
+    public boolean inPinButton(double mx, double my) {
+        if (!pinVisible()) {
+            return false;
+        }
+        int px = pinButtonX();
+        int py = pinButtonY();
+        return mx >= px && mx < px + PIN_SIZE && my >= py && my < py + PIN_SIZE;
+    }
+
+    /**
+     * Drawn before the panel frame so overlapping chrome (encoding tabs) tucks under the window.
+     */
+    public void renderUnderlay(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
+    }
+
     public boolean inTitleBar(double mx, double my) {
-        return mx >= x && mx < x + width && my >= y && my < y + TITLE_BAR_HEIGHT;
+        if (!drawsTitleBar()) {
+            return false;
+        }
+        return mx >= x && mx < x + width && my >= y && my < y + TITLE_BAR_HEIGHT
+                && !inTitleBarControls(mx, my);
+    }
+
+    /**
+     * Title-bar widgets (search field, etc.) that must not start a window drag.
+     */
+    public boolean inTitleBarControls(double mx, double my) {
+        return inPinButton(mx, my);
     }
 
     public boolean inResizeHandle(double mx, double my) {
@@ -111,7 +239,7 @@ public abstract class ModulePanel {
      * they place controls over the title bar.
      */
     protected int titleRightInset() {
-        return 28;
+        return pinVisible() ? 28 + PIN_SIZE : 28;
     }
 
     // --- Lifecycle hooks --------------------------------------------------
@@ -152,6 +280,11 @@ public abstract class ModulePanel {
     }
 
     // --- Optional per-panel scroll interaction ----------------------------
+
+    /** Handle a click on panel-owned widgets. Default: not consumed. */
+    public boolean mouseClicked(double mx, double my, int button) {
+        return false;
+    }
 
     /**
      * Handle a scroll-wheel event routed to this panel (the topmost leaf under the cursor).
@@ -205,21 +338,59 @@ public abstract class ModulePanel {
             .src(83, 109, 43, 10);
 
     public void renderFrame(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
-        if (hosted) {
-            // Hosted children are framed by their composite; they only draw content.
+        if (hosted || !drawsTitleBar()) {
             return;
         }
-        // Use the exact scalable background renderer used by AE2's generated screens.
+        // Drop-shadow. Skip the right edge when a panel parks outside chrome (encoding tabs)
+        // there — otherwise the 2px shade paints over those widgets.
         g.fill(x + 2, y + height, x + width + 2, y + height + 2, 0x55000000);
-        g.fill(x + width, y + 2, x + width + 2, y + height + 2, 0x55000000);
+        if (outsideHitWidth() <= 0) {
+            g.fill(x + width, y + 2, x + width + 2, y + height + 2, 0x55000000);
+        }
         BackgroundGenerator.draw(width, height, g, x, y);
+        renderTitleStrip(g, font, x, y, width);
+    }
 
-        // AE2 headers are part of the light dialog surface instead of a dark desktop-window bar.
+    /**
+     * Inner title used when this leaf is painted inside a unified composite window.
+     */
+    public void renderSectionHeader(GuiGraphics g, Font font) {
+        if (!drawsTitleBar()) {
+            return;
+        }
+        renderTitleStrip(g, font, x, y, width);
+    }
+
+    /**
+     * One generated AE2 window for a spliced root. Leaves then only draw section titles + content.
+     */
+    public static void renderRootChrome(GuiGraphics g, DockRect bounds, boolean skipRightShadow) {
+        if (bounds == null || bounds.width() < 2 || bounds.height() < 2) {
+            return;
+        }
+        int x = bounds.x();
+        int y = bounds.y();
+        int w = bounds.width();
+        int h = bounds.height();
+        g.fill(x + 2, y + h, x + w + 2, y + h + 2, 0x55000000);
+        if (!skipRightShadow) {
+            g.fill(x + w, y + 2, x + w + 2, y + h + 2, 0x55000000);
+        }
+        BackgroundGenerator.draw(w, h, g, x, y);
+    }
+
+    private void renderTitleStrip(GuiGraphics g, Font font, int left, int top, int barWidth) {
         String clippedTitle = font.plainSubstrByWidth(
-                title().getString(), Math.max(0, width - TITLE_LEFT_INSET - titleRightInset()));
-        g.drawString(font, clippedTitle, x + TITLE_LEFT_INSET, y + 6, COLOR_TITLE_TEXT, false);
-        g.fill(x + 5, y + TITLE_BAR_HEIGHT - 2, x + width - 5, y + TITLE_BAR_HEIGHT - 1, COLOR_DARK);
-        g.fill(x + 5, y + TITLE_BAR_HEIGHT - 1, x + width - 5, y + TITLE_BAR_HEIGHT, COLOR_LIGHT);
+                title().getString(), Math.max(0, barWidth - TITLE_LEFT_INSET - titleRightInset()));
+        g.drawString(font, clippedTitle, left + TITLE_LEFT_INSET, top + 6, COLOR_TITLE_TEXT, false);
+        if (pinVisible()) {
+            int px = pinButtonX();
+            int py = pinButtonY();
+            g.fill(px - 1, py - 1, px + PIN_SIZE + 1, py + PIN_SIZE + 1, pinned ? 0xFF9AA3B8 : 0xFF777B8C);
+            g.fill(px, py, px + PIN_SIZE, py + PIN_SIZE, COLOR_PANEL);
+            Icon icon = pinned ? Icon.LOCKED : Icon.UNLOCKED;
+            icon.getBlitter().dest(px - 2, py - 2, PIN_SIZE + 4, PIN_SIZE + 4).blit(g);
+        }
     }
 
     /**

@@ -7,6 +7,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.MenuType;
@@ -31,6 +33,8 @@ import mezz.jei.api.recipe.transfer.IRecipeTransferError;
 import mezz.jei.api.recipe.transfer.IRecipeTransferHandler;
 import mezz.jei.api.recipe.transfer.IRecipeTransferHandlerHelper;
 import mezz.jei.api.recipe.transfer.IUniversalRecipeTransferHandler;
+import mezz.jei.api.gui.handlers.IGuiProperties;
+import mezz.jei.api.registration.IGuiHandlerRegistration;
 import mezz.jei.api.registration.IRecipeTransferRegistration;
 import mezz.jei.api.runtime.IIngredientVisibility;
 
@@ -44,6 +48,7 @@ import appeng.menu.me.common.GridInventoryEntry;
 import appeng.menu.me.items.CraftingTermMenu;
 
 import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.client.MESTScreen;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -67,6 +72,52 @@ public class MestJeiPlugin implements IModPlugin {
     @Override
     public ResourceLocation getPluginUid() {
         return UID;
+    }
+
+    @Override
+    public void registerGuiHandlers(IGuiHandlerRegistration registration) {
+        registration.addGuiScreenHandler(MESTScreen.class, screen -> new IGuiProperties() {
+            @Override
+            public Class<? extends Screen> screenClass() {
+                return MESTScreen.class;
+            }
+
+            @Override
+            public int guiLeft() {
+                return screen.recipeViewerBounds().getX();
+            }
+
+            @Override
+            public int guiTop() {
+                return screen.recipeViewerBounds().getY();
+            }
+
+            @Override
+            public int guiXSize() {
+                return screen.recipeViewerBounds().getWidth();
+            }
+
+            @Override
+            public int guiYSize() {
+                return screen.recipeViewerBounds().getHeight();
+            }
+
+            @Override
+            public int screenWidth() {
+                return screen.width;
+            }
+
+            @Override
+            public int screenHeight() {
+                return screen.height;
+            }
+        });
+        registration.addGuiContainerHandler(MESTScreen.class, new mezz.jei.api.gui.handlers.IGuiContainerHandler<>() {
+            @Override
+            public List<Rect2i> getGuiExtraAreas(MESTScreen containerScreen) {
+                return containerScreen.getExclusionZones();
+            }
+        });
     }
 
     @Override

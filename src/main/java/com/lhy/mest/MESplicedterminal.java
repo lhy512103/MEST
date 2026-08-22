@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
 
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 
@@ -32,6 +33,7 @@ public class MESplicedterminal {
         // AddTerminalEvent.register only enqueues a callback; it must run before AE2WTLib fires
         // AddTerminalEvent.run() during the ITEM RegisterEvent, so the mod constructor is the safe place.
         MestTerminal.registerTerminal();
+        modEventBus.addListener(EventPriority.HIGH, MestTerminal::onRegisterItems);
         modEventBus.addListener(MestTerminal::onRegisterCapabilities);
         modEventBus.addListener(MestTerminal::onCommonSetup);
         modEventBus.addListener(MestPackets::register);

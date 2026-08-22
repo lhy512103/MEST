@@ -8,8 +8,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.inventory.Slot;
-import net.minecraft.world.item.ItemStack;
 
 import appeng.client.gui.Icon;
 import appeng.client.gui.style.BackgroundGenerator;
@@ -27,33 +25,47 @@ import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
  * panels, splicing them onto each other's edge drop zones, resizing windows and right-click
  * detaching split branches. A light AE2 chrome surrounds the canvas: a toolbar on top, a module
  * palette on the left (press-and-drag an entry to place its module) and a property inspector on
- * the right (visibility / movable / resizable toggles plus interaction hints).
+ * the right (visibility / movable / resizable / floating toggles plus interaction hints).
+ * “Center on return” lives on the toolbar: when enabled, Save recenters every visible
+ * non-floating panel as one group.
  *
- * <p>The terminal screen remains a runtime consumer of the saved layout; this editor commits the
+ * <p>Both sidebars stay just wide enough for their labels and can collapse to an icon rail. The
+ * terminal screen remains a runtime consumer of the saved layout; this editor commits the
  * workspace through {@link DockManager#commitLayoutEditing()} and reverts to the pre-edit
  * snapshot on cancel.
  */
 public final class MESTLayoutEditorScreen extends Screen {
     private static final int TOOLBAR_HEIGHT = 28;
-    private static final int SIDEBAR_WIDTH = 156;
-    private static final int PROPERTY_WIDTH = 236;
+    private static final int COLLAPSED_WIDTH = 26;
+    private static final int SIDEBAR_PAD = 6;
+    private static final int ICON_SIZE = 16;
+    private static final int TOGGLE_SIZE = 18;
     private static final int SIDEBAR_ROW_HEIGHT = 22;
-    private static final int SIDEBAR_ROW_TOP = 32;
-    private static final int PROPERTY_ROW_HEIGHT = 28;
-    private static final int PROPERTY_ROW_TOP = 58;
-    private static final int TEXT_BUTTON_WIDTH = 100;
+    private static final int SIDEBAR_HEADER_TOP = TOOLBAR_HEIGHT + 4;
+    private static final int SIDEBAR_ROW_TOP = SIDEBAR_HEADER_TOP + SIDEBAR_ROW_HEIGHT;
+    private static final int PROPERTY_ROW_HEIGHT = 24;
+    private static final int PROPERTY_ROW_TOP = SIDEBAR_ROW_TOP + 20;
     private static final int TEXT_BUTTON_HEIGHT = 20;
+    private static final int TEXT_BUTTON_PAD = 12;
+    /** Above every dock root layer so editor chrome is never punched through by item icons. */
+    private static final float CHROME_Z = 4000.0F;
 
-    // AE2 terminal palette (see ModulePanel) plus the dark desktop color used by the preview area.
     private static final int COLOR_CANVAS = 0xFF171B24;
     private static final int COLOR_GRID_MINOR = 0x0EFFFFFF;
     private static final int COLOR_GRID_MAJOR = 0x1CFFFFFF;
     private static final int COLOR_SEPARATOR = 0xFF777B8C;
     private static final int COLOR_SELECTION = 0x33ACE9FF;
     private static final int COLOR_HOVER = 0x22ACE9FF;
-    private static final int COLOR_HINT = 0xFFB9C6E4;
     private static final int GRID_STEP = 16;
     private static final int GRID_MAJOR_EVERY = 128;
+
+    private static final List<String> HINT_KEYS = List.of(
+            "gui.mesplicedterminal.layout_hint_drag",
+            "gui.mesplicedterminal.layout_hint_move_all",
+            "gui.mesplicedterminal.layout_hint_splice",
+            "gui.mesplicedterminal.layout_hint_detach",
+            "gui.mesplicedterminal.layout_hint_resize",
+            "gui.mesplicedterminal.layout_hint_palette");
 
     private final Screen parent;
     private final DockManager dock;
@@ -61,6 +73,12 @@ public final class MESTLayoutEditorScreen extends Screen {
     private final List<IconButton> toolbarButtons = new ArrayList<>();
 
     private ModulePanel selected;
+    private boolean sidebarCollapsed;
+    private boolean propertiesCollapsed;
+    private ModulePanel pendingPalette;
+    private double pendingPaletteX;
+    private double pendingPaletteY;
+    private boolean paletteDragStarted;
 
     public MESTLayoutEditorScreen(Screen parent, DockManager dock) {
         super(Component.translatable("gui.mesplicedterminal.layout_editor"));
@@ -72,29 +90,123 @@ public final class MESTLayoutEditorScreen extends Screen {
 
     // --- Geometry ---------------------------------------------------------
 
+    private int sidebarWidth() {
+        if (sidebarCollapsed) {
+            return COLLAPSED_WIDTH;
+        }
+        int maxText = measuredWidth(Component.translatable("gui.mesplicedterminal.layout_modules"));
+        for (ModulePanel panel : panels) {
+            maxText = Math.max(maxText, measuredWidth(panel.title()));
+        }
+        return SIDEBAR_PAD + ICON_SIZE + 4 + maxText + 4 + TOGGLE_SIZE + SIDEBAR_PAD;
+    }
+
+    private int propertyWidth() {
+        if (propertiesCollapsed) {
+            return COLLAPSED_WIDTH;
+        }
+        int maxText = measuredWidth(Component.translatable("gui.mesplicedterminal.layout_properties"));
+        if (selected != null) {
+            maxText = Math.max(maxText, measuredWidth(selected.title()));
+        }
+        maxText = Math.max(maxText, measuredWidth(propertyCaption(0, true)));
+        maxText = Math.max(maxText, measuredWidth(propertyCaption(1, true)));
+        maxText = Math.max(maxText, measuredWidth(propertyCaption(2, true)));
+        maxText = Math.max(maxText, measuredWidth(propertyCaption(3, true)));
+        return SIDEBAR_PAD + maxText + 4 + TOGGLE_SIZE + SIDEBAR_PAD;
+    }
+
+    private int measuredWidth(Component text) {
+        return font == null ? text.getString().length() * 6 : font.width(text);
+    }
+
     private int canvasLeft() {
-        return SIDEBAR_WIDTH;
+        return sidebarWidth();
     }
 
     private int canvasRight() {
-        return width - PROPERTY_WIDTH;
+        return width - propertyWidth();
     }
 
     private int canvasTop() {
         return TOOLBAR_HEIGHT;
     }
 
-    private Rect saveRect() {
-        return new Rect(width - 2 * TEXT_BUTTON_WIDTH - 24, 4, TEXT_BUTTON_WIDTH, TEXT_BUTTON_HEIGHT);
+    private Rect cancelRect() {
+        Component label = Component.translatable("gui.mesplicedterminal.layout_cancel");
+        int buttonWidth = measuredWidth(label) + TEXT_BUTTON_PAD;
+        return new Rect(width - buttonWidth - 8, 4, buttonWidth, TEXT_BUTTON_HEIGHT);
     }
 
-    private Rect cancelRect() {
-        return new Rect(width - TEXT_BUTTON_WIDTH - 12, 4, TEXT_BUTTON_WIDTH, TEXT_BUTTON_HEIGHT);
+    private Rect saveRect() {
+        Component label = Component.translatable("gui.mesplicedterminal.layout_save");
+        int buttonWidth = measuredWidth(label) + TEXT_BUTTON_PAD;
+        Rect cancel = cancelRect();
+        return new Rect(cancel.x - 6 - buttonWidth, 4, buttonWidth, TEXT_BUTTON_HEIGHT);
+    }
+
+    private Rect undoRect() {
+        Component label = Component.translatable("gui.mesplicedterminal.layout_undo");
+        int buttonWidth = measuredWidth(label) + TEXT_BUTTON_PAD;
+        Rect save = saveRect();
+        return new Rect(save.x - 6 - buttonWidth, 4, buttonWidth, TEXT_BUTTON_HEIGHT);
+    }
+
+    private Rect centerOnReturnRect() {
+        Component label = Component.translatable("gui.mesplicedterminal.layout_center_on_return");
+        int buttonWidth = measuredWidth(label) + TEXT_BUTTON_PAD;
+        Rect undo = undoRect();
+        return new Rect(undo.x - 6 - buttonWidth, 4, buttonWidth, TEXT_BUTTON_HEIGHT);
+    }
+
+    private Rect propertySelectedRect() {
+        int px = width - propertyWidth();
+        return new Rect(px + SIDEBAR_PAD, SIDEBAR_ROW_TOP, TOGGLE_SIZE, TOGGLE_SIZE);
+    }
+
+    private Rect sidebarCollapseRect() {
+        if (sidebarCollapsed) {
+            return collapsedRailRect(SIDEBAR_HEADER_TOP);
+        }
+        return new Rect(sidebarWidth() - SIDEBAR_PAD - TOGGLE_SIZE, SIDEBAR_HEADER_TOP, TOGGLE_SIZE, TOGGLE_SIZE);
+    }
+
+    private Rect sidebarRowRect(int index) {
+        int y = SIDEBAR_ROW_TOP + index * SIDEBAR_ROW_HEIGHT;
+        if (sidebarCollapsed) {
+            return collapsedRailRect(y);
+        }
+        return new Rect(3, y, sidebarWidth() - 6, SIDEBAR_ROW_HEIGHT - 2);
+    }
+
+    private Rect collapsedRailRect(int y) {
+        return new Rect(
+                (sidebarWidth() - Icon.TOOLBAR_BUTTON_BACKGROUND.width) / 2,
+                y,
+                Icon.TOOLBAR_BUTTON_BACKGROUND.width,
+                Icon.TOOLBAR_BUTTON_BACKGROUND.height);
+    }
+
+    private Rect propertyCollapseRect() {
+        int px = width - propertyWidth();
+        return new Rect(px + SIDEBAR_PAD, SIDEBAR_HEADER_TOP, TOGGLE_SIZE, TOGGLE_SIZE);
     }
 
     private Rect propertyToggleRect(int index) {
-        return new Rect(width - PROPERTY_WIDTH + 8, PROPERTY_ROW_TOP + index * PROPERTY_ROW_HEIGHT,
-                PROPERTY_WIDTH - 16, TEXT_BUTTON_HEIGHT);
+        int px = width - propertyWidth();
+        int buttonWidth = propertiesCollapsed
+                ? TOGGLE_SIZE
+                : Math.max(TOGGLE_SIZE, propertyWidth() - SIDEBAR_PAD * 2);
+        return new Rect(px + SIDEBAR_PAD, PROPERTY_ROW_TOP + index * PROPERTY_ROW_HEIGHT,
+                buttonWidth, TEXT_BUTTON_HEIGHT);
+    }
+
+    private Rect propertyHelpRect() {
+        int px = width - propertyWidth();
+        int y = propertiesCollapsed
+                ? PROPERTY_ROW_TOP + 4 * PROPERTY_ROW_HEIGHT
+                : PROPERTY_ROW_TOP + 4 * PROPERTY_ROW_HEIGHT + 4;
+        return new Rect(px + SIDEBAR_PAD, y, TOGGLE_SIZE, TOGGLE_SIZE);
     }
 
     // --- Lifecycle ---------------------------------------------------------
@@ -103,12 +215,17 @@ public final class MESTLayoutEditorScreen extends Screen {
     protected void init() {
         super.init();
         dock.updateViewport(width, height);
+        syncEditorCanvas();
         buildToolbarWidgets();
         if (selected == null || !panels.contains(selected)) {
             if (!panels.isEmpty()) {
                 selected = panels.getFirst();
             }
         }
+    }
+
+    private void syncEditorCanvas() {
+        dock.setEditorCanvasInsets(canvasLeft(), canvasTop(), width - canvasRight(), 0);
     }
 
     private void buildToolbarWidgets() {
@@ -134,6 +251,7 @@ public final class MESTLayoutEditorScreen extends Screen {
                 Component.translatable("gui.mesplicedterminal.undo_layout"),
                 ignored -> dock.undoLayout(),
                 x, y));
+        toolbarButtons.getLast().active = dock.canUndoLayout();
         x += 22;
         toolbarButtons.add(toolbarButton(
                 Icon.TERMINAL_STYLE_SMALL,
@@ -181,11 +299,36 @@ public final class MESTLayoutEditorScreen extends Screen {
         }
         ModuleLayoutPolicy policy = dock.policyFor(selected);
         ModuleLayoutPolicy next = switch (index) {
-            case 0 -> new ModuleLayoutPolicy(!policy.visible(), policy.movable(), policy.resizable());
-            case 1 -> new ModuleLayoutPolicy(policy.visible(), !policy.movable(), policy.resizable());
-            default -> new ModuleLayoutPolicy(policy.visible(), policy.movable(), !policy.resizable());
+            case 0 -> policy.withVisible(!policy.visible());
+            case 1 -> new ModuleLayoutPolicy(
+                    policy.visible(), !policy.movable(), policy.resizable(), policy.floating(), policy.pinned());
+            case 2 -> new ModuleLayoutPolicy(
+                    policy.visible(), policy.movable(), !policy.resizable(), policy.floating(), policy.pinned());
+            default -> policy.withFloating(!policy.floating());
         };
         dock.setModulePolicy(selected, next);
+    }
+
+    private Component propertyCaption(int index, boolean enabled) {
+        Component label = switch (index) {
+            case 0 -> Component.translatable("gui.mesplicedterminal.layout_state_visible");
+            case 1 -> Component.translatable("gui.mesplicedterminal.layout_state_movable");
+            case 2 -> Component.translatable("gui.mesplicedterminal.layout_state_resizable");
+            default -> Component.translatable("gui.mesplicedterminal.layout_state_floating");
+        };
+        Component state = Component.translatable(enabled
+                ? "gui.mesplicedterminal.layout_yes"
+                : "gui.mesplicedterminal.layout_no");
+        return label.copy().append(": ").append(state);
+    }
+
+    private List<Component> hintTooltip() {
+        List<Component> lines = new ArrayList<>();
+        lines.add(Component.translatable("gui.mesplicedterminal.layout_help"));
+        for (String key : HINT_KEYS) {
+            lines.add(Component.translatable(key));
+        }
+        return lines;
     }
 
     // --- Input -------------------------------------------------------------
@@ -202,22 +345,44 @@ public final class MESTLayoutEditorScreen extends Screen {
                     saveAndReturn();
                     return true;
                 }
+                if (undoRect().contains(mouseX, mouseY) && dock.canUndoLayout()) {
+                    dock.undoLayout();
+                    return true;
+                }
+                if (centerOnReturnRect().contains(mouseX, mouseY)) {
+                    dock.setCenterOnReturn(!dock.centerOnReturn());
+                    return true;
+                }
             }
             return super.mouseClicked(mouseX, mouseY, button);
         }
-        if (button == 0 && mouseX < SIDEBAR_WIDTH) {
-            int index = (int) ((mouseY - SIDEBAR_ROW_TOP) / SIDEBAR_ROW_HEIGHT);
-            if (index >= 0 && index < panels.size()) {
-                ModulePanel panel = panels.get(index);
-                select(panel);
-                // Press-and-drag a palette entry to place its module in the workspace.
-                dock.startExternalDrag(panel, mouseX, mouseY);
+        if (button == 0 && sidebarCollapseRect().contains(mouseX, mouseY)) {
+            sidebarCollapsed = !sidebarCollapsed;
+            syncEditorCanvas();
+            return true;
+        }
+        if (button == 0 && propertyCollapseRect().contains(mouseX, mouseY)) {
+            propertiesCollapsed = !propertiesCollapsed;
+            syncEditorCanvas();
+            return true;
+        }
+        if (button == 0 && mouseX < sidebarWidth()) {
+            for (int index = 0; index < panels.size(); index++) {
+                if (sidebarRowRect(index).contains(mouseX, mouseY)) {
+                    ModulePanel panel = panels.get(index);
+                    select(panel);
+                    pendingPalette = panel;
+                    pendingPaletteX = mouseX;
+                    pendingPaletteY = mouseY;
+                    paletteDragStarted = false;
+                    return true;
+                }
             }
             return true;
         }
-        if (mouseX >= width - PROPERTY_WIDTH) {
+        if (mouseX >= width - propertyWidth()) {
             if (button == 0 && selected != null) {
-                for (int index = 0; index < 3; index++) {
+                for (int index = 0; index < 4; index++) {
                     if (propertyToggleRect(index).contains(mouseX, mouseY)) {
                         toggleProperty(index);
                         return true;
@@ -227,8 +392,6 @@ public final class MESTLayoutEditorScreen extends Screen {
             return true;
         }
 
-        // Workspace canvas: keep the selection in sync with the clicked module, then let the dock
-        // start whatever gesture the press belongs to (drag, splice, resize, divider detach).
         ModulePanel under = dock.topLeafAt(mouseX, mouseY);
         if (under != null) {
             select(under);
@@ -236,14 +399,18 @@ public final class MESTLayoutEditorScreen extends Screen {
         if (dock.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
-        // Consume canvas clicks so panels and chrome never interact through each other.
         return true;
     }
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        // Forward unconditionally: gestures started on the canvas (or from the palette) may leave
-        // the canvas region mid-drag and the dock does not care where the pointer is.
+        if (pendingPalette != null && !paletteDragStarted && button == 0) {
+            double dx = mouseX - pendingPaletteX;
+            double dy = mouseY - pendingPaletteY;
+            if (dx * dx + dy * dy >= 16.0) {
+                paletteDragStarted = dock.startExternalDrag(pendingPalette, pendingPaletteX, pendingPaletteY);
+            }
+        }
         if (dock.mouseDragged(mouseX, mouseY, button, dragX, dragY)) {
             return true;
         }
@@ -252,6 +419,16 @@ public final class MESTLayoutEditorScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (pendingPalette != null && button == 0) {
+            ModulePanel panel = pendingPalette;
+            boolean dragged = paletteDragStarted;
+            pendingPalette = null;
+            paletteDragStarted = false;
+            if (!dragged) {
+                dock.toggleVisible(panel);
+                return true;
+            }
+        }
         if (dock.mouseReleased(mouseX, mouseY, button)) {
             return true;
         }
@@ -260,7 +437,6 @@ public final class MESTLayoutEditorScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        // Scrollbars of panels under the cursor keep working while authoring the layout.
         if (mouseX >= canvasLeft() && mouseX < canvasRight() && mouseY >= canvasTop()) {
             ModulePanel panel = dock.topLeafAt(mouseX, mouseY);
             if (panel != null && panel.mouseScrolled(mouseX, mouseY, scrollY)) {
@@ -274,28 +450,27 @@ public final class MESTLayoutEditorScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        // Draw the screen background first. The vanilla/MUI background path must not run after
-        // the custom editor or it will cover the canvas with the blur overlay.
         renderBackground(graphics, mouseX, mouseY, partialTick);
+        syncEditorCanvas();
         renderCanvas(graphics);
-        dock.renderBackground(graphics, font, mouseX, mouseY, partialTick, this::renderEditorSlotIcon);
+        dock.renderBackground(graphics, font, mouseX, mouseY, partialTick, (g, slot) -> { });
         dock.renderForeground(graphics, font, mouseX, mouseY, partialTick);
-        renderSidebar(graphics, mouseX, mouseY);
-        renderProperties(graphics, mouseX, mouseY);
-        renderToolbar(graphics, mouseX, mouseY);
-        // Vanilla Screen does not know AE2's ITooltip protocol, so render the registered toolbar
-        // widgets explicitly after the editor surface and then draw their tooltips.
-        for (IconButton button : toolbarButtons) {
-            button.render(graphics, mouseX, mouseY, partialTick);
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, CHROME_Z);
+        try {
+            renderSidebar(graphics, mouseX, mouseY);
+            renderProperties(graphics, mouseX, mouseY);
+            renderToolbar(graphics, mouseX, mouseY);
+            for (IconButton button : toolbarButtons) {
+                button.render(graphics, mouseX, mouseY, partialTick);
+            }
+            renderWidgetTooltips(graphics, mouseX, mouseY);
+            renderChromeTooltips(graphics, mouseX, mouseY);
+        } finally {
+            graphics.pose().popPose();
         }
-        renderWidgetTooltips(graphics, mouseX, mouseY);
     }
 
-    /**
-     * AE2's IconButton tooltips are not rendered by vanilla {@link Screen}; AE2 screens render
-     * them manually through the {@code ITooltip} interface. Mirror that behavior here so the
-     * toolbar actions explain themselves.
-     */
     private void renderWidgetTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
         for (IconButton button : toolbarButtons) {
             if (button.isTooltipAreaVisible() && button.getTooltipArea().contains(mouseX, mouseY)) {
@@ -307,19 +482,73 @@ public final class MESTLayoutEditorScreen extends Screen {
         }
     }
 
-    /**
-     * Wireframe-mode slot renderer for the editor: draw the real item contents so modules stay
-     * recognizable while being arranged, without the terminal screen's hover/tooltip pipeline.
-     */
-    private void renderEditorSlotIcon(GuiGraphics graphics, Slot slot) {
-        ItemStack stack = slot.getItem();
-        if (stack != null && !stack.isEmpty()) {
-            graphics.renderItem(stack, slot.x, slot.y);
-            graphics.renderItemDecorations(font, stack, slot.x, slot.y);
+    private void renderChromeTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (centerOnReturnRect().contains(mouseX, mouseY)) {
+            graphics.renderComponentTooltip(font, List.of(
+                    Component.translatable(dock.centerOnReturn()
+                            ? "gui.mesplicedterminal.layout_center_on_return_on"
+                            : "gui.mesplicedterminal.layout_center_on_return"),
+                    Component.translatable("gui.mesplicedterminal.layout_center_on_return_hint")),
+                    mouseX, mouseY);
+            return;
+        }
+        if (sidebarCollapseRect().contains(mouseX, mouseY)) {
+            graphics.renderComponentTooltip(font, List.of(Component.translatable(sidebarCollapsed
+                    ? "gui.mesplicedterminal.layout_expand_modules"
+                    : "gui.mesplicedterminal.layout_collapse_modules")), mouseX, mouseY);
+            return;
+        }
+        if (propertyCollapseRect().contains(mouseX, mouseY)) {
+            graphics.renderComponentTooltip(font, List.of(Component.translatable(propertiesCollapsed
+                    ? "gui.mesplicedterminal.layout_expand_properties"
+                    : "gui.mesplicedterminal.layout_collapse_properties")), mouseX, mouseY);
+            return;
+        }
+        if (propertiesCollapsed && propertySelectedRect().contains(mouseX, mouseY) && selected != null) {
+            graphics.renderComponentTooltip(font, List.of(selected.title()), mouseX, mouseY);
+            return;
+        }
+        if (propertyHelpRect().contains(mouseX, mouseY)) {
+            graphics.renderComponentTooltip(font, hintTooltip(), mouseX, mouseY);
+            return;
+        }
+        for (int index = 0; index < panels.size(); index++) {
+            Rect row = sidebarRowRect(index);
+            if (!row.contains(mouseX, mouseY)) {
+                continue;
+            }
+            ModulePanel panel = panels.get(index);
+            ModuleLayoutPolicy policy = dock.policyFor(panel);
+            List<Component> tooltip = new ArrayList<>();
+            tooltip.add(panel.title());
+            if (!policy.visible()) {
+                tooltip.add(Component.translatable("gui.mesplicedterminal.layout_palette_hidden"));
+            }
+            graphics.renderComponentTooltip(font, tooltip, mouseX, mouseY);
+            return;
+        }
+        if (selected != null) {
+            ModuleLayoutPolicy policy = dock.policyFor(selected);
+            for (int index = 0; index < 4; index++) {
+                if (propertyToggleRect(index).contains(mouseX, mouseY)) {
+                    boolean enabled = switch (index) {
+                        case 0 -> policy.visible();
+                        case 1 -> policy.movable();
+                        case 2 -> policy.resizable();
+                        default -> policy.floating();
+                    };
+                    List<Component> lines = new ArrayList<>();
+                    lines.add(propertyCaption(index, enabled));
+                    if (index == 3) {
+                        lines.add(Component.translatable("gui.mesplicedterminal.layout_state_floating_hint"));
+                    }
+                    graphics.renderComponentTooltip(font, lines, mouseX, mouseY);
+                    return;
+                }
+            }
         }
     }
 
-    /** Dark AE2 desktop with a subtle blueprint grid, like a node-editor canvas. */
     private void renderCanvas(GuiGraphics graphics) {
         graphics.fill(0, 0, width, height, COLOR_CANVAS);
         int left = canvasLeft();
@@ -339,85 +568,115 @@ public final class MESTLayoutEditorScreen extends Screen {
         }
     }
 
-    /** Light AE2 panel holding the module palette. Entries double as drag sources. */
     private void renderSidebar(GuiGraphics graphics, int mouseX, int mouseY) {
-        BackgroundGenerator.draw(SIDEBAR_WIDTH, height, graphics, 0, 0);
-        graphics.fill(SIDEBAR_WIDTH - 1, 0, SIDEBAR_WIDTH, height, COLOR_SEPARATOR);
-        graphics.drawString(font, Component.translatable("gui.mesplicedterminal.layout_modules"),
-                8, 8, ModulePanel.COLOR_TITLE_TEXT, false);
+        int width = sidebarWidth();
+        BackgroundGenerator.draw(width, height, graphics, 0, 0);
+        graphics.fill(width - 1, 0, width, height, COLOR_SEPARATOR);
+        drawCollapseButton(graphics, sidebarCollapseRect(), sidebarCollapsed,
+                sidebarCollapseRect().contains(mouseX, mouseY));
+        if (!sidebarCollapsed) {
+            graphics.drawString(font, Component.translatable("gui.mesplicedterminal.layout_modules"),
+                    SIDEBAR_PAD, SIDEBAR_HEADER_TOP + 5, ModulePanel.COLOR_TITLE_TEXT, false);
+        }
 
         for (int i = 0; i < panels.size(); i++) {
             ModulePanel panel = panels.get(i);
-            int y = SIDEBAR_ROW_TOP + i * SIDEBAR_ROW_HEIGHT;
-            Rect row = new Rect(3, y, SIDEBAR_WIDTH - 6, SIDEBAR_ROW_HEIGHT - 2);
+            Rect row = sidebarRowRect(i);
             boolean hovered = row.contains(mouseX, mouseY);
             ModuleLayoutPolicy policy = dock.policyFor(panel);
+            if (sidebarCollapsed) {
+                drawToolbarIconButton(graphics, row, MESTScreen.iconForPanel(panel), hovered, panel == selected);
+                continue;
+            }
             if (panel == selected) {
                 graphics.fill(row.x, row.y, row.x + row.w, row.y + row.h, COLOR_SELECTION);
             } else if (hovered) {
                 graphics.fill(row.x, row.y, row.x + row.w, row.y + row.h, COLOR_HOVER);
             }
-            MESTScreen.iconForPanel(panel).getBlitter().dest(row.x + 2, row.y + 3).blit(graphics);
-            String title = font.plainSubstrByWidth(
-                    panel.title().getString(), Math.max(0, SIDEBAR_WIDTH - 42));
+            blitIcon(graphics, MESTScreen.iconForPanel(panel), row.x + 2, row.y + 3);
             int textColor = policy.visible() ? ModulePanel.COLOR_TITLE_TEXT : ModulePanel.COLOR_MUTED;
-            graphics.drawString(font, title, row.x + 22, row.y + 7, textColor, false);
-            String marker = policy.visible() ? (policy.movable() ? "~" : "|") : "x";
-            graphics.drawString(font, marker, row.x + row.w - 12, row.y + 7, ModulePanel.COLOR_MUTED, false);
-            if (hovered && !policy.visible()) {
-                graphics.renderComponentTooltip(font,
-                        List.of(Component.translatable("gui.mesplicedterminal.layout_palette_hidden")),
-                        mouseX, mouseY);
-            }
+            graphics.drawString(font, panel.title(), row.x + 22, row.y + 7, textColor, false);
         }
     }
 
-    /** Light AE2 panel with the selected module's runtime policies and the interaction hints. */
     private void renderProperties(GuiGraphics graphics, int mouseX, int mouseY) {
-        int px = width - PROPERTY_WIDTH;
-        BackgroundGenerator.draw(PROPERTY_WIDTH, height, graphics, px, 0);
+        int panelWidth = propertyWidth();
+        int px = width - panelWidth;
+        BackgroundGenerator.draw(panelWidth, height, graphics, px, 0);
         graphics.fill(px - 1, 0, px, height, COLOR_SEPARATOR);
-        graphics.drawString(font, Component.translatable("gui.mesplicedterminal.layout_properties"),
-                px + 8, 8, ModulePanel.COLOR_TITLE_TEXT, false);
+        drawCollapseButton(graphics, propertyCollapseRect(), !propertiesCollapsed,
+                propertyCollapseRect().contains(mouseX, mouseY));
+        if (!propertiesCollapsed) {
+            graphics.drawString(font, Component.translatable("gui.mesplicedterminal.layout_properties"),
+                    px + SIDEBAR_PAD + TOGGLE_SIZE + 4, SIDEBAR_HEADER_TOP + 5,
+                    ModulePanel.COLOR_TITLE_TEXT, false);
+        }
         if (selected == null) {
+            drawHelpButton(graphics, mouseX, mouseY);
             return;
         }
 
-        String name = font.plainSubstrByWidth(selected.title().getString(), PROPERTY_WIDTH - 20);
-        graphics.drawString(font, name, px + 8, 30, ModulePanel.COLOR_TITLE_TEXT, false);
+        if (propertiesCollapsed && selected != null) {
+            drawToolbarIconButton(graphics, propertySelectedRect(), MESTScreen.iconForPanel(selected),
+                    propertySelectedRect().contains(mouseX, mouseY), true);
+        } else if (!propertiesCollapsed) {
+            graphics.drawString(font, selected.title(), px + SIDEBAR_PAD, SIDEBAR_ROW_TOP + 4,
+                    ModulePanel.COLOR_TITLE_TEXT, false);
+        }
 
         ModuleLayoutPolicy policy = dock.policyFor(selected);
-        drawPropertyToggle(graphics, mouseX, mouseY, 0,
-                Component.translatable("gui.mesplicedterminal.layout_state_visible"), policy.visible());
-        drawPropertyToggle(graphics, mouseX, mouseY, 1,
-                Component.translatable("gui.mesplicedterminal.layout_state_movable"), policy.movable());
-        drawPropertyToggle(graphics, mouseX, mouseY, 2,
-                Component.translatable("gui.mesplicedterminal.layout_state_resizable"), policy.resizable());
-
-        int hintY = PROPERTY_ROW_TOP + 3 * PROPERTY_ROW_HEIGHT + 10;
-        for (String key : List.of(
-                "gui.mesplicedterminal.layout_hint_drag",
-                "gui.mesplicedterminal.layout_hint_splice",
-                "gui.mesplicedterminal.layout_hint_detach",
-                "gui.mesplicedterminal.layout_hint_resize",
-                "gui.mesplicedterminal.layout_hint_palette")) {
-            hintY = drawWrapped(graphics, Component.translatable(key), px + 8, hintY,
-                    PROPERTY_WIDTH - 20, COLOR_HINT);
-            hintY += 4;
-        }
+        drawPropertyControl(graphics, mouseX, mouseY, 0, policy.visible());
+        drawPropertyControl(graphics, mouseX, mouseY, 1, policy.movable());
+        drawPropertyControl(graphics, mouseX, mouseY, 2, policy.resizable());
+        drawPropertyControl(graphics, mouseX, mouseY, 3, policy.floating());
+        drawHelpButton(graphics, mouseX, mouseY);
     }
 
-    private void drawPropertyToggle(GuiGraphics graphics, int mouseX, int mouseY, int index,
-            Component label, boolean enabled) {
+    private void drawPropertyControl(GuiGraphics graphics, int mouseX, int mouseY, int index, boolean enabled) {
         Rect rect = propertyToggleRect(index);
-        Component state = Component.translatable(enabled
-                ? "gui.mesplicedterminal.layout_yes"
-                : "gui.mesplicedterminal.layout_no");
-        ModulePanel.drawButton(graphics, font, label.copy().append(": ").append(state),
-                rect.x, rect.y, rect.w, rect.h, rect.contains(mouseX, mouseY));
+        boolean hovered = rect.contains(mouseX, mouseY);
+        if (propertiesCollapsed) {
+            drawToolbarIconButton(graphics, rect, propertyIcon(index, enabled), hovered, false);
+            return;
+        }
+        ModulePanel.drawButton(graphics, font, propertyCaption(index, enabled),
+                rect.x, rect.y, rect.w, rect.h, hovered);
     }
 
-    /** Light AE2 strip across the top: icon actions, title and save/cancel buttons. */
+    private void drawHelpButton(GuiGraphics graphics, int mouseX, int mouseY) {
+        Rect rect = propertyHelpRect();
+        drawToolbarIconButton(graphics, rect, Icon.HELP, rect.contains(mouseX, mouseY), false);
+    }
+
+    private void drawCollapseButton(GuiGraphics graphics, Rect rect, boolean expandToRight, boolean hovered) {
+        drawToolbarIconButton(graphics, rect,
+                expandToRight ? Icon.ARROW_RIGHT : Icon.ARROW_LEFT, hovered, false);
+    }
+
+    private static Icon propertyIcon(int index, boolean enabled) {
+        return switch (index) {
+            case 0 -> enabled ? Icon.OVERLAY_ON : Icon.OVERLAY_OFF;
+            case 1 -> enabled ? Icon.ACCESS_READ_WRITE : Icon.ACCESS_READ;
+            case 2 -> enabled ? Icon.TERMINAL_STYLE_FULL : Icon.TERMINAL_STYLE_SMALL;
+            default -> enabled ? Icon.PATTERN_ACCESS_SHOW : Icon.PATTERN_ACCESS_HIDE;
+        };
+    }
+
+    private static void drawToolbarIconButton(
+            GuiGraphics graphics, Rect rect, Icon icon, boolean hovered, boolean focused) {
+        Icon background = focused
+                ? Icon.TOOLBAR_BUTTON_BACKGROUND_FOCUS
+                : hovered ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER : Icon.TOOLBAR_BUTTON_BACKGROUND;
+        int bx = rect.x + (rect.w - background.width) / 2;
+        int by = rect.y + (rect.h - background.height) / 2;
+        background.getBlitter().dest(bx, by).blit(graphics);
+        blitIcon(graphics, icon, bx + (background.width - ICON_SIZE) / 2, by + (background.height - ICON_SIZE) / 2);
+    }
+
+    private static void blitIcon(GuiGraphics graphics, Icon icon, int x, int y) {
+        icon.getBlitter().dest(x + (ICON_SIZE - icon.width) / 2, y + (ICON_SIZE - icon.height) / 2).blit(graphics);
+    }
+
     private void renderToolbar(GuiGraphics graphics, int mouseX, int mouseY) {
         BackgroundGenerator.draw(width, TOOLBAR_HEIGHT, graphics, 0, 0);
         graphics.fill(0, TOOLBAR_HEIGHT - 2, width, TOOLBAR_HEIGHT - 1, ModulePanel.COLOR_DARK);
@@ -425,31 +684,22 @@ public final class MESTLayoutEditorScreen extends Screen {
         graphics.drawString(font, Component.translatable("gui.mesplicedterminal.layout_editor"),
                 6 + 4 * 22 + 8, 9, ModulePanel.COLOR_TITLE_TEXT, false);
 
+        boolean canUndo = dock.canUndoLayout();
+        if (toolbarButtons.size() > 1) {
+            toolbarButtons.get(1).active = canUndo;
+        }
+        ModulePanel.drawButton(graphics, font, Component.translatable("gui.mesplicedterminal.layout_center_on_return"),
+                centerOnReturnRect().x, centerOnReturnRect().y, centerOnReturnRect().w, centerOnReturnRect().h,
+                dock.centerOnReturn() || centerOnReturnRect().contains(mouseX, mouseY));
+        ModulePanel.drawButton(graphics, font, Component.translatable("gui.mesplicedterminal.layout_undo"),
+                undoRect().x, undoRect().y, undoRect().w, undoRect().h,
+                canUndo && undoRect().contains(mouseX, mouseY));
         ModulePanel.drawButton(graphics, font, Component.translatable("gui.mesplicedterminal.layout_save"),
                 saveRect().x, saveRect().y, saveRect().w, saveRect().h,
                 saveRect().contains(mouseX, mouseY));
         ModulePanel.drawButton(graphics, font, Component.translatable("gui.mesplicedterminal.layout_cancel"),
                 cancelRect().x, cancelRect().y, cancelRect().w, cancelRect().h,
                 cancelRect().contains(mouseX, mouseY));
-    }
-
-    /** Draws {@code text} wrapped to {@code maxWidth} pixels; returns the y just below the block. */
-    private int drawWrapped(GuiGraphics graphics, Component text, int x, int y, int maxWidth, int color) {
-        String remaining = text.getString();
-        int currentY = y;
-        while (!remaining.isEmpty()) {
-            String line = font.plainSubstrByWidth(remaining, maxWidth);
-            if (line.isEmpty()) {
-                break;
-            }
-            graphics.drawString(font, line, x, currentY, color, false);
-            currentY += font.lineHeight + 1;
-            remaining = remaining.substring(line.length());
-            if (remaining.startsWith(" ")) {
-                remaining = remaining.substring(1);
-            }
-        }
-        return currentY;
     }
 
     private record Rect(int x, int y, int w, int h) {

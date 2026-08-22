@@ -1,43 +1,65 @@
 package com.lhy.mest.client.panel;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.Slot;
 
-import appeng.client.gui.Icon;
-import appeng.core.AppEng;
-import appeng.core.localization.ButtonToolTips;
+import appeng.api.config.ActionItems;
+import appeng.client.gui.style.Blitter;
+import appeng.client.gui.widgets.ActionButton;
+import appeng.client.gui.widgets.ITooltip;
 import appeng.menu.SlotSemantics;
 
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
- * Floating panel hosting the 3x3 crafting matrix and its result slot. The slots already live in the
- * {@link MESTMenu} (a CraftingTermMenu); this panel just re-homes them into its content area, so the
- * full AE2 crafting behaviour (recipe matching, shift-craft, pull from network) works unchanged.
+ * Floating 3x3 crafting grid that reuses AE2's {@code crafting.png} artwork, arrow spacing and
+ * half-size stash buttons so the module matches the stock crafting terminal.
  */
 public class CraftingPanel extends ModulePanel {
     private static final int SLOT = 18;
-    private static final int ACTION_SIZE = 10;
+    private static final int BG_W = 160;
+    private static final int BG_H = 66;
+    private static final int GRID_OFFSET_X = 18;
+    private static final int GRID_OFFSET_Y = 7;
+    private static final int RESULT_OFFSET_X = 126;
+    private static final int RESULT_OFFSET_Y = GRID_OFFSET_Y + SLOT;
+    private static final Blitter CRAFTING_BG = Blitter.texture("guis/crafting.png", 256, 256)
+            .src(8, 86, BG_W, BG_H);
 
     private final MESTMenu menu;
     private final List<Slot> gridSlots;
     private final List<Slot> resultSlots;
+    private final ActionButton clearToNetwork;
+    private final ActionButton clearToPlayer;
+    private final List<AbstractWidget> widgets = new ArrayList<>();
 
     public CraftingPanel(MESTMenu menu) {
         this.menu = menu;
         this.gridSlots = menu.getSlots(SlotSemantics.CRAFTING_GRID);
         this.resultSlots = menu.getSlots(SlotSemantics.CRAFTING_RESULT);
-        for (Slot s : gridSlots) {
-            registerSlot(s);
+        for (Slot slot : gridSlots) {
+            registerSlot(slot);
         }
-        for (Slot s : resultSlots) {
-            registerSlot(s);
+        for (Slot slot : resultSlots) {
+            registerSlot(slot);
         }
+
+        clearToNetwork = new ActionButton(ActionItems.S_STASH, menu::clearCraftingGrid);
+        clearToNetwork.setHalfSize(true);
+        clearToNetwork.setDisableBackground(true);
+        widgets.add(clearToNetwork);
+
+        clearToPlayer = new ActionButton(ActionItems.S_STASH_TO_PLAYER_INV, menu::clearToPlayerInventory);
+        clearToPlayer.setHalfSize(true);
+        clearToPlayer.setDisableBackground(true);
+        widgets.add(clearToPlayer);
     }
 
     @Override
@@ -52,13 +74,12 @@ public class CraftingPanel extends ModulePanel {
 
     @Override
     public int defaultWidth() {
-        // 3x3 grid + arrow gap + result slot.
-        return 2 * CONTENT_PADDING + 3 * SLOT + 24 + SLOT;
+        return 2 * CONTENT_PADDING + BG_W;
     }
 
     @Override
     public int defaultHeight() {
-        return TITLE_BAR_HEIGHT + 2 * CONTENT_PADDING + 3 * SLOT;
+        return TITLE_BAR_HEIGHT + CONTENT_PADDING + BG_H;
     }
 
     @Override
@@ -68,45 +89,53 @@ public class CraftingPanel extends ModulePanel {
 
     @Override
     public int minHeight() {
-        return defaultHeight();
+        return TITLE_BAR_HEIGHT + BG_H;
     }
 
     @Override
     public void layoutSlots() {
         if (!visible) {
-            for (Slot s : ownedSlots()) {
-                s.x = -9999;
-                s.y = -9999;
+            for (Slot slot : ownedSlots()) {
+                hideSlot(slot);
+            }
+            for (AbstractWidget widget : widgets) {
+                widget.visible = false;
             }
             return;
         }
         int left = contentLeft();
         int top = contentTop();
         for (int i = 0; i < gridSlots.size(); i++) {
-            Slot s = gridSlots.get(i);
-            s.x = left + (i % 3) * SLOT;
-            s.y = top + (i / 3) * SLOT;
+            Slot slot = gridSlots.get(i);
+            placeSlot(slot, left + GRID_OFFSET_X + (i % 3) * SLOT, top + GRID_OFFSET_Y + (i / 3) * SLOT);
         }
-        // Result slot sits to the right of the grid, vertically centred.
-        int resultX = left + 3 * SLOT + 24;
-        int resultY = top + SLOT;
-        for (Slot s : resultSlots) {
-            s.x = resultX;
-            s.y = resultY;
+        int resultX = left + RESULT_OFFSET_X;
+        int resultY = top + RESULT_OFFSET_Y;
+        for (Slot slot : resultSlots) {
+            placeSlot(slot, resultX, resultY);
         }
+        updateWidgets();
+    }
+
+    private void updateWidgets() {
+        int left = contentLeft();
+        int top = contentTop();
+        place(clearToNetwork, visible, left + 73, top + GRID_OFFSET_Y - 1);
+        place(clearToPlayer, visible, left + 83, top + GRID_OFFSET_Y - 1);
+    }
+
+    private static void place(AbstractWidget widget, boolean show, int x, int y) {
+        widget.visible = show;
+        widget.setX(x);
+        widget.setY(y);
     }
 
     @Override
     public void renderBackgroundContent(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
-        for (Slot s : gridSlots) {
-            ModulePanel.drawSlot(g, s.x - 1, s.y - 1);
-        }
-        // Arrow between grid and result.
-        int arrowY = contentTop() + SLOT + 4;
-        int arrowX = contentLeft() + 3 * SLOT + 4;
-        ModulePanel.drawCraftingArrow(g, arrowX, arrowY);
-        for (Slot s : resultSlots) {
-            ModulePanel.drawSlot(g, s.x - 1, s.y - 1);
+        updateWidgets();
+        CRAFTING_BG.dest(contentLeft(), contentTop()).blit(g);
+        for (AbstractWidget widget : widgets) {
+            widget.render(g, mouseX, mouseY, partialTicks);
         }
     }
 
@@ -115,54 +144,24 @@ public class CraftingPanel extends ModulePanel {
         if (hosted) {
             return;
         }
-        Rect toPlayer = toPlayerButton();
-        Rect toNetwork = toNetworkButton();
-        drawActionButton(g, toPlayer, Icon.S_ARROW_DOWN, toPlayer.contains(mouseX, mouseY));
-        drawActionButton(g, toNetwork, Icon.S_ARROW_UP, toNetwork.contains(mouseX, mouseY));
-
-        if (toPlayer.contains(mouseX, mouseY)) {
-            g.renderComponentTooltip(font,
-                    List.of(ButtonToolTips.StashToPlayer.text(), ButtonToolTips.StashToPlayerDesc.text()),
-                    mouseX, mouseY);
-        } else if (toNetwork.contains(mouseX, mouseY)) {
-            g.renderComponentTooltip(font,
-                    List.of(ButtonToolTips.Stash.text(), ButtonToolTips.StashDesc.text()),
-                    mouseX, mouseY);
+        for (AbstractWidget widget : widgets) {
+            if (widget.visible && widget.isMouseOver(mouseX, mouseY) && widget instanceof ITooltip tooltip
+                    && !tooltip.getTooltipMessage().isEmpty()) {
+                g.renderComponentTooltip(font, tooltip.getTooltipMessage(), mouseX, mouseY);
+                return;
+            }
         }
     }
 
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (!visible || hosted || button != 0) {
+        if (!visible || hosted) {
             return false;
         }
-        if (toPlayerButton().contains(mouseX, mouseY)) {
-            menu.clearToPlayerInventory();
-            return true;
-        }
-        if (toNetworkButton().contains(mouseX, mouseY)) {
-            menu.clearCraftingGrid();
-            return true;
+        for (AbstractWidget widget : widgets) {
+            if (widget.visible && widget.mouseClicked(mouseX, mouseY, button)) {
+                return true;
+            }
         }
         return false;
-    }
-
-    private void drawActionButton(GuiGraphics g, Rect rect, Icon icon, boolean hovered) {
-        g.blitSprite(AppEng.makeId(hovered ? "button_highlighted" : "button"),
-                rect.x(), rect.y(), rect.width(), rect.height());
-        icon.getBlitter().dest(rect.x() + 1, rect.y() + 1).blit(g);
-    }
-
-    private Rect toNetworkButton() {
-        return new Rect(x + width - 2 * ACTION_SIZE - 5, y + 4, ACTION_SIZE, ACTION_SIZE);
-    }
-
-    private Rect toPlayerButton() {
-        return new Rect(x + width - ACTION_SIZE - 3, y + 4, ACTION_SIZE, ACTION_SIZE);
-    }
-
-    private record Rect(int x, int y, int width, int height) {
-        private boolean contains(double mouseX, double mouseY) {
-            return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
-        }
     }
 }

@@ -51,6 +51,7 @@ dependencies {
     // Local runtime AE2 addons
     localRuntime "curse.maven:advancedae-1084104:${advancedae_file}"
     localRuntime "curse.maven:ae2-crystal-science-1435174:${ae2_crystal_science_file}"
+    localRuntime "curse.maven:ae2-utility-1521605:8655365"
     localRuntime "curse.maven:ex-pattern-provider-892005:${extendedae_file}"
     localRuntime "curse.maven:extendedae-plus-1337639:${extendedae_plus_file}"
     localRuntime "curse.maven:applied-energistics-2-wireless-terminals-459929:${ae2wt_terminals_file}"

@@ -7,6 +7,9 @@ import java.util.Map;
 
 /** Pure recursive measure/arrange engine. It performs no rendering or file IO. */
 public final class LayoutEngine {
+    /** Matches {@code ModulePanel.CONTENT_PADDING}; stacked sections drop this inset. */
+    private static final int SECTION_BOTTOM_INSET = 7;
+
     private final ModuleCatalog catalog;
     private final LayoutStyle style;
 
@@ -110,6 +113,18 @@ public final class LayoutEngine {
                 split.axis().extent(firstMinimum),
                 split.axis().extent(secondMinimum));
         int secondExtent = available - firstExtent;
+        if (split.axis() == DockAxis.VERTICAL) {
+            int packed = packFixedVerticalExtent(
+                    split,
+                    available,
+                    firstExtent,
+                    firstMinimum.height(),
+                    secondMinimum.height());
+            if (packed >= 0) {
+                firstExtent = packed;
+                secondExtent = available - firstExtent;
+            }
+        }
 
         DockRect firstBounds;
         DockRect dividerBounds;
@@ -129,6 +144,62 @@ public final class LayoutEngine {
                 split.nodeId(), split.axis(), dividerBounds));
         arrange(split.first(), firstBounds, builder);
         arrange(split.second(), secondBounds, builder);
+    }
+
+    /**
+     * Give leftover height to expanding leaves (ME list / pattern access). Fixed sections keep
+     * their packed AE2 size so splice seams do not grow a blank band.
+     */
+    private int packFixedVerticalExtent(
+            SplitNode split,
+            int available,
+            int firstExtent,
+            int firstMinimum,
+            int secondMinimum) {
+        boolean firstExpands = expandsVertically(split.first());
+        boolean secondExpands = expandsVertically(split.second());
+        if (firstExpands == secondExpands) {
+            return -1;
+        }
+        if (firstExpands) {
+            int secondPreferred = Math.max(secondMinimum, preferredHeight(split.second(), true));
+            int secondExtent = available - firstExtent;
+            if (secondExtent > secondPreferred && available - secondPreferred >= firstMinimum) {
+                return available - secondPreferred;
+            }
+            return -1;
+        }
+        int firstPreferred = Math.max(firstMinimum, preferredHeight(split.first(), false));
+        if (firstExtent > firstPreferred && available - firstPreferred >= secondMinimum) {
+            return firstPreferred;
+        }
+        return -1;
+    }
+
+    private boolean expandsVertically(LayoutNode node) {
+        if (node instanceof LeafNode leaf) {
+            return catalog.metrics(leaf.moduleId()).expandVertically();
+        }
+        SplitNode split = (SplitNode) node;
+        return expandsVertically(split.first()) || expandsVertically(split.second());
+    }
+
+    private int preferredHeight(LayoutNode node, boolean bottomSection) {
+        if (node instanceof LeafNode leaf) {
+            ModuleMetrics metrics = catalog.metrics(leaf.moduleId());
+            int standalone = metrics.defaultSize().height();
+            if (bottomSection) {
+                return standalone;
+            }
+            return Math.max(metrics.minimumSize().height(), standalone - SECTION_BOTTOM_INSET);
+        }
+        SplitNode split = (SplitNode) node;
+        if (split.axis() == DockAxis.HORIZONTAL) {
+            return Math.max(preferredHeight(split.first(), bottomSection), preferredHeight(split.second(), bottomSection));
+        }
+        return add(
+                add(preferredHeight(split.first(), false), preferredHeight(split.second(), bottomSection)),
+                style.dividerThickness());
     }
 
     private static int allocateFirst(int available, double ratio, int firstMinimum, int secondMinimum) {
