@@ -6,11 +6,16 @@ import io.netty.buffer.ByteBuf;
 import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.Level;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -34,7 +39,8 @@ public record PatternProviderListPacket(
         int inventorySize,
         long sortOrder,
         @Nullable PatternContainerGroup group,
-        Int2ObjectMap<ItemStack> slots) implements CustomPacketPayload {
+        Int2ObjectMap<ItemStack> slots,
+        @Nullable PatternProviderLoc loc) implements CustomPacketPayload {
     public static final Type<PatternProviderListPacket> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(MESplicedterminal.MODID, "pattern_provider_list"));
 
@@ -58,25 +64,26 @@ public record PatternProviderListPacket(
 
     public static PatternProviderListPacket reset(int containerId, long epoch) {
         return new PatternProviderListPacket(containerId, epoch, Operation.RESET,
-                0, 0, 0, 1, 0, 0, null, new Int2ObjectArrayMap<>());
+                0, 0, 0, 1, 0, 0, null, new Int2ObjectArrayMap<>(), null);
     }
 
     public static PatternProviderListPacket full(int containerId, long epoch, long providerId, long revision,
             int chunkIndex, int chunkCount, int inventorySize, long sortOrder, PatternContainerGroup group,
-            Int2ObjectMap<ItemStack> slots) {
+            Int2ObjectMap<ItemStack> slots, @Nullable PatternProviderLoc loc) {
         return new PatternProviderListPacket(containerId, epoch, Operation.FULL,
-                providerId, revision, chunkIndex, chunkCount, inventorySize, sortOrder, group, slots);
+                providerId, revision, chunkIndex, chunkCount, inventorySize, sortOrder, group, slots,
+                chunkIndex == 0 ? loc : null);
     }
 
     public static PatternProviderListPacket delta(int containerId, long epoch, long providerId, long revision,
             int chunkIndex, int chunkCount, Int2ObjectMap<ItemStack> slots) {
         return new PatternProviderListPacket(containerId, epoch, Operation.DELTA,
-                providerId, revision, chunkIndex, chunkCount, 0, 0, null, slots);
+                providerId, revision, chunkIndex, chunkCount, 0, 0, null, slots, null);
     }
 
     public static PatternProviderListPacket remove(int containerId, long epoch, long providerId) {
         return new PatternProviderListPacket(containerId, epoch, Operation.REMOVE,
-                providerId, 0, 0, 1, 0, 0, null, new Int2ObjectArrayMap<>());
+                providerId, 0, 0, 1, 0, 0, null, new Int2ObjectArrayMap<>(), null);
     }
 
     private static PatternProviderListPacket read(RegistryFriendlyByteBuf buf) {
@@ -99,14 +106,16 @@ public record PatternProviderListPacket(
                     int inventorySize = 0;
                     long sortOrder = 0;
                     PatternContainerGroup group = null;
+                    PatternProviderLoc loc = null;
                     if (operation == Operation.FULL) {
                         inventorySize = buf.readVarInt();
                         sortOrder = buf.readVarLong();
                         group = PatternContainerGroup.readFromPacket(buf);
+                        loc = readLoc(buf);
                     }
                     var slots = SlotsCodecHolder.CODEC.decode(buf);
                     packet = new PatternProviderListPacket(containerId, epoch, operation, providerId, revision,
-                            chunkIndex, chunkCount, inventorySize, sortOrder, group, slots);
+                            chunkIndex, chunkCount, inventorySize, sortOrder, group, slots, loc);
                 }
             }
             if (buf.isReadable()) {
@@ -145,8 +154,32 @@ public record PatternProviderListPacket(
                 throw new IllegalStateException("Full pattern provider update is missing its group");
             }
             group.writeToPacket(buf);
+            writeLoc(buf, loc);
         }
         SlotsCodecHolder.CODEC.encode(buf, slots);
+    }
+
+    private static void writeLoc(RegistryFriendlyByteBuf buf, @Nullable PatternProviderLoc loc) {
+        if (loc == null) {
+            buf.writeBoolean(false);
+            return;
+        }
+        buf.writeBoolean(true);
+        buf.writeBlockPos(loc.pos());
+        buf.writeResourceLocation(loc.dimensionId());
+        buf.writeVarInt(loc.face() == null ? -1 : loc.face().ordinal());
+    }
+
+    @Nullable
+    private static PatternProviderLoc readLoc(RegistryFriendlyByteBuf buf) {
+        if (!buf.readBoolean()) {
+            return null;
+        }
+        BlockPos pos = buf.readBlockPos();
+        ResourceLocation dimId = buf.readResourceLocation();
+        int faceOrd = buf.readVarInt();
+        Direction face = faceOrd >= 0 && faceOrd < Direction.values().length ? Direction.values()[faceOrd] : null;
+        return new PatternProviderLoc(pos, face, ResourceKey.create(Registries.DIMENSION, dimId));
     }
 
     public boolean isWellFormed() {
@@ -155,11 +188,11 @@ public record PatternProviderListPacket(
         }
         if (operation == Operation.RESET) {
             return providerId == 0 && revision == 0 && chunkIndex == 0 && chunkCount == 1
-                    && inventorySize == 0 && sortOrder == 0 && group == null && slots.isEmpty();
+                    && inventorySize == 0 && sortOrder == 0 && group == null && slots.isEmpty() && loc == null;
         }
         if (operation == Operation.REMOVE) {
             return providerId > 0 && revision == 0 && chunkIndex == 0 && chunkCount == 1
-                    && inventorySize == 0 && sortOrder == 0 && group == null && slots.isEmpty();
+                    && inventorySize == 0 && sortOrder == 0 && group == null && slots.isEmpty() && loc == null;
         }
         if (providerId <= 0 || revision <= 0
                 || chunkCount <= 0 || chunkCount > PatternProviderClientState.MAX_CHUNKS_PER_UPDATE
@@ -172,7 +205,7 @@ public record PatternProviderListPacket(
                     || group == null || !isPlausibleFullChunkCount(chunkCount, inventorySize)) {
                 return false;
             }
-        } else if (inventorySize != 0 || sortOrder != 0 || group != null) {
+        } else if (inventorySize != 0 || sortOrder != 0 || group != null || loc != null) {
             return false;
         }
         for (var entry : slots.int2ObjectEntrySet()) {
@@ -196,7 +229,7 @@ public record PatternProviderListPacket(
 
     private static PatternProviderListPacket invalid(int containerId) {
         return new PatternProviderListPacket(containerId, 0, Operation.RESET,
-                0, 0, 0, 1, 0, 0, null, new Int2ObjectArrayMap<>());
+                0, 0, 0, 1, 0, 0, null, new Int2ObjectArrayMap<>(), null);
     }
 
     private static void discardRemaining(ByteBuf buf) {
@@ -207,7 +240,7 @@ public record PatternProviderListPacket(
         }
     }
 
-    public record Request(int containerId, boolean subscribe) implements CustomPacketPayload {
+    public record Request(int containerId, boolean subscribe, byte showMode) implements CustomPacketPayload {
         public static final Type<Request> TYPE =
                 new Type<>(ResourceLocation.fromNamespaceAndPath(MESplicedterminal.MODID,
                         "pattern_provider_list_request"));
@@ -223,13 +256,14 @@ public record PatternProviderListPacket(
             try {
                 int containerId = ByteBufCodecs.VAR_INT.decode(buf);
                 boolean subscribe = ByteBufCodecs.BOOL.decode(buf);
+                byte showMode = buf.readByte();
                 if (buf.isReadable()) {
                     throw new IllegalArgumentException("Trailing pattern provider request data");
                 }
-                return new Request(containerId, subscribe);
+                return new Request(containerId, subscribe, showMode);
             } catch (RuntimeException exception) {
                 discardRemaining(buf);
-                return new Request(-1, false);
+                return new Request(-1, false, (byte) 0);
             }
         }
 
@@ -239,10 +273,11 @@ public record PatternProviderListPacket(
             }
             ByteBufCodecs.VAR_INT.encode(buf, containerId);
             ByteBufCodecs.BOOL.encode(buf, subscribe);
+            buf.writeByte(showMode);
         }
 
         boolean isWellFormed() {
-            return containerId >= 0;
+            return containerId >= 0 && showMode >= 0 && showMode <= 2;
         }
 
         public static void handle(Request packet, IPayloadContext context) {
@@ -254,7 +289,7 @@ public record PatternProviderListPacket(
                         && player.containerMenu instanceof MESTMenu menu
                         && menu.containerId == packet.containerId()
                         && (!packet.subscribe() || menu.canUsePatternAccess(player))) {
-                    menu.getPatternAccessSession().setSubscribed(player, packet.subscribe());
+                    menu.getPatternAccessSession().setSubscribed(player, packet.subscribe(), packet.showMode());
                 }
             });
         }

@@ -13,6 +13,8 @@ import appeng.client.gui.style.BackgroundGenerator;
 import appeng.client.gui.style.Blitter;
 import appeng.core.AppEng;
 
+import com.glodblock.github.extendedae.client.button.EPPIcon;
+
 import com.lhy.mest.client.dock.model.DockRect;
 
 /**
@@ -161,6 +163,20 @@ public abstract class ModulePanel {
         return false;
     }
 
+    /**
+     * When several right-edge scroll rails stack in one window, only the top panel paints
+     * the shared 9-slice background; others keep their own track/handle.
+     */
+    public boolean drawOutsideRail = true;
+    public int joinedRailY;
+    public int joinedRailH;
+
+    public void resetJoinedRail() {
+        drawOutsideRail = outsideHitWidth() > 0;
+        joinedRailY = y;
+        joinedRailH = height;
+    }
+
     /** Extra width to the left of the framed panel (ME terminal sidebar). */
     public int outsideHitLeftWidth() {
         return 0;
@@ -240,6 +256,10 @@ public abstract class ModulePanel {
      */
     protected int titleRightInset() {
         return pinVisible() ? 28 + PIN_SIZE : 28;
+    }
+
+    protected int titleTextOffsetX() {
+        return 0;
     }
 
     // --- Lifecycle hooks --------------------------------------------------
@@ -348,17 +368,17 @@ public abstract class ModulePanel {
             g.fill(x + width, y + 2, x + width + 2, y + height + 2, 0x55000000);
         }
         BackgroundGenerator.draw(width, height, g, x, y);
-        renderTitleStrip(g, font, x, y, width);
+        renderTitleStrip(g, font, x, y, width, mouseX, mouseY);
     }
 
     /**
      * Inner title used when this leaf is painted inside a unified composite window.
      */
-    public void renderSectionHeader(GuiGraphics g, Font font) {
+    public void renderSectionHeader(GuiGraphics g, Font font, int mouseX, int mouseY) {
         if (!drawsTitleBar()) {
             return;
         }
-        renderTitleStrip(g, font, x, y, width);
+        renderTitleStrip(g, font, x, y, width, mouseX, mouseY);
     }
 
     /**
@@ -379,17 +399,21 @@ public abstract class ModulePanel {
         BackgroundGenerator.draw(w, h, g, x, y);
     }
 
-    private void renderTitleStrip(GuiGraphics g, Font font, int left, int top, int barWidth) {
+    private void renderTitleStrip(GuiGraphics g, Font font, int left, int top, int barWidth, int mouseX, int mouseY) {
         String clippedTitle = font.plainSubstrByWidth(
                 title().getString(), Math.max(0, barWidth - TITLE_LEFT_INSET - titleRightInset()));
-        g.drawString(font, clippedTitle, left + TITLE_LEFT_INSET, top + 6, COLOR_TITLE_TEXT, false);
+        g.drawString(font, clippedTitle, left + TITLE_LEFT_INSET + titleTextOffsetX(), top + 6, COLOR_TITLE_TEXT, false);
         if (pinVisible()) {
             int px = pinButtonX();
             int py = pinButtonY();
-            g.fill(px - 1, py - 1, px + PIN_SIZE + 1, py + PIN_SIZE + 1, pinned ? 0xFF9AA3B8 : 0xFF777B8C);
-            g.fill(px, py, px + PIN_SIZE, py + PIN_SIZE, COLOR_PANEL);
+            boolean hovered = inPinButton(mouseX, mouseY);
+            int yOffset = hovered ? 1 : 0;
+            Blitter background = hovered
+                    ? EPPIcon.TERMINAL_BUTTON_HOVER
+                    : EPPIcon.TERMINAL_BUTTON;
+            background.dest(px, py + yOffset, PIN_SIZE, PIN_SIZE).zOffset(2).blit(g);
             Icon icon = pinned ? Icon.LOCKED : Icon.UNLOCKED;
-            icon.getBlitter().dest(px - 2, py - 2, PIN_SIZE + 4, PIN_SIZE + 4).blit(g);
+            icon.getBlitter().dest(px, py + yOffset, PIN_SIZE, PIN_SIZE).zOffset(3).blit(g);
         }
     }
 

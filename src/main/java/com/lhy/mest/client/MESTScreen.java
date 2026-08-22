@@ -23,6 +23,7 @@ import net.minecraft.world.item.ItemStack;
 
 import net.neoforged.neoforge.network.PacketDistributor;
 
+import appeng.api.crafting.PatternDetailsHelper;
 import appeng.api.behaviors.ContainerItemStrategies;
 import appeng.api.behaviors.EmptyingAction;
 import appeng.api.client.AEKeyRendering;
@@ -80,6 +81,7 @@ import com.lhy.mest.client.panel.MEListPanel;
 import com.lhy.mest.client.panel.PatternAccessPanel;
 import com.lhy.mest.client.panel.PatternEncodingPanel;
 import com.lhy.mest.integration.MestRecipeTransferContext;
+import com.lhy.mest.network.PatternProviderActionPacket;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -246,6 +248,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
         this.leftPos = 0;
         this.topPos = 0;
+        this.imageWidth = 0;
+        this.imageHeight = 0;
 
         if (searchField != null) {
             removeWidget(searchField);
@@ -266,10 +270,11 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             panels.add(craftingPanel);
             patternEncodingPanel = new PatternEncodingPanel(getMenu());
             panels.add(patternEncodingPanel);
-            patternAccessPanel = new PatternAccessPanel();
+            patternAccessPanel = new PatternAccessPanel(style);
             panels.add(patternAccessPanel);
             panels.add(new InventoryPanel(getMenu()));
             dock.init(panels, this.width, this.height);
+            patternAccessPanel.applyRememberedButtons();
         } else {
             dock.updateViewport(this.width, this.height);
         }
@@ -277,6 +282,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         dock.layoutAll();
         dock.applyPendingCenter();
         dock.relayoutAllSlots();
+        if (patternAccessPanel != null) {
+            patternAccessPanel.rebindSearchField(this);
+        }
         if (upgradeColumn == null && getMenu().getHost() instanceof IUpgradeableObject upgradeable) {
             List<Slot> upgradeSlots = new ArrayList<>();
             upgradeSlots.addAll(getMenu().getSlots(AE2wtlibSlotSemantics.SINGULARITY));
@@ -533,6 +541,11 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     public Rect2i recipeViewerBounds() {
         DockRect group = dock.anchoredGroupBounds();
         if (group == null) {
+            for (DockRect bounds : dock.exclusionBounds()) {
+                group = group == null ? bounds : group.union(bounds);
+            }
+        }
+        if (group == null) {
             return new Rect2i(0, 0, 0, 0);
         }
         int left = group.x();
@@ -552,6 +565,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (patternEncodingPanel != null && dock.isEffectivelyVisible(patternEncodingPanel)) {
             right = Math.max(right, patternEncodingPanel.x + patternEncodingPanel.width
                     + patternEncodingPanel.outsideHitWidth());
+        }
+        if (patternAccessPanel != null && dock.isEffectivelyVisible(patternAccessPanel)) {
+            right = Math.max(right, patternAccessPanel.x + patternAccessPanel.width
+                    + patternAccessPanel.outsideHitWidth());
         }
         if (upgradeColumn != null && upgradeColumn.isVisible()) {
             Rect2i extra = upgradeColumn.bounds();
@@ -598,6 +615,14 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                     patternEncodingPanel.y,
                     patternEncodingPanel.outsideHitWidth(),
                     patternEncodingPanel.height));
+        }
+        if (patternAccessPanel != null && dock.isEffectivelyVisible(patternAccessPanel)
+                && patternAccessPanel.outsideHitWidth() > 0) {
+            zones.add(new Rect2i(
+                    patternAccessPanel.x + patternAccessPanel.width,
+                    patternAccessPanel.y - 1,
+                    patternAccessPanel.outsideHitWidth(),
+                    patternAccessPanel.height + 1));
         }
         addExtraColumnExclusion(zones, upgradeColumn);
         addExtraColumnExclusion(zones, viewCellColumn);
@@ -814,7 +839,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                     getMenu(), MestRecipeTransferContext.Target.PATTERN_ENCODING);
         }
 
-        if (target != null && target.mouseClicked(mx, my, button)) {
+        if (target != null && !target.inResizeHandle(mx, my) && target.mouseClicked(mx, my, button)) {
             return true;
         }
         if (target != meListPanel && meListPanel != null) {
@@ -862,6 +887,14 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         boolean handled = super.mouseClicked(mx, my, button);
         // Empty content in the topmost panel still blocks panels and widgets below it.
         return handled || dock.topPanelAt(mx, my) != null;
+    }
+
+    @Override
+    protected boolean hasClickedOutside(double mx, double my, int guiLeft, int guiTop, int button) {
+        if (dock.topPanelAt(mx, my) != null || isMouseOverToolbarWidget(mx, my)) {
+            return false;
+        }
+        return super.hasClickedOutside(mx, my, guiLeft, guiTop, button);
     }
 
     private boolean isMouseOverToolbarWidget(double mx, double my) {
@@ -970,6 +1003,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (extra != null && extra.mouseScrolled(mx, my, scrollY)) {
             return true;
         }
+        if (patternAccessPanel != null && patternAccessPanel.mouseScrolled(mx, my, scrollY)) {
+            return true;
+        }
         ModulePanel target = dock.topLeafAt(mx, my);
         // Shift+scroll over an ME entry rolls single items in/out of the network instead of
         // scrolling the grid; this screen-level interaction runs before the panel's own scroll.
@@ -983,7 +1019,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             }
             return true;
         }
-        if (target != null && target.mouseScrolled(mx, my, scrollY)) {
+        if (target != null && target != patternAccessPanel && target.mouseScrolled(mx, my, scrollY)) {
             return true;
         }
         return dock.topPanelAt(mx, my) != null || super.mouseScrolled(mx, my, scrollX, scrollY);
@@ -1005,7 +1041,28 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             handleGridInventoryEntryMouseClick(repoSlot.getEntry(), mouseButton, clickType);
             return;
         }
+        if (clickType == ClickType.QUICK_MOVE
+                && patternAccessReceivesShiftClick()
+                && slot != null
+                && PatternDetailsHelper.isEncodedPattern(slot.getItem())) {
+            Entry target = patternAccessPanel.firstDisplayedProvider();
+            if (target != null) {
+                PacketDistributor.sendToServer(new PatternProviderActionPacket(
+                        getMenu().containerId,
+                        target.epoch(),
+                        target.providerId(),
+                        target.revision(),
+                        slot.index,
+                        PatternProviderActionPacket.Action.INSERT_INTO_PROVIDER));
+                return;
+            }
+        }
         super.slotClicked(slot, slotIdx, mouseButton, clickType);
+    }
+
+    private boolean patternAccessReceivesShiftClick() {
+        return patternAccessPanel != null && patternAccessPanel.visible
+                && (meListPanel == null || !meListPanel.visible);
     }
 
     private void handleGridInventoryEntryMouseClick(GridInventoryEntry entry, int mouseButton, ClickType clickType) {
@@ -1196,9 +1253,21 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         super.renderTooltip(g, x, y);
     }
 
+    public void attachPatternSearchField(AETextField field) {
+        if (field != null && !children().contains(field)) {
+            addWidget(field);
+        }
+    }
+
     @Override
     public boolean charTyped(char character, int modifiers) {
         if (meListPanel != null && meListPanel.searchCharTyped(character, modifiers)) {
+            return true;
+        }
+        if (patternAccessPanel != null && getFocused() == patternAccessPanel.searchField()) {
+            return super.charTyped(character, modifiers);
+        }
+        if (patternAccessPanel != null && patternAccessPanel.searchCharTyped(character, modifiers)) {
             return true;
         }
         return super.charTyped(character, modifiers);
@@ -1212,6 +1281,23 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             }
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 meListPanel.setSearchFocused(false);
+                return true;
+            }
+            return true;
+        }
+        if (patternAccessPanel != null
+                && (getFocused() == patternAccessPanel.searchField() || patternAccessPanel.isSearchFocused())) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                patternAccessPanel.setSearchFocused(false);
+                if (getFocused() == patternAccessPanel.searchField()) {
+                    setFocused(null);
+                }
+                return true;
+            }
+            if (getFocused() == patternAccessPanel.searchField()) {
+                return super.keyPressed(keyCode, scanCode, modifiers);
+            }
+            if (patternAccessPanel.searchKeyPressed(keyCode, scanCode, modifiers)) {
                 return true;
             }
             return true;
@@ -1235,9 +1321,14 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         return super.isHandlingRightClick();
     }
 
+    public void saveUiPreferences() {
+        dock.saveUiPreferences();
+    }
+
     @Override
     public void storeState() {
         dock.save();
+        dock.saveUiPreferences();
     }
 
     void closePatternAccessSubscription() {
@@ -1267,6 +1358,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     public void removed() {
         closePatternAccessSubscription();
         dock.save();
+        dock.saveUiPreferences();
         super.removed();
     }
 }

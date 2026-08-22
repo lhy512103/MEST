@@ -603,15 +603,15 @@ public class MEListPanel extends ModulePanel implements ISortSource {
 
     /** Right-hand rail. Outside chrome unless a sibling occupies this leaf's right edge. */
     private void drawScrollerRail(GuiGraphics g) {
-        if (!scrollerOutside()) {
+        if (!scrollerOutside() || !drawOutsideRail) {
             return;
         }
         g.blitSprite(
                 RAIL_SPRITE,
                 railLeft() - 2,
-                y - 1,
+                joinedRailY,
                 RAIL_SPRITE_WIDTH,
-                height + 1);
+                joinedRailH);
     }
 
     private void drawScrollerTrack(GuiGraphics g) {

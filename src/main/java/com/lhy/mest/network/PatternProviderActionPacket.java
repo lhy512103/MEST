@@ -29,7 +29,9 @@ public record PatternProviderActionPacket(
 
     public enum Action {
         PICKUP_OR_SET_DOWN,
-        QUICK_MOVE_TO_PLAYER
+        QUICK_MOVE_TO_PLAYER,
+        OPEN_PROVIDER_UI,
+        INSERT_INTO_PROVIDER
     }
 
     private static final Action[] ACTIONS = Action.values();

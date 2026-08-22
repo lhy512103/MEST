@@ -14,6 +14,9 @@ description='''
 A spliceable, drag-and-drop ME terminal that unifies AE2 wireless terminal modules into one customizable, file-manager-style workspace.
 '''
 
+[[mixins]]
+    config="mest.mixins.json"
+
 [[dependencies.${mod_id}]]
     modId="neoforge"
     type="required"

@@ -66,6 +66,11 @@ public class InventoryPanel extends ModulePanel {
     }
 
     @Override
+    protected int titleTextOffsetX() {
+        return 1;
+    }
+
+    @Override
     public void layoutSlots() {
         if (!visible) {
             // Move owned slots off-screen so a hidden panel cannot be interacted with.
@@ -74,7 +79,7 @@ public class InventoryPanel extends ModulePanel {
             }
             return;
         }
-        int left = contentLeft();
+        int left = contentLeft() + 1;
         int top = contentTop();
         for (int i = 0; i < inventorySlots.size(); i++) {
             Slot s = inventorySlots.get(i);
@@ -110,9 +115,9 @@ public class InventoryPanel extends ModulePanel {
     private static void drawSlotGroupBorder(GuiGraphics g, int px, int py, int cols, int rows) {
         int x1 = px + cols * SLOT;
         int y1 = py + rows * SLOT;
-        g.hLine(px, x1, py - 1, 0xFFF2F2F2);
-        g.hLine(px, x1, y1, 0xFFF2F2F2);
-        g.vLine(px - 1, py - 1, y1, 0xFFF2F2F2);
-        g.vLine(x1, py - 1, y1, 0xFFF2F2F2);
+        g.hLine(px, x1 - 1, py, 0xFFF2F2F2);
+        g.hLine(px, x1 - 1, y1 - 1, 0xFFF2F2F2);
+        g.vLine(px, py, y1 - 1, 0xFFF2F2F2);
+        g.vLine(x1 - 1, py, y1 - 1, 0xFFF2F2F2);
     }
 }

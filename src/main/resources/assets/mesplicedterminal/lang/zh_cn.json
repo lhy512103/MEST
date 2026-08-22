@@ -64,5 +64,13 @@
   "gui.mesplicedterminal.pattern_action.cycle": "轮换处理样板输出",
   "gui.mesplicedterminal.pattern_action.enabled": "已启用",
   "gui.mesplicedterminal.pattern_access.empty": "未找到可见样板供应器",
+  "gui.mesplicedterminal.pattern_access.search_mode": "更改搜索模式",
+  "gui.mesplicedterminal.pattern_access.search_mode.out": "当前：输出",
+  "gui.mesplicedterminal.pattern_access.search_mode.in": "当前：输入",
+  "gui.mesplicedterminal.pattern_access.search_mode.in_out": "当前：输入和输出",
+  "gui.expatternprovider.hide_slots": "隐藏槽位",
+  "gui.expatternprovider.show_slots": "显示槽位",
+  "extendedae_plus.tooltip.provider.open_ui": "打开该供应器目标容器的界面",
+  "gui.mesplicedterminal.pattern_access.open_ui_failed": "无法打开该供应器目标容器的界面",
   "gui.mesplicedterminal.pattern_access.click_hint": "左键取放/交换，右键取出"
 }

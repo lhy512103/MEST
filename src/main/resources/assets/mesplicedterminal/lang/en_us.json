@@ -64,5 +64,13 @@
   "gui.mesplicedterminal.pattern_action.cycle": "Cycle processing pattern outputs",
   "gui.mesplicedterminal.pattern_action.enabled": "Enabled",
   "gui.mesplicedterminal.pattern_access.empty": "No visible pattern providers found",
+  "gui.mesplicedterminal.pattern_access.search_mode": "Change Search Mode",
+  "gui.mesplicedterminal.pattern_access.search_mode.out": "Current: Outputs",
+  "gui.mesplicedterminal.pattern_access.search_mode.in": "Current: Inputs",
+  "gui.mesplicedterminal.pattern_access.search_mode.in_out": "Current: Inputs and Outputs",
+  "gui.expatternprovider.hide_slots": "Hide Slots",
+  "gui.expatternprovider.show_slots": "Show Slots",
+  "extendedae_plus.tooltip.provider.open_ui": "Open the target machine GUI of this provider",
+  "gui.mesplicedterminal.pattern_access.open_ui_failed": "Failed to open the provider target container UI",
   "gui.mesplicedterminal.pattern_access.click_hint": "Left-click to take/place/swap, right-click to extract"
 }

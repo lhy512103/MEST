@@ -177,8 +177,9 @@ class PatternProviderPacketCodecTest {
 
     @Test
     void requestValidationRejectsNegativeContainerId() {
-        assertTrue(new PatternProviderListPacket.Request(0, true).isWellFormed());
-        assertFalse(new PatternProviderListPacket.Request(-1, false).isWellFormed());
+        assertTrue(new PatternProviderListPacket.Request(0, true, (byte) 0).isWellFormed());
+        assertFalse(new PatternProviderListPacket.Request(-1, false, (byte) 0).isWellFormed());
+        assertFalse(new PatternProviderListPacket.Request(0, true, (byte) 3).isWellFormed());
     }
 
     private static void writeActionEnvelope(ByteBuf buf) {

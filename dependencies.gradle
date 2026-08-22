@@ -22,7 +22,9 @@ dependencies {
     compileOnly "org.appliedenergistics:appliedenergistics2:${ae2_version}"
     compileOnly "de.mari_023:ae2wtlib_api:${ae2wtlib_version}"
 
-    // AE2 addons (compile-time only, for optional integration code)
+    // AE2 addons (compile-time only, for optional integration code).
+    // ExtendedAE (ex-pattern-provider) is required at compile time so the pattern-access
+    // panel can follow GuiExPatternTerminal's layout and texture.
     compileOnly "curse.maven:advancedae-1084104:${advancedae_file}"
     compileOnly "curse.maven:ex-pattern-provider-892005:${extendedae_file}"
     compileOnly "curse.maven:extendedae-plus-1337639:${extendedae_plus_file}"

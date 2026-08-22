@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -50,6 +51,7 @@ import com.lhy.mest.client.dock.workspace.DockLayoutDto;
 import com.lhy.mest.client.dock.workspace.DockLayoutPersistence;
 import com.lhy.mest.client.dock.workspace.DockWorkspaceDefaults;
 import com.lhy.mest.client.dock.workspace.LegacyMigrationContext;
+import com.lhy.mest.client.panel.PatternAccessPanel;
 
 /**
  * Runtime adapter between floating module views and the immutable recursive workspace model.
@@ -250,10 +252,40 @@ public final class DockManager {
         projectionDirty = true;
         structureVersion++;
         ensureProjection();
-
-        if (rewriteMigratedLayout && !persistenceBlockedAfterLoadFailure) {
+        if (ensureAnchoredVisible()) {
+            save();
+        } else if (rewriteMigratedLayout && !persistenceBlockedAfterLoadFailure) {
             save();
         }
+    }
+
+    /**
+     * Saved layouts from before the anchored-group rule can leave every visible window floating,
+     * which hides the toolbar (and the layout editor). Recover by pinning one panel back to the
+     * terminal group.
+     */
+    public boolean ensureAnchoredVisible() {
+        if (hasVisibleAnchored()) {
+            return false;
+        }
+        ModulePanel pick = null;
+        for (ModulePanel panel : panels) {
+            if (workspace.policyFor(panel.id()).visible()) {
+                pick = panel;
+                break;
+            }
+        }
+        if (pick == null) {
+            pick = panelsByModuleId.get("me_list");
+        }
+        if (pick == null && !panels.isEmpty()) {
+            pick = panels.getFirst();
+        }
+        if (pick == null) {
+            return false;
+        }
+        setModulePolicy(pick, policyFor(pick).withVisible(true).withFloating(false));
+        return hasVisibleAnchored();
     }
 
     public void updateViewport(int screenWidth, int screenHeight) {
@@ -341,6 +373,10 @@ public final class DockManager {
 
     public boolean centerOnReturn() {
         return centerOnReturn;
+    }
+
+    public void saveUiPreferences() {
+        savePreferences();
     }
 
     public void setCenterOnReturn(boolean value) {
@@ -435,7 +471,31 @@ public final class DockManager {
         var policies = new LinkedHashMap<>(next.policies());
         policies.put(panel.id(), policy);
         next = next.withPolicies(policies);
+        if (!hasVisibleAnchored(next)) {
+            return;
+        }
         replaceWorkspace(next, false);
+    }
+
+    /**
+     * Extra chrome (toolbar / upgrades) attaches to the non-floating group. At least one visible
+     * anchored panel must remain so that group never disappears.
+     */
+    public boolean hasVisibleAnchored() {
+        return hasVisibleAnchored(workspace);
+    }
+
+    private boolean hasVisibleAnchored(DockWorkspace candidate) {
+        if (catalog == null || candidate == null) {
+            return true;
+        }
+        for (String moduleId : catalog.moduleIds()) {
+            ModuleLayoutPolicy policy = candidate.policyFor(moduleId);
+            if (policy.visible() && !policy.floating()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void togglePinned(ModulePanel panel) {
@@ -452,6 +512,9 @@ public final class DockManager {
 
     public void applyEditedWorkspace(DockWorkspace edited) {
         WorkspaceValidator.validateStrict(edited, catalog);
+        if (!hasVisibleAnchored(edited)) {
+            return;
+        }
         rememberUndoPoint(workspace);
         replaceWorkspace(edited, true);
         save();
@@ -641,7 +704,7 @@ public final class DockManager {
                         panel.renderUnderlay(graphics, font, routedMouseX, routedMouseY, partialTicks);
                         panel.renderFrame(graphics, font, routedMouseX, routedMouseY, partialTicks);
                     } else if (!panel.isOutsideChrome()) {
-                        panel.renderSectionHeader(graphics, font);
+                        panel.renderSectionHeader(graphics, font, routedMouseX, routedMouseY);
                     }
                     panel.renderBackgroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
                     if (isAnchoredRoot(root)) {
@@ -1245,6 +1308,7 @@ public final class DockManager {
             if (object.has("layoutLocked")) {
                 layoutLocked = object.get("layoutLocked").getAsBoolean();
             }
+            PatternAccessPanel.readPreferences(object);
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn("Failed to read terminal layout preferences", e);
         }
@@ -1259,6 +1323,7 @@ public final class DockManager {
             JsonObject object = new JsonObject();
             object.addProperty("centerOnReturn", centerOnReturn);
             object.addProperty("layoutLocked", layoutLocked);
+            PatternAccessPanel.writePreferences(object);
             Files.writeString(preferencesPath, object.toString(), StandardCharsets.UTF_8);
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn("Failed to write terminal layout preferences", e);
@@ -1336,8 +1401,47 @@ public final class DockManager {
                 }
             }
         }
+        joinOutsideRails();
         projection = next;
         projectionDirty = false;
+    }
+
+    private void joinOutsideRails() {
+        var clusters = new HashMap<String, List<ModulePanel>>();
+        for (ModulePanel panel : panelsByModuleId.values()) {
+            panel.resetJoinedRail();
+            if (!panel.visible || panel.outsideHitWidth() <= 0) {
+                continue;
+            }
+            int railX = panel.x + panel.width;
+            String key = (panel.splicedWindow == null ? System.identityHashCode(panel) : System.identityHashCode(panel.splicedWindow))
+                    + ":" + railX;
+            clusters.computeIfAbsent(key, ignored -> new ArrayList<>()).add(panel);
+        }
+        for (List<ModulePanel> group : clusters.values()) {
+            if (group.size() < 2) {
+                continue;
+            }
+            group.sort(Comparator.comparingInt(panel -> panel.y));
+            int clusterStart = 0;
+            for (int index = 1; index <= group.size(); index++) {
+                boolean split = index == group.size()
+                        || group.get(index).y > group.get(index - 1).y + group.get(index - 1).height + 2;
+                if (!split) {
+                    continue;
+                }
+                if (index - clusterStart >= 2) {
+                    ModulePanel first = group.get(clusterStart);
+                    ModulePanel last = group.get(index - 1);
+                    first.joinedRailY = first.y;
+                    first.joinedRailH = last.y + last.height - first.joinedRailY;
+                    for (int joined = clusterStart + 1; joined < index; joined++) {
+                        group.get(joined).drawOutsideRail = false;
+                    }
+                }
+                clusterStart = index;
+            }
+        }
     }
 
     private void replaceWorkspace(DockWorkspace changed, boolean structural) {
