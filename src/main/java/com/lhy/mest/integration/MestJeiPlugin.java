@@ -87,8 +87,8 @@ public class MestJeiPlugin implements IModPlugin {
 
     /**
      * JEI rejects {@code guiXSize/guiYSize <= 0} and then hides both the ingredient list and
-     * bookmarks. MEST keeps {@code imageWidth=0} so the vanilla handler cannot be used; this
-     * must always return a strictly positive rectangle, with room on the right for the list.
+     * bookmarks. The vanilla handler cannot be used; this always returns a strictly positive
+     * core rectangle (ME list). Other panels are extra areas so JEI can stair-step around them.
      */
     private static IGuiProperties propertiesFor(MESTScreen screen) {
         if (screen.width <= 0 || screen.height <= 0) {
@@ -105,13 +105,11 @@ public class MestJeiPlugin implements IModPlugin {
             x = Math.max(0, (screen.width - width) / 2);
             y = Math.max(0, (screen.height - height) / 2);
         }
-        int maxRight = Math.max(x + 1, screen.width - 132);
-        if (x + width > maxRight) {
-            width = Math.max(1, maxRight - x);
+        if (x + width > screen.width) {
+            width = Math.max(1, screen.width - x);
         }
-        int maxBottom = Math.max(y + 1, screen.height - 8);
-        if (y + height > maxBottom) {
-            height = Math.max(1, maxBottom - y);
+        if (y + height > screen.height) {
+            height = Math.max(1, screen.height - y);
         }
         return new MestGuiProperties(x, y, width, height, screen.width, screen.height);
     }

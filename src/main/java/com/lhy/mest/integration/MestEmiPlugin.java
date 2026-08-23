@@ -53,10 +53,6 @@ public class MestEmiPlugin implements EmiPlugin {
             return new Bounds(bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight());
         });
         registry.addExclusionArea(MESTScreen.class, (screen, consumer) -> {
-            var bounds = screen.recipeViewerBounds();
-            if (bounds.getWidth() > 0 && bounds.getHeight() > 0) {
-                consumer.accept(new Bounds(bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight()));
-            }
             for (var zone : screen.getExclusionZones()) {
                 consumer.accept(new Bounds(zone.getX(), zone.getY(), zone.getWidth(), zone.getHeight()));
             }

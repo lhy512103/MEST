@@ -137,6 +137,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private PatternEncodingPanel patternEncodingPanel;
     private PatternAccessPanel patternAccessPanel;
     private PatternCachePanel patternCachePanel;
+    private InventoryPanel inventoryPanel;
     private ProviderSelectPanel providerSelectPanel;
     private boolean keepPendingOnRemove;
 
@@ -303,7 +304,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             panels.add(patternAccessPanel);
             patternCachePanel = new PatternCachePanel(getMenu());
             panels.add(patternCachePanel);
-            panels.add(new InventoryPanel(getMenu()));
+            inventoryPanel = new InventoryPanel(getMenu());
+            panels.add(inventoryPanel);
             if (ModList.get().isLoaded("extendedae_plus")) {
                 providerSelectPanel = new ProviderSelectPanel(style);
                 panels.add(providerSelectPanel);
@@ -325,8 +327,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
         this.leftPos = 0;
         this.topPos = 0;
-        this.imageWidth = 0;
-        this.imageHeight = 0;
 
         if (searchField != null) {
             removeWidget(searchField);
@@ -361,6 +361,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         attachMeSideBar();
         attachExtraSlotColumns();
+        syncExternalModGuiMetrics();
         refreshRecipeTransferAvailability();
         selectVisibleRecipeTargetIfNeeded();
         if (firstOpen && meListPanel != null && searchField != null
@@ -420,6 +421,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         attachMeSideBar();
         attachExtraSlotColumns();
+        syncExternalModGuiMetrics();
+        if (ModList.get().isLoaded("clientsort")) {
+            com.lhy.mest.compat.ClientSortCompat.syncButtons(this);
+        }
         refreshRecipeTransferAvailability();
     }
 
@@ -653,10 +658,54 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     /**
-     * Screen-space rectangle of the spliced terminal plus attached chrome. Used by JEI/EMI to
-     * park their sidebars without reading {@code leftPos} (slots are absolute, so leftPos stays 0).
+     * ClientSort (and similar injectors) place buttons at {@code leftPos + imageWidth}.
+     * Slots are already in screen space, so left/top stay 0 and imageWidth is the
+     * player-inventory's right edge.
+     */
+    private void syncExternalModGuiMetrics() {
+        leftPos = 0;
+        topPos = 0;
+        if (inventoryPanel != null && dock.isEffectivelyVisible(inventoryPanel)
+                && inventoryPanel.width > 0 && inventoryPanel.height > 0) {
+            imageWidth = Math.max(1, inventoryPanel.x + inventoryPanel.width);
+            imageHeight = Math.max(1, inventoryPanel.y + inventoryPanel.height);
+            return;
+        }
+        imageWidth = 1;
+        imageHeight = 1;
+    }
+
+    /**
+     * Tight core rectangle (ME list, else first visible panel) so JEI/EMI treat the
+     * terminal as a small GUI and stair-step around the rest via exclusion zones.
      */
     public Rect2i recipeViewerBounds() {
+        ModulePanel core = null;
+        if (meListPanel != null && dock.isEffectivelyVisible(meListPanel)
+                && meListPanel.width > 0 && meListPanel.height > 0) {
+            core = meListPanel;
+        } else {
+            for (ModulePanel panel : dock.panels()) {
+                if (panel != null && dock.isEffectivelyVisible(panel)
+                        && !dock.policyFor(panel).floating()
+                        && panel.width > 0 && panel.height > 0) {
+                    core = panel;
+                    break;
+                }
+            }
+        }
+        if (core != null) {
+            return new Rect2i(Math.max(0, core.x), Math.max(0, core.y),
+                    Math.max(1, core.width), Math.max(1, core.height));
+        }
+        return new Rect2i(0, 0, 1, 1);
+    }
+
+    /**
+     * Full union of the spliced terminal plus attached chrome. Kept for callers that
+     * need the occupied envelope rather than the JEI core rectangle.
+     */
+    public Rect2i recipeViewerEnvelope() {
         DockRect group = dock.anchoredGroupBounds();
         if (group == null) {
             for (DockRect bounds : dock.exclusionBounds()) {
@@ -712,8 +761,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     @Override
     public List<Rect2i> getExclusionZones() {
         List<Rect2i> zones = new ArrayList<>();
-        for (DockRect bounds : dock.exclusionBounds()) {
-            zones.add(new Rect2i(bounds.x(), bounds.y(), bounds.width(), bounds.height()));
+        for (ModulePanel panel : dock.panels()) {
+            if (panel == null || !dock.isEffectivelyVisible(panel)
+                    || panel.width <= 0 || panel.height <= 0) {
+                continue;
+            }
+            zones.add(new Rect2i(panel.x, panel.y, panel.width, panel.height));
         }
         if (meSideBar.isVisible()) {
             Rect2i rail = meSideBar.bounds();
