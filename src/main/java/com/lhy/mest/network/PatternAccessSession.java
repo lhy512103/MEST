@@ -234,6 +234,8 @@ public final class PatternAccessSession {
         switch (packet.action()) {
             case PICKUP_OR_SET_DOWN -> exchangeWithCarried(patternSlot);
             case QUICK_MOVE_TO_PLAYER -> quickMoveToPlayer(player, patternSlot);
+            case DROP -> dropFromSlot(player, patternSlot, false);
+            case DROP_STACK -> dropFromSlot(player, patternSlot, true);
             case OPEN_PROVIDER_UI, INSERT_INTO_PROVIDER -> {
             }
         }
@@ -356,6 +358,14 @@ public final class PatternAccessSession {
     private static void quickMoveToPlayer(ServerPlayer player, FilteredInternalInventory patternSlot) {
         var playerInventory = new PlayerInternalInventory(player.getInventory());
         PatternSlotTransactions.quickMove(patternSlot, playerInventory);
+    }
+
+    private static void dropFromSlot(
+            ServerPlayer player, FilteredInternalInventory patternSlot, boolean wholeStack) {
+        ItemStack extracted = patternSlot.extractItem(0, wholeStack ? 64 : 1, false);
+        if (!extracted.isEmpty()) {
+            player.drop(extracted, false);
+        }
     }
 
     private void resetForUnavailable() {

@@ -107,6 +107,7 @@ public class PatternAccessPanel extends ModulePanel {
     private final java.util.HashMap<Long, HighlightButtonSmall> highlightButtons = new java.util.HashMap<>();
     private final java.util.HashMap<Long, Button> openUiButtons = new java.util.HashMap<>();
     private int scrollRows;
+    private SlotHit lastShiftExtract;
     private int subscribedContainerId = -1;
     private MESTMenu subscribedMenu;
     private ItemStack hoveredPattern = ItemStack.EMPTY;
@@ -139,7 +140,7 @@ public class PatternAccessPanel extends ModulePanel {
 
     @Override
     public int defaultWidth() {
-        return chromeWidth(DEFAULT_COLUMNS);
+        return chromeWidth(DEFAULT_COLUMNS) + preferredContentRightInset();
     }
 
     @Override
@@ -149,7 +150,7 @@ public class PatternAccessPanel extends ModulePanel {
 
     @Override
     public int minWidth() {
-        return chromeWidth(MIN_COLUMNS);
+        return chromeWidth(MIN_COLUMNS) + preferredContentRightInset();
     }
 
     @Override
@@ -483,13 +484,7 @@ public class PatternAccessPanel extends ModulePanel {
 
     @Override
     public boolean scrollbarPressed(double mx, double my) {
-        if (!visible) {
-            return false;
-        }
-        layoutScrollbar();
-        Rect2i bounds = scrollbar.getBounds();
-        if (!(mx >= bounds.getX() && mx < bounds.getX() + bounds.getWidth()
-                && my >= bounds.getY() && my < bounds.getY() + bounds.getHeight())) {
+        if (!visible || !inScroller(mx, my)) {
             return false;
         }
         boolean consumed = scrollbar.onMouseDown(new Point((int) mx, (int) my), 0);
@@ -541,6 +536,9 @@ public class PatternAccessPanel extends ModulePanel {
             }
             return false;
         }
+        if (inScroller(mx, my)) {
+            return false;
+        }
         if (searchModeButton.mouseClicked(mx, my, button)
                 || showModeButton.mouseClicked(mx, my, button)
                 || hideSlotsButton.mouseClicked(mx, my, button)) {
@@ -585,6 +583,55 @@ public class PatternAccessPanel extends ModulePanel {
             return true;
         }
         return my >= y + TITLE_BAR_HEIGHT;
+    }
+
+    public boolean dropHovered(double mx, double my, boolean wholeStack) {
+        SlotHit hit = slotAt(mx, my);
+        if (hit == null || !slotFilled(hit)) {
+            return false;
+        }
+        sendSlotAction(hit, wholeStack
+                ? PatternProviderActionPacket.Action.DROP_STACK
+                : PatternProviderActionPacket.Action.DROP);
+        return true;
+    }
+
+    public void shiftHoverExtract(double mx, double my) {
+        if (!Screen.hasShiftDown()) {
+            lastShiftExtract = null;
+            return;
+        }
+        var menu = currentMenu();
+        if (menu == null || !menu.getCarried().isEmpty()) {
+            return;
+        }
+        SlotHit hit = slotAt(mx, my);
+        if (hit == null || !slotFilled(hit) || hit.equals(lastShiftExtract)) {
+            return;
+        }
+        lastShiftExtract = hit;
+        sendSlotAction(hit, PatternProviderActionPacket.Action.QUICK_MOVE_TO_PLAYER);
+    }
+
+    private boolean slotFilled(SlotHit hit) {
+        for (Entry entry : providers) {
+            if (entry.providerId() != hit.providerId() || hit.providerSlot() >= entry.inventorySize()) {
+                continue;
+            }
+            ItemStack stack = entry.slots().get(hit.providerSlot());
+            return stack != null && !stack.isEmpty();
+        }
+        return false;
+    }
+
+    private void sendSlotAction(SlotHit hit, PatternProviderActionPacket.Action action) {
+        var menu = currentMenu();
+        if (menu == null || menu.containerId != subscribedContainerId) {
+            updateSubscription();
+            return;
+        }
+        PacketDistributor.sendToServer(new PatternProviderActionPacket(
+                menu.containerId, hit.epoch(), hit.providerId(), hit.revision(), hit.providerSlot(), action));
     }
 
     public boolean searchCharTyped(char character, int modifiers) {
@@ -806,7 +853,7 @@ public class PatternAccessPanel extends ModulePanel {
     }
 
     private boolean scrollerOutside() {
-        return visible && (splicedWindow == null || x + width >= splicedWindow.right());
+        return visible && rightmostInWindow;
     }
 
     private int railLeft() {

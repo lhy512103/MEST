@@ -24,6 +24,9 @@ import de.mari_023.ae2wtlib.api.AE2wtlibComponents;
 import de.mari_023.ae2wtlib.api.terminal.ItemWT;
 import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
 
+import com.lhy.mest.config.MestConfig;
+import com.lhy.mest.registry.ModComponents;
+
 /**
  * Server-side host for the ME Spliced Terminal. Extends {@link WTMenuHost} (single grid connection,
  * ME storage access, wireless power, quantum-bridge linking) and additionally exposes a 3x3 crafting
@@ -32,7 +35,12 @@ import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
  */
 public class MESTMenuHost extends WTMenuHost
         implements IViewCellStorage, IPatternTerminalMenuHost, IPatternTerminalLogicHost {
+    public static int patternCacheSize() {
+        return MestConfig.patternCacheSlots();
+    }
+
     private final SupplierInternalInventory<InternalInventory> craftingGrid;
+    private final SupplierInternalInventory<InternalInventory> patternCache;
     private final PatternEncodingLogic patternEncodingLogic = new PatternEncodingLogic(this);
 
     public MESTMenuHost(ItemWT item, Player player, ItemMenuHostLocator locator,
@@ -42,6 +50,10 @@ public class MESTMenuHost extends WTMenuHost
                 new StackDependentSupplier<>(
                         this::getItemStack,
                         stack -> createInv(player, stack, AEComponents.CRAFTING_INV, 9)));
+        this.patternCache = new SupplierInternalInventory<>(
+                new StackDependentSupplier<>(
+                        this::getItemStack,
+                        stack -> createInv(player, stack, ModComponents.PATTERN_CACHE_INV.get(), patternCacheSize())));
         this.patternEncodingLogic.readFromNBT(
                 getItemStack().getOrDefault(AE2wtlibComponents.PATTERN_ENCODING_LOGIC, new CompoundTag()),
                 player.registryAccess());
@@ -54,6 +66,10 @@ public class MESTMenuHost extends WTMenuHost
             return craftingGrid;
         }
         return super.getSubInventory(id);
+    }
+
+    public InternalInventory getPatternCacheInventory() {
+        return patternCache;
     }
 
     @Override

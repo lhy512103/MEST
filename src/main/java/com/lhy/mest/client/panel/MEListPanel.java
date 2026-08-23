@@ -107,8 +107,8 @@ public class MEListPanel extends ModulePanel implements ISortSource {
                 GuiText.SearchTooltipItemId.text()));
         if (rememberedSearch != null && !rememberedSearch.isEmpty()) {
             field.setValue(rememberedSearch);
-            field.selectAll();
             onSearchChanged(rememberedSearch);
+            field.setFocused(false);
         }
     }
 
@@ -128,7 +128,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
 
     @Override
     public int defaultWidth() {
-        return 2 * CONTENT_PADDING + 9 * SLOT;
+        return 2 * CONTENT_PADDING + 9 * SLOT + preferredContentRightInset();
     }
 
     @Override
@@ -342,8 +342,16 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     }
 
     public void setSearchFocused(boolean focused) {
-        if (searchField != null) {
-            searchField.setFocused(focused);
+        if (searchField == null) {
+            return;
+        }
+        searchField.setFocused(focused);
+        if (Minecraft.getInstance().screen instanceof com.lhy.mest.client.MESTScreen screen) {
+            if (focused) {
+                screen.setFocused(searchField);
+            } else if (screen.getFocused() == searchField) {
+                screen.setFocused(null);
+            }
         }
     }
 
@@ -481,7 +489,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     }
 
     private boolean scrollerOutside() {
-        return visible && (splicedWindow == null || x + width >= splicedWindow.right());
+        return visible && rightmostInWindow;
     }
 
     private int railLeft() {

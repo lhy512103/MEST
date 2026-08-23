@@ -48,6 +48,7 @@ import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.network.PatternAccessSession;
+import com.lhy.mest.network.PatternCacheActionPacket;
 
 /**
  * Container for the ME Spliced Terminal. Extends AE2's {@link CraftingTermMenu} (which itself extends
@@ -129,6 +130,7 @@ public class MESTMenu extends CraftingTermMenu {
                 AE2wtlibSlotSemantics.SINGULARITY);
 
         addPatternEncodingSlots();
+        addPatternCacheSlots();
 
         this.patternEncodingMode = patternEncodingLogic.getMode();
         this.patternSubstitute = patternEncodingLogic.isSubstitution();
@@ -469,6 +471,20 @@ public class MESTMenu extends CraftingTermMenu {
                         patternEncodingLogic.getEncodedPatternInv(), 0),
                 SlotSemantics.ENCODED_PATTERN);
         this.encodedPatternSlot.setStackLimit(1);
+    }
+
+    private void addPatternCacheSlots() {
+        var inventory = host.getPatternCacheInventory();
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            var cacheSlot = new RestrictedInputSlot(
+                    RestrictedInputSlot.PlacableItemType.ENCODED_PATTERN, inventory, slot);
+            cacheSlot.setIcon(appeng.client.gui.Icon.BACKGROUND_ENCODED_PATTERN);
+            addSlot(cacheSlot, MestSlotSemantics.PATTERN_CACHE);
+        }
+    }
+
+    public List<Slot> getPatternCacheSlots() {
+        return getSlots(MestSlotSemantics.PATTERN_CACHE);
     }
 
     private ItemStack updatePatternCraftingOutput() {
@@ -828,7 +844,236 @@ public class MESTMenu extends CraftingTermMenu {
             }
         }
 
+        if (PatternDetailsHelper.isEncodedPattern(input)) {
+            for (Slot cacheSlot : getPatternCacheSlots()) {
+                if (cacheSlot.mayPlace(input)) {
+                    input = cacheSlot.safeInsert(input);
+                    if (input.isEmpty()) {
+                        return initialCount;
+                    }
+                }
+            }
+        }
+
         int transferred = initialCount - input.getCount();
         return transferred + super.transferStackToMenu(input);
+    }
+
+    public void handlePatternCacheAction(PatternCacheActionPacket.Action action, boolean value) {
+        switch (action) {
+            case SWAP -> rotateProcessingOutputs();
+            case TIMES_2 -> modifyProcessingPatterns(2, false);
+            case TIMES_3 -> modifyProcessingPatterns(3, false);
+            case TIMES_5 -> modifyProcessingPatterns(5, false);
+            case EQUALS_1 -> restoreProcessingRatios();
+            case DIVIDE_2 -> modifyProcessingPatterns(2, true);
+            case DIVIDE_3 -> modifyProcessingPatterns(3, true);
+            case DIVIDE_5 -> modifyProcessingPatterns(5, true);
+            case TIMES_8 -> modifyProcessingPatterns(8, false);
+            case DIVIDE_8 -> modifyProcessingPatterns(8, true);
+            case TIMES_16 -> modifyProcessingPatterns(16, false);
+            case DIVIDE_16 -> modifyProcessingPatterns(16, true);
+            case TIMES_32 -> modifyProcessingPatterns(32, false);
+            case DIVIDE_32 -> modifyProcessingPatterns(32, true);
+            case ITEM_SUBSTITUTION -> changeCraftingSubstitution(true, value);
+            case FLUID_SUBSTITUTION -> changeCraftingSubstitution(false, value);
+        }
+    }
+
+    private void modifyProcessingPatterns(int scale, boolean divide) {
+        if (scale <= 0) {
+            return;
+        }
+        for (Slot slot : getPatternCacheSlots()) {
+            ItemStack stack = slot.getItem();
+            var details = PatternDetailsHelper.decodePattern(stack, getPlayer().level());
+            if (!(details instanceof AEProcessingPattern process)) {
+                continue;
+            }
+            var input = process.getSparseInputs().toArray(GenericStack[]::new);
+            var output = process.getSparseOutputs().toArray(GenericStack[]::new);
+            if (!canScale(input, scale, divide) || !canScale(output, scale, divide)) {
+                continue;
+            }
+            slot.set(PatternDetailsHelper.encodeProcessingPattern(
+                    Arrays.asList(scaleStacks(input, scale, divide)),
+                    Arrays.asList(scaleStacks(output, scale, divide))));
+        }
+        broadcastChanges();
+    }
+
+    private void restoreProcessingRatios() {
+        for (Slot slot : getPatternCacheSlots()) {
+            ItemStack stack = slot.getItem();
+            var details = PatternDetailsHelper.decodePattern(stack, getPlayer().level());
+            if (!(details instanceof AEProcessingPattern process)) {
+                continue;
+            }
+            long gcd = sharedGcd(process.getSparseInputs(), process.getSparseOutputs());
+            if (gcd <= 1L) {
+                continue;
+            }
+            slot.set(PatternDetailsHelper.encodeProcessingPattern(
+                    divideStacks(process.getSparseInputs(), gcd),
+                    divideStacks(process.getSparseOutputs(), gcd)));
+        }
+        broadcastChanges();
+    }
+
+    private void rotateProcessingOutputs() {
+        for (Slot slot : getPatternCacheSlots()) {
+            ItemStack stack = slot.getItem();
+            var details = PatternDetailsHelper.decodePattern(stack, getPlayer().level());
+            if (!(details instanceof AEProcessingPattern process)) {
+                continue;
+            }
+            slot.set(PatternDetailsHelper.encodeProcessingPattern(
+                    process.getSparseInputs(),
+                    Arrays.asList(rotateOutputs(process.getSparseOutputs().toArray(GenericStack[]::new)))));
+        }
+        broadcastChanges();
+    }
+
+    private void changeCraftingSubstitution(boolean itemSubstitution, boolean value) {
+        for (Slot slot : getPatternCacheSlots()) {
+            ItemStack stack = slot.getItem();
+            var details = PatternDetailsHelper.decodePattern(stack, getPlayer().level());
+            if (!(details instanceof AECraftingPattern craft)) {
+                continue;
+            }
+            var recipe = craftingRecipeFor(craft);
+            if (recipe == null) {
+                continue;
+            }
+            try {
+                slot.set(PatternDetailsHelper.encodeCraftingPattern(
+                        recipe,
+                        itemize(craft.getSparseInputs()),
+                        itemize(craft.getOutputs().isEmpty() ? null : craft.getOutputs().getFirst()),
+                        itemSubstitution ? value : craft.canSubstitute(),
+                        itemSubstitution ? craft.canSubstituteFluids() : value));
+            } catch (RuntimeException ignored) {
+            }
+        }
+        broadcastChanges();
+    }
+
+    @Nullable
+    private RecipeHolder<CraftingRecipe> craftingRecipeFor(AECraftingPattern craft) {
+        var items = itemize(craft.getSparseInputs());
+        if (items.length != 9) {
+            return null;
+        }
+        return getPlayer().level().getRecipeManager()
+                .getRecipeFor(RecipeType.CRAFTING, CraftingInput.of(3, 3, Arrays.asList(items)), getPlayer().level())
+                .orElse(null);
+    }
+
+    private static boolean canScale(GenericStack[] stacks, int scale, boolean divide) {
+        for (GenericStack stack : stacks) {
+            if (stack == null) {
+                continue;
+            }
+            if (divide) {
+                if (stack.amount() % scale != 0) {
+                    return false;
+                }
+            } else if (stack.amount() * (long) scale > 999999L * stack.what().getAmountPerUnit()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static GenericStack[] scaleStacks(GenericStack[] source, int scale, boolean divide) {
+        var result = new GenericStack[source.length];
+        for (int i = 0; i < source.length; i++) {
+            if (source[i] != null) {
+                long amount = divide ? source[i].amount() / scale : source[i].amount() * scale;
+                result[i] = new GenericStack(source[i].what(), amount);
+            }
+        }
+        return result;
+    }
+
+    private static List<GenericStack> divideStacks(List<GenericStack> stacks, long divisor) {
+        var result = new ArrayList<GenericStack>(stacks.size());
+        for (GenericStack stack : stacks) {
+            result.add(stack == null ? null : new GenericStack(stack.what(), stack.amount() / divisor));
+        }
+        return result;
+    }
+
+    private static long sharedGcd(List<GenericStack> inputs, List<GenericStack> outputs) {
+        long gcd = 0L;
+        gcd = updateGcd(gcd, inputs);
+        gcd = updateGcd(gcd, outputs);
+        return gcd;
+    }
+
+    private static long updateGcd(long current, List<GenericStack> stacks) {
+        long gcd = current;
+        for (GenericStack stack : stacks) {
+            if (stack == null || stack.amount() <= 0L) {
+                continue;
+            }
+            gcd = gcd == 0L ? stack.amount() : gcd(gcd, stack.amount());
+            if (gcd == 1L) {
+                return 1L;
+            }
+        }
+        return gcd;
+    }
+
+    private static long gcd(long left, long right) {
+        left = Math.abs(left);
+        right = Math.abs(right);
+        while (right != 0L) {
+            long remainder = left % right;
+            left = right;
+            right = remainder;
+        }
+        return left;
+    }
+
+    private static GenericStack[] rotateOutputs(GenericStack[] outputs) {
+        int filled = 0;
+        for (GenericStack output : outputs) {
+            if (output != null) {
+                filled++;
+            }
+        }
+        if (filled < 2) {
+            return outputs;
+        }
+        var rotated = Arrays.copyOf(outputs, outputs.length);
+        for (int i = 0; i < outputs.length; i++) {
+            if (outputs[i] == null) {
+                continue;
+            }
+            for (int offset = 1; offset < outputs.length; offset++) {
+                GenericStack next = outputs[(i + offset) % outputs.length];
+                if (next != null) {
+                    rotated[i] = new GenericStack(next.what(), next.amount());
+                    break;
+                }
+            }
+        }
+        return rotated;
+    }
+
+    private static ItemStack[] itemize(List<GenericStack> stacks) {
+        var items = new ItemStack[stacks.size()];
+        for (int i = 0; i < stacks.size(); i++) {
+            items[i] = itemize(stacks.get(i));
+        }
+        return items;
+    }
+
+    private static ItemStack itemize(@Nullable GenericStack stack) {
+        if (stack != null && stack.what() instanceof AEItemKey itemKey) {
+            return itemKey.toStack((int) stack.amount());
+        }
+        return ItemStack.EMPTY;
     }
 }

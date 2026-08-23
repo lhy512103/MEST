@@ -20,6 +20,11 @@ public final class MestPackets {
                 PatternProviderActionPacket.STREAM_CODEC,
                 PatternProviderActionPacket::handle);
 
+        registrar.playToServer(
+                PatternCacheActionPacket.TYPE,
+                PatternCacheActionPacket.STREAM_CODEC,
+                PatternCacheActionPacket::handle);
+
         registrar.playToClient(
                 PatternProviderListPacket.TYPE,
                 PatternProviderListPacket.STREAM_CODEC,

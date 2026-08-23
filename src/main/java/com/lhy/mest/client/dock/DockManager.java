@@ -1359,44 +1359,41 @@ public final class DockManager {
             }
             boolean composite = visibleLeaves > 1;
             DockRect window = composite ? root.bounds() : null;
+            boolean anchored = false;
+            for (LeafNode sibling : LayoutTrees.leaves(root.content())) {
+                if (next.visibleLeaf(sibling.nodeId()).isEmpty()) {
+                    continue;
+                }
+                if (!workspace.policyFor(sibling.moduleId()).floating()) {
+                    anchored = true;
+                    break;
+                }
+            }
             for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
                 ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
                 var placement = next.visibleLeaf(leaf.nodeId());
                 boolean visible = placement.isPresent();
-                boolean geometryChanged = false;
                 if (placement.isPresent()) {
                     DockRect bounds = placement.get().bounds();
-                    geometryChanged = panel.x != bounds.x()
-                            || panel.y != bounds.y()
-                            || panel.width != bounds.width()
-                            || panel.height != bounds.height();
                     panel.x = bounds.x();
                     panel.y = bounds.y();
                     panel.width = bounds.width();
                     panel.height = bounds.height();
                 }
-                boolean stateChanged = panel.visible != visible || panel.hosted || panel.spliced != composite
-                        || !java.util.Objects.equals(panel.splicedWindow, window);
                 panel.visible = visible;
                 panel.hosted = false;
                 panel.spliced = composite;
                 panel.splicedWindow = window;
-                int inset = panel.preferredContentRightInset();
-                stateChanged = stateChanged || panel.contentRightInset != inset;
-                panel.contentRightInset = inset;
-                boolean anchored = false;
-                for (LeafNode sibling : LayoutTrees.leaves(root.content())) {
-                    if (next.visibleLeaf(sibling.nodeId()).isEmpty()) {
-                        continue;
-                    }
-                    if (!workspace.policyFor(sibling.moduleId()).floating()) {
-                        anchored = true;
-                        break;
-                    }
-                }
                 ModuleLayoutPolicy policy = workspace.policyFor(leaf.moduleId());
                 panel.setPinControl(visible && !anchored && policy.floating(), policy.pinned());
-                if (geometryChanged || stateChanged) {
+            }
+            markRightmostLeaves(root, next);
+            for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+                ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+                int inset = panel.preferredContentRightInset();
+                boolean insetChanged = panel.contentRightInset != inset;
+                panel.contentRightInset = inset;
+                if (panel.visible || insetChanged) {
                     panel.layoutSlots();
                 }
             }
@@ -1404,6 +1401,30 @@ public final class DockManager {
         joinOutsideRails();
         projection = next;
         projectionDirty = false;
+    }
+
+    private void markRightmostLeaves(FloatingRoot root, LayoutProjection next) {
+        List<ModulePanel> visible = new ArrayList<>();
+        for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+            if (next.visibleLeaf(leaf.nodeId()).isEmpty()) {
+                continue;
+            }
+            ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+            if (panel != null && panel.visible) {
+                visible.add(panel);
+            }
+        }
+        for (ModulePanel panel : visible) {
+            boolean rightmost = true;
+            int panelRight = panel.x + panel.width;
+            for (ModulePanel other : visible) {
+                if (other != panel && other.x >= panelRight - 1) {
+                    rightmost = false;
+                    break;
+                }
+            }
+            panel.rightmostInWindow = rightmost;
+        }
     }
 
     private void joinOutsideRails() {

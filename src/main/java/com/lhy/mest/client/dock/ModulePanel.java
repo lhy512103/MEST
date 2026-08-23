@@ -48,6 +48,8 @@ public abstract class ModulePanel {
     public DockRect splicedWindow;
     /** Extra right padding so a sibling does not draw into the ME scroller gutter. */
     public int contentRightInset;
+    /** False when another visible leaf in the same window sits to the right. */
+    public boolean rightmostInWindow = true;
 
     /** Reserved inner width on the right of this leaf (ME scroller when a sibling sits to the right). */
     public int preferredContentRightInset() {

@@ -27,4 +27,6 @@ public final class MestSlotSemantics {
             SlotSemantics.register("MEST_PATTERN_SMITHING_BASE", false);
     public static final SlotSemantic PATTERN_SMITHING_ADDITION =
             SlotSemantics.register("MEST_PATTERN_SMITHING_ADDITION", false);
+    public static final SlotSemantic PATTERN_CACHE =
+            SlotSemantics.register("MEST_PATTERN_CACHE", false);
 }
