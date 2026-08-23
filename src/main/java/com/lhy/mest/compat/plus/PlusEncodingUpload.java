@@ -3,11 +3,7 @@ package com.lhy.mest.compat.plus;
 import java.util.ArrayList;
 import java.util.List;
 
-import io.netty.buffer.Unpooled;
-
-import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
@@ -22,9 +18,9 @@ import appeng.integration.modules.itemlists.EncodingHelper;
 import appeng.menu.slot.RestrictedInputSlot;
 import appeng.parts.encoding.EncodingMode;
 
-import com.extendedae_plus.network.ProvidersListS2CPacket;
 import com.extendedae_plus.util.uploadPattern.CtrlQPendingUploadUtil;
 import com.extendedae_plus.util.uploadPattern.ExtendedAEPatternUploadUtil;
+import com.lhy.mest.network.ProviderPickerListPacket;
 
 /**
  * Hands encoded patterns to EAEP's pending-upload + provider-picker path.
@@ -99,8 +95,10 @@ public final class PlusEncodingUpload {
     }
 
     public static boolean beginAndOpenPicker(ServerPlayer player, RestrictedInputSlot encodedSlot) {
-        ItemStack stack = encodedSlot.getItem();
-        boolean hasPattern = !stack.isEmpty() && PatternDetailsHelper.isEncodedPattern(stack);
+        ItemStack stack = encodedSlot == null ? ItemStack.EMPTY : encodedSlot.getItem();
+        boolean hasPattern = encodedSlot != null
+                && !stack.isEmpty()
+                && PatternDetailsHelper.isEncodedPattern(stack);
         List<PatternContainer> containers = CtrlQPendingUploadUtil.listAvailableProvidersFromPlayerNetwork(player);
         if (hasPattern) {
             CtrlQPendingUploadUtil.beginPendingCtrlQUpload(player, stack.copy());
@@ -124,19 +122,11 @@ public final class PlusEncodingUpload {
         if (ids.isEmpty() && hasPattern) {
             CtrlQPendingUploadUtil.returnPendingCtrlQPatternToInventory(player);
         }
-        player.connection.send(decodeProvidersList(player, ids, names, slots));
+        player.connection.send(new ProviderPickerListPacket(ids, names, slots, encodedSlot != null));
         return true;
     }
 
-    private static ProvidersListS2CPacket decodeProvidersList(
-            ServerPlayer player, List<Long> ids, List<Component> names, List<Integer> slots) {
-        RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), player.registryAccess());
-        buf.writeVarInt(ids.size());
-        for (int i = 0; i < ids.size(); i++) {
-            buf.writeLong(ids.get(i));
-            ComponentSerialization.TRUSTED_STREAM_CODEC.encode(buf, names.get(i));
-            buf.writeVarInt(slots.get(i));
-        }
-        return ProvidersListS2CPacket.STREAM_CODEC.decode(buf);
+    public static boolean sendPickerList(ServerPlayer player) {
+        return beginAndOpenPicker(player, null);
     }
 }

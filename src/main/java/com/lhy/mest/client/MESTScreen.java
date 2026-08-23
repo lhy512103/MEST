@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 import com.mojang.blaze3d.platform.InputConstants;
 
@@ -16,6 +17,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
@@ -37,6 +39,7 @@ import appeng.api.storage.AEKeyFilter;
 import appeng.api.upgrades.IUpgradeableObject;
 import appeng.client.gui.AEBaseScreen;
 import appeng.client.gui.Icon;
+import appeng.client.gui.style.Blitter;
 import appeng.client.gui.me.common.RepoSlot;
 import appeng.client.gui.me.common.StackSizeRenderer;
 import appeng.client.gui.style.ScreenStyle;
@@ -68,6 +71,7 @@ import de.mari_023.ae2wtlib.api.gui.AE2wtlibSlotSemantics;
 import de.mari_023.ae2wtlib.api.terminal.IUniversalTerminalCapable;
 import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
 
+import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.client.PatternProviderClientHandler.Entry;
 import com.lhy.mest.client.dock.DockManager;
 import com.lhy.mest.client.dock.ExtraChrome;
@@ -82,11 +86,15 @@ import com.lhy.mest.client.panel.MEListPanel;
 import com.lhy.mest.client.panel.PatternAccessPanel;
 import com.lhy.mest.client.panel.PatternCachePanel;
 import com.lhy.mest.client.panel.PatternEncodingPanel;
+import com.lhy.mest.client.panel.ProviderSelectPanel;
 import com.lhy.mest.compat.plus.PlusJeiHotkeys;
 
 import net.neoforged.fml.ModList;
 import com.lhy.mest.integration.MestRecipeTransferContext;
+import com.extendedae_plus.client.screen.ProviderSelectScreen;
+import com.extendedae_plus.network.CancelPendingPatternC2SPacket;
 import com.lhy.mest.network.PatternProviderActionPacket;
+import com.lhy.mest.network.ProviderPickerListPacket;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -103,6 +111,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private final PanelSideBar meSideBar = new PanelSideBar();
     private ExtraChrome upgradeColumn;
     private ExtraSlotColumn viewCellColumn;
+    private ToolbarIconButton viewCellsToggleBtn;
+    private boolean viewCellsVisible = true;
     private ToolbarIconButton lockLayoutBtn;
     private ToolbarIconButton undoLayoutBtn;
     private AETextField searchField;
@@ -115,11 +125,20 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
      * drew them).
      */
     private boolean drawingPanelSlots = false;
+    private boolean hoverFrameReady;
+    private int hoverCacheX = Integer.MIN_VALUE;
+    private int hoverCacheY = Integer.MIN_VALUE;
+    private ModulePanel hoverTop;
+    private boolean hoverFloating;
+    private ExtraChrome hoverExtra;
+    private boolean hoverToolbar;
     private MEListPanel meListPanel;
     private CraftingPanel craftingPanel;
     private PatternEncodingPanel patternEncodingPanel;
     private PatternAccessPanel patternAccessPanel;
     private PatternCachePanel patternCachePanel;
+    private ProviderSelectPanel providerSelectPanel;
+    private boolean keepPendingOnRemove;
 
     public MESTScreen(MESTMenu menu, Inventory playerInventory, Component title, ScreenStyle style) {
         super(menu, playerInventory, title, style);
@@ -154,6 +173,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         addMeSideButton(new ActionButton(ActionItems.TERMINAL_SETTINGS, this::showSettings));
         addMeSideButton(new SettingToggleButton<>(Settings.TERMINAL_STYLE,
                 AEConfig.instance().getTerminalStyle(), this::toggleTerminalStyle));
+        viewCellsToggleBtn = addMeSideButton(new ViewCellsToggleButton(
+                () -> viewCellsVisible,
+                b -> toggleViewCellsPanel()));
         addLayoutActions();
     }
 
@@ -197,6 +219,25 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     private void showSettings() {
         switchToScreen(new MestTerminalSettingsScreen(this));
+    }
+
+    private Component viewCellsMessage() {
+        return viewCellsMessage(viewCellsVisible);
+    }
+
+    private static Component viewCellsMessage(boolean visible) {
+        return Component.translatable(visible
+                ? "gui.mesplicedterminal.view_cells.visible"
+                : "gui.mesplicedterminal.view_cells.hidden");
+    }
+
+    private void toggleViewCellsPanel() {
+        viewCellsVisible = !viewCellsVisible;
+        dock.setViewCellsVisible(viewCellsVisible);
+        if (viewCellsToggleBtn != null) {
+            viewCellsToggleBtn.setMessage(viewCellsMessage());
+        }
+        attachExtraSlotColumns();
     }
 
     private void toggleTerminalStyle(SettingToggleButton<appeng.api.config.TerminalStyle> btn, boolean backwards) {
@@ -263,8 +304,19 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             patternCachePanel = new PatternCachePanel(getMenu());
             panels.add(patternCachePanel);
             panels.add(new InventoryPanel(getMenu()));
+            if (ModList.get().isLoaded("extendedae_plus")) {
+                providerSelectPanel = new ProviderSelectPanel(style);
+                panels.add(providerSelectPanel);
+            }
             dock.init(panels, this.width, this.height);
+            viewCellsVisible = dock.viewCellsVisible();
+            if (viewCellsToggleBtn != null) {
+                viewCellsToggleBtn.setMessage(viewCellsMessage());
+            }
             patternAccessPanel.applyRememberedButtons();
+            if (providerSelectPanel != null) {
+                getMenu().requestProviderList();
+            }
         } else {
             dock.updateViewport(this.width, this.height);
         }
@@ -292,6 +344,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         dock.relayoutAllSlots();
         if (patternAccessPanel != null) {
             patternAccessPanel.rebindSearchField(this);
+        }
+        if (providerSelectPanel != null) {
+            providerSelectPanel.rebindSearchField(this);
         }
         if (upgradeColumn == null && getMenu().getHost() instanceof IUpgradeableObject upgradeable) {
             List<Slot> upgradeSlots = new ArrayList<>();
@@ -411,7 +466,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         } else if (upgradeColumn != null) {
             upgradeColumn.hide();
         }
-        if (viewCellColumn != null && viewCellColumn.hasSlots()) {
+        if (viewCellColumn != null && viewCellColumn.hasSlots() && viewCellsVisible) {
             viewCellColumn.layoutAgainst(attachX, attachY, true);
         } else if (viewCellColumn != null) {
             viewCellColumn.hide();
@@ -508,6 +563,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTicks) {
+        hoverFrameReady = false;
         super.render(g, mouseX, mouseY, partialTicks);
         g.pose().pushPose();
         try {
@@ -715,9 +771,52 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             case "pattern_encoding" -> Icon.TAB_CRAFTING;
             case "pattern_access" -> Icon.PATTERN_ACCESS_SHOW;
             case "pattern_cache" -> Icon.BACKGROUND_ENCODED_PATTERN;
+            case "provider_select" -> Icon.ARROW_UP;
             case "inventory" -> Icon.S_STORAGE;
             default -> Icon.COG;
         };
+    }
+
+    /**
+     * View-cell show/hide uses the WCWT icon pair already copied into
+     * {@code pattern_cache_states.png} (u=144 shown, u=160 hidden, v=32).
+     */
+    private static final class ViewCellsToggleButton extends ToolbarIconButton {
+        private static final ResourceLocation STATES = ResourceLocation.fromNamespaceAndPath(
+                MESplicedterminal.MODID, "textures/guis/pattern_cache_states.png");
+        private static final int ICON_U_VISIBLE = 144;
+        private static final int ICON_U_HIDDEN = 160;
+        private static final int ICON_V = 32;
+        private static final int ICON_SIZE = 16;
+
+        private final BooleanSupplier viewCellsVisible;
+
+        ViewCellsToggleButton(BooleanSupplier viewCellsVisible, OnPress onPress) {
+            super(Icon.BACKGROUND_VIEW_CELL, Component.empty(), onPress);
+            this.viewCellsVisible = viewCellsVisible;
+            setMessage(viewCellsMessage(viewCellsVisible.getAsBoolean()));
+        }
+
+        @Override
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partial) {
+            if (!visible) {
+                return;
+            }
+            int yOffset = isHovered() ? 1 : 0;
+            Icon bgIcon = isHovered()
+                    ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER
+                    : isFocused() ? Icon.TOOLBAR_BUTTON_BACKGROUND_FOCUS : Icon.TOOLBAR_BUTTON_BACKGROUND;
+            bgIcon.getBlitter()
+                    .dest(getX() - 1, getY() + yOffset, 18, 20)
+                    .zOffset(2)
+                    .blit(guiGraphics);
+            int iconU = viewCellsVisible.getAsBoolean() ? ICON_U_VISIBLE : ICON_U_HIDDEN;
+            Blitter.texture(STATES, 256, 256)
+                    .src(iconU, ICON_V, ICON_SIZE, ICON_SIZE)
+                    .dest(getX(), getY() + 1 + yOffset)
+                    .zOffset(3)
+                    .blit(guiGraphics);
+        }
     }
 
     private static class ToolbarIconButton extends IconButton {
@@ -774,7 +873,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
      */
     @Override
     public void renderSlot(GuiGraphics g, Slot s) {
-        if (!drawingPanelSlots && (dock.panelForSlot(s) != null || extraColumnOwns(s))) {
+        if (!drawingPanelSlots && (s instanceof RepoSlot || extraColumnOwns(s) || dock.panelForSlot(s) != null)) {
             // Vanilla per-slot loop: chrome pass already drew this slot. Skip.
             return;
         }
@@ -803,18 +902,17 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
      */
     @Override
     protected boolean isHovering(Slot slot, double mx, double my) {
-        ModulePanel top = dock.topPanelAt(mx, my);
-        if (top == null || !dock.isFloatingWindow(top)) {
-            ExtraChrome extra = extraColumnAt(mx, my);
-            if (extra != null) {
-                return extra.ownsSlot(slot) && super.isHovering(slot, mx, my);
+        ensureHoverFrame(mx, my);
+        if (hoverTop == null || !hoverFloating) {
+            if (hoverExtra != null) {
+                return hoverExtra.ownsSlot(slot) && super.isHovering(slot, mx, my);
             }
-            if (isMouseOverToolbarWidget(mx, my)) {
+            if (hoverToolbar) {
                 return false;
             }
         }
-        if (top != null) {
-            return dock.panelForSlot(slot) == top && super.isHovering(slot, mx, my);
+        if (hoverTop != null) {
+            return dock.panelForSlot(slot) == hoverTop && super.isHovering(slot, mx, my);
         }
         return super.isHovering(slot, mx, my);
     }
@@ -906,6 +1004,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private boolean mouseClickedInWorkspace(double mx, double my, int button) {
         ModulePanel target = dock.topLeafAt(mx, my);
 
+        if (target != providerSelectPanel) {
+            dismissProviderPicker(true);
+        }
+
         if (target == craftingPanel) {
             MestRecipeTransferContext.select(
                     getMenu(), MestRecipeTransferContext.Target.CRAFTING);
@@ -970,12 +1072,25 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         return super.hasClickedOutside(mx, my, guiLeft, guiTop, button);
     }
 
-    private boolean isMouseOverToolbarWidget(double mx, double my) {
-        ModulePanel top = dock.topPanelAt(mx, my);
-        if (top != null && dock.isFloatingWindow(top)) {
-            return false;
+    private void ensureHoverFrame(double mx, double my) {
+        int ix = (int) mx;
+        int iy = (int) my;
+        if (hoverFrameReady && ix == hoverCacheX && iy == hoverCacheY) {
+            return;
         }
-        return meSideBar.isMouseOver(mx, my) || extraColumnAt(mx, my) != null;
+        hoverCacheX = ix;
+        hoverCacheY = iy;
+        hoverTop = dock.topPanelAt(mx, my);
+        hoverFloating = dock.isFloatingWindow(hoverTop);
+        hoverExtra = extraColumnAt(mx, my);
+        hoverToolbar = (hoverTop == null || !hoverFloating)
+                && (meSideBar.isMouseOver(mx, my) || hoverExtra != null);
+        hoverFrameReady = true;
+    }
+
+    private boolean isMouseOverToolbarWidget(double mx, double my) {
+        ensureHoverFrame(mx, my);
+        return hoverToolbar;
     }
 
     private boolean mouseClickedSideBar(double mx, double my, int button) {
@@ -1095,6 +1210,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (patternCachePanel != null && patternCachePanel.mouseScrolled(mx, my, scrollY)) {
             return true;
         }
+        if (providerSelectPanel != null && providerSelectPanel.mouseScrolled(mx, my, scrollY)) {
+            return true;
+        }
         ModulePanel target = dock.topLeafAt(mx, my);
         // Shift+scroll over an ME entry rolls single items in/out of the network instead of
         // scrolling the grid; this screen-level interaction runs before the panel's own scroll.
@@ -1109,6 +1227,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             return true;
         }
         if (target != null && target != patternAccessPanel && target != patternCachePanel
+                && target != providerSelectPanel
                 && target.mouseScrolled(mx, my, scrollY)) {
             return true;
         }
@@ -1118,6 +1237,42 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     public void updatePatternProviders(List<Entry> entries) {
         if (patternAccessPanel != null) {
             patternAccessPanel.setProviders(entries);
+        }
+    }
+
+    public void applyProviderPickerList(ProviderPickerListPacket packet) {
+        if (providerSelectPanel == null) {
+            return;
+        }
+        boolean floating = dock.policyFor(providerSelectPanel).floating();
+        if (packet.applyPreset() && !floating) {
+            keepPendingOnRemove = true;
+            minecraft.setScreen(new ProviderSelectScreen(
+                    this, packet.ids(), packet.names(), packet.emptySlots()));
+            return;
+        }
+        boolean autoUploaded = providerSelectPanel.applyList(packet);
+        if (packet.applyPreset() && floating && !autoUploaded) {
+            dock.revealModule(providerSelectPanel);
+        } else if (autoUploaded) {
+            dismissProviderPicker(false);
+        }
+    }
+
+    public void dismissProviderPicker(boolean cancelPending) {
+        if (providerSelectPanel == null) {
+            return;
+        }
+        var policy = dock.policyFor(providerSelectPanel);
+        if (!policy.floating() || policy.pinned()) {
+            return;
+        }
+        if (!dock.isEffectivelyVisible(providerSelectPanel)) {
+            return;
+        }
+        dock.hideModule(providerSelectPanel);
+        if (cancelPending && ModList.get().isLoaded("extendedae_plus")) {
+            PacketDistributor.sendToServer(CancelPendingPatternC2SPacket.INSTANCE);
         }
     }
 
@@ -1282,6 +1437,20 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     private void renderTooltipAtOverlay(GuiGraphics g, int x, int y) {
         ModulePanel target = dock.topLeafAt(x, y);
+        if (target == providerSelectPanel && providerSelectPanel != null) {
+            ITooltip picker = providerSelectPanel.hoveredTooltip(x, y);
+            if (picker != null && picker.isTooltipAreaVisible() && !picker.getTooltipMessage().isEmpty()) {
+                drawAeWidgetTooltip(g, x, y, picker);
+                return;
+            }
+        }
+        if (target == patternEncodingPanel && patternEncodingPanel != null) {
+            ITooltip encoding = patternEncodingPanel.hoveredTooltip(x, y);
+            if (encoding != null && encoding.isTooltipAreaVisible() && !encoding.getTooltipMessage().isEmpty()) {
+                drawAeWidgetTooltip(g, x, y, encoding);
+                return;
+            }
+        }
         if (target == patternEncodingPanel && getMenu().getCarried().isEmpty()) {
             Slot slot = panelSlotAt(patternEncodingPanel, x, y);
             if (slot != null
@@ -1360,6 +1529,15 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (patternAccessPanel != null && patternAccessPanel.searchCharTyped(character, modifiers)) {
             return true;
         }
+        if (providerSelectPanel != null && getFocused() == providerSelectPanel.searchField()) {
+            return super.charTyped(character, modifiers);
+        }
+        if (providerSelectPanel != null && getFocused() == providerSelectPanel.mappingField()) {
+            return super.charTyped(character, modifiers);
+        }
+        if (providerSelectPanel != null && providerSelectPanel.searchCharTyped(character, modifiers)) {
+            return true;
+        }
         return super.charTyped(character, modifiers);
     }
 
@@ -1368,12 +1546,19 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         boolean meSearch = meListPanel != null && meListPanel.isSearchFocused();
         boolean patSearch = patternAccessPanel != null
                 && (getFocused() == patternAccessPanel.searchField() || patternAccessPanel.isSearchFocused());
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE && (meSearch || patSearch)) {
+        boolean pickerSearch = providerSelectPanel != null
+                && (getFocused() == providerSelectPanel.searchField()
+                || getFocused() == providerSelectPanel.mappingField()
+                || providerSelectPanel.isSearchFocused());
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && (meSearch || patSearch || pickerSearch)) {
             if (meSearch) {
                 meListPanel.setSearchFocused(false);
             }
             if (patSearch) {
                 patternAccessPanel.setSearchFocused(false);
+            }
+            if (pickerSearch) {
+                providerSelectPanel.setSearchFocused(false);
             }
             setFocused(null);
         } else if (meSearch) {
@@ -1395,6 +1580,23 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 return super.keyPressed(keyCode, scanCode, modifiers);
             }
             if (patternAccessPanel.searchKeyPressed(keyCode, scanCode, modifiers)) {
+                return true;
+            }
+            return true;
+        } else if (pickerSearch) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER) {
+                if (providerSelectPanel.searchKeyPressed(keyCode, scanCode, modifiers)) {
+                    return true;
+                }
+                providerSelectPanel.setSearchFocused(false);
+                setFocused(null);
+                return true;
+            }
+            if (getFocused() == providerSelectPanel.searchField()
+                    || getFocused() == providerSelectPanel.mappingField()) {
+                return super.keyPressed(keyCode, scanCode, modifiers);
+            }
+            if (providerSelectPanel.searchKeyPressed(keyCode, scanCode, modifiers)) {
                 return true;
             }
             return true;
@@ -1477,6 +1679,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     @Override
     public void removed() {
         closePatternAccessSubscription();
+        if (ModList.get().isLoaded("extendedae_plus") && !keepPendingOnRemove) {
+            PacketDistributor.sendToServer(CancelPendingPatternC2SPacket.INSTANCE);
+        }
+        keepPendingOnRemove = false;
         dock.save();
         dock.saveUiPreferences();
         super.removed();

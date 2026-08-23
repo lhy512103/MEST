@@ -17,13 +17,17 @@ public final class DockWorkspaceDefaults {
         var roots = new ArrayList<FloatingRoot>();
         int index = 0;
         for (String moduleId : catalog.moduleIds()) {
-            var leaf = new LeafNode(leafNodeId(moduleId), moduleId, true);
+            var leaf = new LeafNode(leafNodeId(moduleId), moduleId, defaultVisible(moduleId));
             roots.add(new FloatingRoot(
                     rootId(moduleId),
                     geometry.defaultRootBounds(catalog.metrics(moduleId), index++),
                     leaf));
         }
         return new DockWorkspace(roots);
+    }
+
+    public static boolean defaultVisible(String moduleId) {
+        return !"provider_select".equals(moduleId);
     }
 
     public static String leafNodeId(String moduleId) {

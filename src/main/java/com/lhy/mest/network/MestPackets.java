@@ -29,5 +29,10 @@ public final class MestPackets {
                 PatternProviderListPacket.TYPE,
                 PatternProviderListPacket.STREAM_CODEC,
                 PatternProviderClientBridge::handle);
+
+        registrar.playToClient(
+                ProviderPickerListPacket.TYPE,
+                ProviderPickerListPacket.STREAM_CODEC,
+                ProviderPickerClientBridge::handle);
     }
 }

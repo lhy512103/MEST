@@ -75,6 +75,7 @@ public class MESTMenu extends CraftingTermMenu {
     private static final String ACTION_CYCLE_PROCESSING_OUTPUT = "mestCycleProcessingOutput";
     private static final String ACTION_SCALE_ENCODING = "mestScaleEncoding";
     private static final String ACTION_UPLOAD_PATTERN = "mestUploadPattern";
+    private static final String ACTION_REQUEST_PROVIDERS = "mestRequestProviders";
 
     private final MESTMenuHost host;
     private final PatternAccessSession patternAccessSession;
@@ -152,6 +153,7 @@ public class MESTMenu extends CraftingTermMenu {
         registerClientAction(ACTION_CYCLE_PROCESSING_OUTPUT, this::cycleProcessingOutput);
         registerClientAction(ACTION_SCALE_ENCODING, Integer.class, this::scaleEncodingPattern);
         registerClientAction(ACTION_UPLOAD_PATTERN, Boolean.class, this::uploadEncodedPattern);
+        registerClientAction(ACTION_REQUEST_PROVIDERS, this::requestProviderList);
 
         updateStonecuttingRecipes();
         updatePatternCraftingOutput();
@@ -373,6 +375,16 @@ public class MESTMenu extends CraftingTermMenu {
         writeInv(encodedInputsInv, Arrays.asList(scaleStacks(input, scale, divide)));
         writeInv(encodedOutputsInv, Arrays.asList(scaleStacks(output, scale, divide)));
         broadcastChanges();
+    }
+
+    public void requestProviderList() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_REQUEST_PROVIDERS);
+            return;
+        }
+        if (getPlayer() instanceof ServerPlayer player) {
+            PlusEncodingUpload.sendPickerList(player);
+        }
     }
 
     public void uploadEncodedPattern(boolean returnLast) {

@@ -211,10 +211,12 @@ public final class DockLayoutCodec {
             usedIdentifiers.add(rootId);
             String leafId = uniqueIdentifier(DockWorkspaceDefaults.leafNodeId(moduleId), usedIdentifiers, "leaf");
             usedIdentifiers.add(leafId);
+            boolean visible = DockWorkspaceDefaults.defaultVisible(moduleId);
+            retainedPolicies.put(moduleId, new ModuleLayoutPolicy(visible, true, true));
             retainedRoots.add(new FloatingRoot(
                     rootId,
                     migrationContext.defaultRootBounds(catalog.metrics(moduleId), defaultIndex++),
-                    new LeafNode(leafId, moduleId, true)));
+                    new LeafNode(leafId, moduleId, visible)));
         }
 
         result = new DockWorkspace(

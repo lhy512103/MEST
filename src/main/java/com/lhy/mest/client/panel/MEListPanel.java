@@ -1,7 +1,9 @@
 package com.lhy.mest.client.panel;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -73,6 +75,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     private final IConfigManager configSrc;
     private final Repo repo;
     private final List<RepoSlot> repoSlots = new ArrayList<>();
+    private final Set<Slot> repoSlotSet = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Scrollbar scrollbar = new Scrollbar(Scrollbar.BIG);
 
     private AETextField searchField;
@@ -180,6 +183,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         if (!visible) {
             slots.removeAll(repoSlots);
             repoSlots.clear();
+            repoSlotSet.clear();
             hideChrome();
             return;
         }
@@ -194,9 +198,11 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         if (repoSlots.size() != requiredSlots) {
             slots.removeAll(repoSlots);
             repoSlots.clear();
+            repoSlotSet.clear();
             for (int repoIndex = 0; repoIndex < requiredSlots; repoIndex++) {
                 var repoSlot = new RepoSlot(this.repo, repoIndex, 0, 0);
                 repoSlots.add(repoSlot);
+                repoSlotSet.add(repoSlot);
                 slots.add(repoSlot);
             }
         }
@@ -222,12 +228,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
 
     @Override
     public boolean ownsSlot(Slot slot) {
-        for (RepoSlot repoSlot : repoSlots) {
-            if (repoSlot == slot) {
-                return true;
-            }
-        }
-        return false;
+        return repoSlotSet.contains(slot);
     }
 
     public void tick(boolean paused) {

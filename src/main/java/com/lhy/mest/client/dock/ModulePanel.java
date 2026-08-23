@@ -1,7 +1,10 @@
 package com.lhy.mest.client.dock;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.Font;
@@ -57,6 +60,7 @@ public abstract class ModulePanel {
     }
 
     private final List<Slot> ownedSlots = new ArrayList<>();
+    private final Set<Slot> ownedSlotSet = Collections.newSetFromMap(new IdentityHashMap<>());
 
     /** Stable identifier, used as the key for layout persistence and module recreation. */
     public abstract String id();
@@ -84,6 +88,7 @@ public abstract class ModulePanel {
 
     protected void registerSlot(Slot slot) {
         ownedSlots.add(slot);
+        ownedSlotSet.add(slot);
     }
 
     protected static void placeSlot(Slot slot, int screenX, int screenY) {
@@ -337,12 +342,7 @@ public abstract class ModulePanel {
 
     /** True if this panel owns the given slot (identity check). */
     public boolean ownsSlot(Slot slot) {
-        for (Slot s : ownedSlots) {
-            if (s == slot) {
-                return true;
-            }
-        }
-        return false;
+        return ownedSlotSet.contains(slot);
     }
 
     // --- Frame rendering (shared chrome) ----------------------------------

@@ -20,7 +20,6 @@ import appeng.client.gui.style.Blitter;
 import appeng.client.gui.widgets.IconButton;
 
 import com.extendedae_plus.client.gui.widgets.ScaledTextureButton;
-import com.extendedae_plus.client.screen.ProviderSelectScreen;
 import com.extendedae_plus.network.ReturnLastPatternC2SPacket;
 import com.extendedae_plus.network.ScaleEncodingPatternC2SPacket;
 import com.lhy.mest.terminal.MESTMenu;
@@ -91,7 +90,7 @@ public final class PlusEncodingChrome {
     }
 
     public void layout(int modePanelX, int modePanelY, int encodeX, int encodeY, boolean visible, boolean processing) {
-        boolean showScale = visible && processing && ProviderSelectScreen.isProcessingButtonsEnabled();
+        boolean showScale = visible && processing && PlusPickerPrefs.showProcessingButtons();
         place(swap, modePanelX, modePanelY, 125, 159, showScale);
         place(restore, modePanelX, modePanelY, 100, 159, showScale);
         place(mul2, modePanelX, modePanelY, 125, 149, showScale);

@@ -96,6 +96,7 @@ public final class DockManager {
     // --- Hot-path caches. All are invalidated whenever the projection is rebuilt ---------------
     /** Cached flattened leaf lists per root id (LayoutTrees.leaves allocates a new list per call). */
     private final Map<String, List<LeafNode>> leavesCache = new HashMap<>();
+    private List<FloatingRoot> paintOrderCache;
     /** Cached slot → owning-visible-panel lookups; identity keys, {@code Optional.empty()} = no owner. */
     private Map<Slot, java.util.Optional<ModulePanel>> slotPanelCache;
     /** Cached JEI/EMI exclusion bounds; {@code null} = dirty. */
@@ -142,6 +143,7 @@ public final class DockManager {
     private boolean editingLayout;
     private DockWorkspace editingOriginal;
     private boolean centerOnReturn = true;
+    private boolean viewCellsVisible = true;
     private boolean pendingCenterOnReturn;
     private Path preferencesPath;
     private int editorInsetLeft;
@@ -376,6 +378,18 @@ public final class DockManager {
 
     public boolean centerOnReturn() {
         return centerOnReturn;
+    }
+
+    public boolean viewCellsVisible() {
+        return viewCellsVisible;
+    }
+
+    public void setViewCellsVisible(boolean value) {
+        if (viewCellsVisible == value) {
+            return;
+        }
+        viewCellsVisible = value;
+        savePreferences();
     }
 
     public void saveUiPreferences() {
@@ -1317,6 +1331,7 @@ public final class DockManager {
     private void loadPreferences() {
         centerOnReturn = true;
         layoutLocked = false;
+        viewCellsVisible = true;
         if (preferencesPath == null || !Files.isRegularFile(preferencesPath)) {
             return;
         }
@@ -1327,6 +1342,9 @@ public final class DockManager {
             }
             if (object.has("layoutLocked")) {
                 layoutLocked = object.get("layoutLocked").getAsBoolean();
+            }
+            if (object.has("viewCellsVisible")) {
+                viewCellsVisible = object.get("viewCellsVisible").getAsBoolean();
             }
             PatternAccessPanel.readPreferences(object);
         } catch (IOException | RuntimeException e) {
@@ -1343,6 +1361,7 @@ public final class DockManager {
             JsonObject object = new JsonObject();
             object.addProperty("centerOnReturn", centerOnReturn);
             object.addProperty("layoutLocked", layoutLocked);
+            object.addProperty("viewCellsVisible", viewCellsVisible);
             PatternAccessPanel.writePreferences(object);
             Files.writeString(preferencesPath, object.toString(), StandardCharsets.UTF_8);
         } catch (IOException | RuntimeException e) {
@@ -1367,6 +1386,7 @@ public final class DockManager {
             return;
         }
         leavesCache.clear();
+        paintOrderCache = null;
         slotPanelCache = null;
         exclusionCache = null;
         LayoutProjection next = layoutEngine.project(viewportWorkspace);
@@ -1916,6 +1936,9 @@ public final class DockManager {
     }
 
     private List<FloatingRoot> paintOrderRoots() {
+        if (paintOrderCache != null) {
+            return paintOrderCache;
+        }
         var anchored = new ArrayList<FloatingRoot>();
         var floating = new ArrayList<FloatingRoot>();
         var pinned = new ArrayList<FloatingRoot>();
@@ -1935,7 +1958,8 @@ public final class DockManager {
         order.addAll(anchored);
         order.addAll(floating);
         order.addAll(pinned);
-        return order;
+        paintOrderCache = List.copyOf(order);
+        return paintOrderCache;
     }
 
     private boolean isAnchoredRoot(FloatingRoot root) {
@@ -2137,6 +2161,33 @@ public final class DockManager {
             }
         }
         throw new IllegalArgumentException("unknown node: " + nodeId);
+    }
+
+    public void hideModule(ModulePanel panel) {
+        ensureProjection();
+        LeafNode leaf = leafForPanel(panel);
+        if (!workspace.policyFor(leaf.moduleId()).visible()) {
+            return;
+        }
+        replaceWorkspace(
+                editor.setLeafVisible(workspace, leaf.nodeId(), false, null, null, null),
+                false);
+    }
+
+    public void revealModule(ModulePanel panel) {
+        ensureProjection();
+        LeafNode leaf = leafForPanel(panel);
+        DockWorkspace next = workspace;
+        if (!workspace.policyFor(leaf.moduleId()).visible()) {
+            next = editor.setLeafVisible(next, leaf.nodeId(), true, null, null, null);
+        }
+        FloatingRoot root = rootContainingNode(next, leaf.nodeId());
+        if (root != null) {
+            next = editor.raiseRoot(next, root.rootId());
+        }
+        if (next != workspace) {
+            replaceWorkspace(next, false);
+        }
     }
 
     private LeafNode leafForPanel(ModulePanel panel) {
