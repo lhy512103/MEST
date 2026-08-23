@@ -76,48 +76,53 @@ public class MestJeiPlugin implements IModPlugin {
 
     @Override
     public void registerGuiHandlers(IGuiHandlerRegistration registration) {
-        registration.addGuiScreenHandler(MESTScreen.class, screen -> new IGuiProperties() {
-            @Override
-            public Class<? extends Screen> screenClass() {
-                return MESTScreen.class;
-            }
-
-            @Override
-            public int guiLeft() {
-                return screen.recipeViewerBounds().getX();
-            }
-
-            @Override
-            public int guiTop() {
-                return screen.recipeViewerBounds().getY();
-            }
-
-            @Override
-            public int guiXSize() {
-                return screen.recipeViewerBounds().getWidth();
-            }
-
-            @Override
-            public int guiYSize() {
-                return screen.recipeViewerBounds().getHeight();
-            }
-
-            @Override
-            public int screenWidth() {
-                return screen.width;
-            }
-
-            @Override
-            public int screenHeight() {
-                return screen.height;
-            }
-        });
+        registration.addGuiScreenHandler(MESTScreen.class, MestJeiPlugin::propertiesFor);
         registration.addGuiContainerHandler(MESTScreen.class, new mezz.jei.api.gui.handlers.IGuiContainerHandler<>() {
             @Override
             public List<Rect2i> getGuiExtraAreas(MESTScreen containerScreen) {
                 return containerScreen.getExclusionZones();
             }
         });
+    }
+
+    /**
+     * JEI rejects {@code guiXSize/guiYSize <= 0} and then hides both the ingredient list and
+     * bookmarks. MEST keeps {@code imageWidth=0} so the vanilla handler cannot be used; this
+     * must always return a strictly positive rectangle, with room on the right for the list.
+     */
+    private static IGuiProperties propertiesFor(MESTScreen screen) {
+        if (screen.width <= 0 || screen.height <= 0) {
+            return null;
+        }
+        Rect2i bounds = screen.recipeViewerBounds();
+        int x = Math.max(0, bounds.getX());
+        int y = Math.max(0, bounds.getY());
+        int width = bounds.getWidth();
+        int height = bounds.getHeight();
+        if (width <= 0 || height <= 0) {
+            width = Math.max(176, Math.min(screen.width / 2, screen.width - 220));
+            height = Math.max(166, Math.min(screen.height * 2 / 3, screen.height - 40));
+            x = Math.max(0, (screen.width - width) / 2);
+            y = Math.max(0, (screen.height - height) / 2);
+        }
+        int maxRight = Math.max(x + 1, screen.width - 132);
+        if (x + width > maxRight) {
+            width = Math.max(1, maxRight - x);
+        }
+        int maxBottom = Math.max(y + 1, screen.height - 8);
+        if (y + height > maxBottom) {
+            height = Math.max(1, maxBottom - y);
+        }
+        return new MestGuiProperties(x, y, width, height, screen.width, screen.height);
+    }
+
+    private record MestGuiProperties(
+            int guiLeft, int guiTop, int guiXSize, int guiYSize, int screenWidth, int screenHeight)
+            implements IGuiProperties {
+        @Override
+        public Class<? extends Screen> screenClass() {
+            return MESTScreen.class;
+        }
     }
 
     @Override
@@ -277,6 +282,7 @@ public class MestJeiPlugin implements IModPlugin {
             }
 
             if (doTransfer) {
+                com.lhy.mest.compat.plus.PlusEncodingUpload.captureRecipeSearchKey(rawRecipe);
                 MestEncodingHelper.encode(
                         menu,
                         kind,

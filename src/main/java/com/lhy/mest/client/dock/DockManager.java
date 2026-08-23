@@ -296,6 +296,9 @@ public final class DockManager {
         }
         this.screenWidth = newWidth;
         this.screenHeight = newHeight;
+        if (workspace == null) {
+            return;
+        }
         // Viewport clamping is a transient projection concern. Keep the canonical workspace (and
         // its persisted revision) untouched so a temporary small window does not destroy the user's
         // larger-screen geometry.
@@ -388,7 +391,7 @@ public final class DockManager {
     }
 
     public void applyPendingCenter() {
-        if (!pendingCenterOnReturn || editingLayout) {
+        if (!pendingCenterOnReturn || editingLayout || workspace == null) {
             return;
         }
         pendingCenterOnReturn = false;
@@ -400,6 +403,9 @@ public final class DockManager {
     }
 
     public void centerVisibleWorkspace() {
+        if (workspace == null) {
+            return;
+        }
         ensureProjection();
         var movedRootIds = new java.util.LinkedHashSet<String>();
         DockRect union = null;
@@ -422,6 +428,9 @@ public final class DockManager {
 
     /** Visible framed windows only. Encoding tabs and the ME scroller well are outside chrome. */
     public DockRect anchoredGroupBounds() {
+        if (workspace == null) {
+            return null;
+        }
         ensureProjection();
         DockRect union = null;
         for (FloatingRoot root : workspace.roots()) {
@@ -453,6 +462,9 @@ public final class DockManager {
     }
 
     public ModuleLayoutPolicy policyFor(ModulePanel panel) {
+        if (workspace == null) {
+            return ModuleLayoutPolicy.defaults();
+        }
         return workspace.policyFor(panel.id());
     }
 
@@ -522,6 +534,9 @@ public final class DockManager {
 
     /** Visible floating roots in back-to-front order, suitable for JEI/EMI exclusion zones. */
     public List<DockRect> exclusionBounds() {
+        if (workspace == null) {
+            return List.of();
+        }
         ensureProjection();
         if (exclusionCache == null) {
             var result = new ArrayList<DockRect>();
@@ -657,18 +672,21 @@ public final class DockManager {
         DividerHit hoveredDivider = hoveredRoot == null ? null : dividerAt(hoveredRoot, mouseX, mouseY);
 
         int layer = 0;
+        int lastAnchoredLayer = 0;
         boolean chromeDrawn = false;
         for (FloatingRoot root : paintOrderRoots()) {
             if (!chromeDrawn && !isAnchoredRoot(root)) {
-                anchoredChromeLayer = layer;
+                anchoredChromeLayer = lastAnchoredLayer;
                 if (anchoredChrome != null) {
-                    int chromeLayer = layer++;
-                    withRootLayer(graphics, chromeLayer, 0.0F, () ->
+                    withRootLayer(graphics, lastAnchoredLayer, 0.0F, () ->
                             anchoredChrome.render(graphics, font, mouseX, mouseY, partialTicks));
                 }
                 chromeDrawn = true;
             }
             int rootLayer = layer++;
+            if (isAnchoredRoot(root)) {
+                lastAnchoredLayer = rootLayer;
+            }
             withRootLayer(graphics, rootLayer, 0.0F, () -> {
                 boolean composite = visibleLeafCount(root) > 1;
                 if (composite) {
@@ -716,10 +734,9 @@ public final class DockManager {
             });
         }
         if (!chromeDrawn) {
-            anchoredChromeLayer = layer;
+            anchoredChromeLayer = lastAnchoredLayer;
             if (anchoredChrome != null) {
-                int chromeLayer = layer++;
-                withRootLayer(graphics, chromeLayer, 0.0F, () ->
+                withRootLayer(graphics, lastAnchoredLayer, 0.0F, () ->
                         anchoredChrome.render(graphics, font, mouseX, mouseY, partialTicks));
             }
         }
@@ -826,6 +843,9 @@ public final class DockManager {
     }
 
     public boolean isEffectivelyVisible(ModulePanel panel) {
+        if (workspace == null || panel == null || panelsByModuleId.get(panel.id()) != panel) {
+            return false;
+        }
         ensureProjection();
         LeafNode leaf = leafForPanel(panel);
         return projection.isEffectivelyVisible(leaf.nodeId());
@@ -1343,7 +1363,7 @@ public final class DockManager {
     }
 
     private void ensureProjection() {
-        if (!projectionDirty) {
+        if (!projectionDirty || workspace == null || viewportWorkspace == null || layoutEngine == null) {
             return;
         }
         leavesCache.clear();

@@ -341,6 +341,16 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         return searchField != null && searchField.visible && searchField.isMouseOver(mx, my);
     }
 
+    public void setSearchValue(String value) {
+        if (searchField == null || value == null) {
+            return;
+        }
+        searchField.setValue(value);
+        repo.setSearchString(value);
+        repo.updateView();
+        rememberedSearch = value;
+    }
+
     public void setSearchFocused(boolean focused) {
         if (searchField == null) {
             return;

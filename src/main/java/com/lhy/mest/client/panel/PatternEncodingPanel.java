@@ -9,6 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.neoforged.fml.ModList;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
@@ -33,6 +34,7 @@ import appeng.parts.encoding.EncodingMode;
 
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.Scrollbar;
+import com.lhy.mest.compat.plus.PlusEncodingChrome;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -66,6 +68,7 @@ public class PatternEncodingPanel extends ModulePanel {
     private final MESTMenu menu;
     private final Map<EncodingMode, TabButton> modeTabs = new EnumMap<>(EncodingMode.class);
     private final ActionButton encodeBtn;
+    private final PlusEncodingChrome plusChrome;
     private final ActionButton craftingClearBtn;
     private final ActionButton processingClearBtn;
     private final ActionButton processingCycleBtn;
@@ -117,8 +120,13 @@ public class PatternEncodingPanel extends ModulePanel {
             widgets.add(tab);
         }
 
-        encodeBtn = new ActionButton(ActionItems.ENCODE, menu::encodePattern);
+        encodeBtn = new ActionButton(ActionItems.ENCODE,
+                () -> menu.encodePattern(net.minecraft.client.gui.screens.Screen.hasShiftDown()));
         widgets.add(encodeBtn);
+        plusChrome = ModList.get().isLoaded("extendedae_plus") ? new PlusEncodingChrome(menu) : null;
+        if (plusChrome != null) {
+            widgets.addAll(plusChrome.widgets());
+        }
 
         craftingClearBtn = halfAction(ActionItems.S_CLOSE, menu::clearPatternEncoding);
         processingClearBtn = halfAction(ActionItems.S_CLOSE, menu::clearPatternEncoding);
@@ -340,6 +348,9 @@ public class PatternEncodingPanel extends ModulePanel {
         boolean crafting = visible && current == EncodingMode.CRAFTING;
         boolean processing = visible && current == EncodingMode.PROCESSING;
         boolean smithing = visible && current == EncodingMode.SMITHING_TABLE;
+        if (plusChrome != null) {
+            plusChrome.layout(bgX, bgY, encodeBtn.getX(), encodeBtn.getY(), visible, processing);
+        }
 
         placeHalf(craftingClearBtn, crafting, bgX + 62, bgY + 6);
         placeHalf(craftingSubstitutions, crafting, bgX + 72, bgY + 6);
@@ -348,7 +359,9 @@ public class PatternEncodingPanel extends ModulePanel {
         craftingFluidSubstitutions.setState(menu.isPatternFluidSubstitute());
 
         placeHalf(processingClearBtn, processing, bgX + 71, bgY + 6);
-        placeHalf(processingCycleBtn, processing && menu.canCycleProcessingOutputs(), bgX + 90, bgY + 6);
+        boolean showCycle = processing && menu.canCycleProcessingOutputs()
+                && (plusChrome == null || !plusChrome.scaleButtonsVisible());
+        placeHalf(processingCycleBtn, showCycle, bgX + 90, bgY + 6);
 
         placeHalf(smithingClearBtn, smithing, bgX + 6, bgY + 14);
         placeHalf(smithingSubstitutions, smithing, bgX + 16, bgY + 14);
@@ -389,13 +402,6 @@ public class PatternEncodingPanel extends ModulePanel {
 
     @Override
     public void renderForegroundContent(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
-        for (AbstractWidget widget : widgets) {
-            if (widget.visible && widget.isMouseOver(mouseX, mouseY) && widget instanceof ITooltip tooltip
-                    && !tooltip.getTooltipMessage().isEmpty()) {
-                g.renderComponentTooltip(font, tooltip.getTooltipMessage(), mouseX, mouseY);
-                return;
-            }
-        }
         if (hoveredStonecuttingRecipe != null) {
             g.renderComponentTooltip(font, List.of(hoveredStonecuttingRecipe.value()
                     .getResultItem(menu.getPlayer().registryAccess())
@@ -476,6 +482,19 @@ public class PatternEncodingPanel extends ModulePanel {
         g.hLine(x0, x1, y1, SLOT_OUTLINE);
         g.vLine(x0, y0, y1, SLOT_OUTLINE);
         g.vLine(x1, y0, y1, SLOT_OUTLINE);
+    }
+
+    public ITooltip hoveredTooltip(int mouseX, int mouseY) {
+        if (!visible) {
+            return null;
+        }
+        for (AbstractWidget widget : widgets) {
+            if (widget.visible && widget.isMouseOver(mouseX, mouseY) && widget instanceof ITooltip tooltip
+                    && tooltip.isTooltipAreaVisible() && !tooltip.getTooltipMessage().isEmpty()) {
+                return tooltip;
+            }
+        }
+        return null;
     }
 
     public boolean mouseClicked(double mx, double my, int button) {

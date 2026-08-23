@@ -16,6 +16,8 @@ if (!mestRunJei) {
 if (!mestRunEmi) {
     configurations.clientLocalRuntime.exclude group: "dev.emi"
 }
+// EMI runtime is temporarily commented out below; keep transitives out too.
+configurations.clientLocalRuntime.exclude group: "dev.emi"
 
 dependencies {
     // AE2 + AE2WTLib API (compile-time only)
@@ -53,7 +55,7 @@ dependencies {
     // Local runtime AE2 addons
     localRuntime "curse.maven:advancedae-1084104:${advancedae_file}"
     localRuntime "curse.maven:ae2-crystal-science-1435174:${ae2_crystal_science_file}"
-    localRuntime "curse.maven:ae2-utility-1521605:8655365"
+    localRuntime "curse.maven:ae2-utility-1521605:${ae2_utility_file}"
     localRuntime "curse.maven:ex-pattern-provider-892005:${extendedae_file}"
     localRuntime "curse.maven:extendedae-plus-1337639:${extendedae_plus_file}"
     localRuntime "curse.maven:applied-energistics-2-wireless-terminals-459929:${ae2wt_terminals_file}"
@@ -96,9 +98,10 @@ dependencies {
         // and viewer-disabled launch matrices.
         clientLocalRuntime "curse.maven:just-enough-characters-250702:${jech_file}"
     }
-    if (mestRunEmi) {
-        clientLocalRuntime "dev.emi:emi-neoforge:${emi_version}"
-    }
+    // Temporarily disabled EMI runtime (keep compileOnly EMI for optional integration).
+    // if (mestRunEmi) {
+    //     clientLocalRuntime "dev.emi:emi-neoforge:${emi_version}"
+    // }
 
     // Client-only local runtime UI and input helpers
     if (mestRunMui) {

@@ -34,6 +34,7 @@ import appeng.api.inventories.InternalInventory;
 import appeng.api.networking.IGrid;
 import appeng.helpers.patternprovider.PatternContainer;
 import appeng.helpers.patternprovider.PatternProviderLogicHost;
+import appeng.menu.slot.RestrictedInputSlot;
 import appeng.util.inv.FilteredInternalInventory;
 import appeng.util.inv.PlayerInternalInventory;
 import appeng.util.inv.filter.IAEItemFilter;
@@ -86,6 +87,8 @@ public final class PatternAccessSession {
     private boolean snapshotRequired;
     private boolean queueInvalid;
     private ShowPatternProviders showMode = ShowPatternProviders.VISIBLE;
+    private long lastUploadId = -1;
+    private int lastUploadSlot = -1;
 
     public PatternAccessSession(MESTMenu menu) {
         this.menu = Objects.requireNonNull(menu);
@@ -628,6 +631,53 @@ public final class PatternAccessSession {
         // Applies to every full-rebuild path (including trackedGrid != null, e.g. after a grid change or
         // a forced re-subscribe) so clients cannot trigger a snapshot rebuild more than once per cooldown.
         return epoch != 0 && ticks - lastSnapshotTick < MIN_RESNAPSHOT_INTERVAL_TICKS;
+    }
+
+    public boolean uploadFromSlot(RestrictedInputSlot encodedSlot, ServerPlayer player) {
+        ItemStack stack = encodedSlot.getItem();
+        if (stack.isEmpty() || !PatternDetailsHelper.isEncodedPattern(stack)) {
+            return false;
+        }
+        for (Tracker tracker : trackers.values()) {
+            if (tracker.inventory == null) {
+                continue;
+            }
+            for (int slot = 0; slot < tracker.inventory.size(); slot++) {
+                if (!tracker.inventory.getStackInSlot(slot).isEmpty()) {
+                    continue;
+                }
+                ItemStack inserting = stack.copyWithCount(1);
+                ItemStack leftover = tracker.inventory.insertItem(slot, inserting, false);
+                if (!leftover.isEmpty()) {
+                    continue;
+                }
+                encodedSlot.remove(1);
+                encodedSlot.setChanged();
+                lastUploadId = tracker.id;
+                lastUploadSlot = slot;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void returnLastUpload(ServerPlayer player) {
+        if (lastUploadId <= 0 || lastUploadSlot < 0) {
+            return;
+        }
+        Tracker tracker = trackersById.get(lastUploadId);
+        if (tracker == null || tracker.inventory == null) {
+            return;
+        }
+        ItemStack extracted = tracker.inventory.extractItem(lastUploadSlot, 1, false);
+        if (extracted.isEmpty() || !PatternDetailsHelper.isEncodedPattern(extracted)) {
+            return;
+        }
+        if (!player.getInventory().add(extracted)) {
+            player.drop(extracted, false);
+        }
+        lastUploadId = -1;
+        lastUploadSlot = -1;
     }
 
     private IGrid getCurrentGrid() {

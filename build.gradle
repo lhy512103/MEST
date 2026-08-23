@@ -107,11 +107,6 @@ repositories {
     }
 }
 
-// Resolve every build and development-run configuration against committed versions.
-dependencyLocking {
-    lockAllConfigurations()
-}
-
 tasks.withType(AbstractArchiveTask).configureEach {
     preserveFileTimestamps = false
     reproducibleFileOrder = true

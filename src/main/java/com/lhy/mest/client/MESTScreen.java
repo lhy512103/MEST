@@ -46,6 +46,7 @@ import appeng.client.gui.widgets.IconButton;
 import appeng.client.gui.widgets.KeyTypeSelectionButton;
 import appeng.client.gui.widgets.OpenGuideButton;
 import appeng.client.gui.widgets.SettingToggleButton;
+import appeng.client.gui.Tooltip;
 import appeng.client.gui.widgets.ITooltip;
 import appeng.client.gui.widgets.TabButton;
 import appeng.core.AEConfig;
@@ -81,6 +82,9 @@ import com.lhy.mest.client.panel.MEListPanel;
 import com.lhy.mest.client.panel.PatternAccessPanel;
 import com.lhy.mest.client.panel.PatternCachePanel;
 import com.lhy.mest.client.panel.PatternEncodingPanel;
+import com.lhy.mest.compat.plus.PlusJeiHotkeys;
+
+import net.neoforged.fml.ModList;
 import com.lhy.mest.integration.MestRecipeTransferContext;
 import com.lhy.mest.network.PatternProviderActionPacket;
 import com.lhy.mest.terminal.MESTMenu;
@@ -246,24 +250,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         this.imageWidth = 0;
         this.imageHeight = 0;
 
-        super.init();
-
-        this.leftPos = 0;
-        this.topPos = 0;
-        this.imageWidth = 0;
-        this.imageHeight = 0;
-
-        if (searchField != null) {
-            removeWidget(searchField);
-        }
-
-        // The screen is registered with AE2's stock wireless_terminal style, which inherits text labels
-        // (player inventory title, dialog title, item-count) anchored to a fixed GUI layout that doesn't
-        // apply to our full-screen floating-panel UI. Hide them all so they don't bleed through.
-        setTextHidden("player_inventory_title", true);
-        setTextHidden("dialog_title", true);
-        setTextHidden("entriesShown", true);
-
         boolean firstOpen = dock.isEmpty();
         if (firstOpen) {
             List<ModulePanel> panels = new ArrayList<>();
@@ -282,6 +268,24 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         } else {
             dock.updateViewport(this.width, this.height);
         }
+
+        super.init();
+
+        this.leftPos = 0;
+        this.topPos = 0;
+        this.imageWidth = 0;
+        this.imageHeight = 0;
+
+        if (searchField != null) {
+            removeWidget(searchField);
+        }
+
+        // The screen is registered with AE2's stock wireless_terminal style, which inherits text labels
+        // (player inventory title, dialog title, item-count) anchored to a fixed GUI layout that doesn't
+        // apply to our full-screen floating-panel UI. Hide them all so they don't bleed through.
+        setTextHidden("player_inventory_title", true);
+        setTextHidden("dialog_title", true);
+        setTextHidden("entriesShown", true);
 
         dock.layoutAll();
         dock.applyPendingCenter();
@@ -543,15 +547,27 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         ITooltip sidebar = meSideBar.hoveredTooltip(mouseX, mouseY);
         if (sidebar != null && sidebar.isTooltipAreaVisible() && !sidebar.getTooltipMessage().isEmpty()) {
-            drawTooltipWithHeader(g, mouseX, mouseY, sidebar.getTooltipMessage());
+            drawAeWidgetTooltip(g, mouseX, mouseY, sidebar);
             return;
         }
         if (meListPanel != null) {
             ITooltip craftingStatus = meListPanel.hoveredCraftingStatusTooltip(mouseX, mouseY);
             if (craftingStatus != null && !craftingStatus.getTooltipMessage().isEmpty()) {
-                drawTooltipWithHeader(g, mouseX, mouseY, craftingStatus.getTooltipMessage());
+                drawAeWidgetTooltip(g, mouseX, mouseY, craftingStatus);
+                return;
             }
         }
+        if (patternEncodingPanel != null) {
+            ITooltip encoding = patternEncodingPanel.hoveredTooltip(mouseX, mouseY);
+            if (encoding != null && encoding.isTooltipAreaVisible() && !encoding.getTooltipMessage().isEmpty()) {
+                drawAeWidgetTooltip(g, mouseX, mouseY, encoding);
+            }
+        }
+    }
+
+    /** Same path as {@code AEBaseScreen.renderTooltips}: split {@code title\\nbody} then header/body colors. */
+    private void drawAeWidgetTooltip(GuiGraphics g, int mouseX, int mouseY, ITooltip tooltip) {
+        drawTooltipWithHeader(g, mouseX, mouseY, new Tooltip(tooltip.getTooltipMessage()).getContent());
     }
 
     /**
@@ -589,6 +605,15 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (group == null) {
             for (DockRect bounds : dock.exclusionBounds()) {
                 group = group == null ? bounds : group.union(bounds);
+            }
+        }
+        if (group == null) {
+            for (ModulePanel panel : dock.panels()) {
+                if (panel == null || !panel.visible || panel.width <= 0 || panel.height <= 0) {
+                    continue;
+                }
+                DockRect part = new DockRect(panel.x, panel.y, panel.width, panel.height);
+                group = group == null ? part : group.union(part);
             }
         }
         if (group == null) {
@@ -1372,6 +1397,11 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             if (patternAccessPanel.searchKeyPressed(keyCode, scanCode, modifiers)) {
                 return true;
             }
+            return true;
+        }
+        if (ModList.get().isLoaded("extendedae_plus")
+                && ModList.get().isLoaded("jei")
+                && PlusJeiHotkeys.fillSearchFromHoveredIngredient(meListPanel, keyCode, scanCode)) {
             return true;
         }
         if (patternAccessPanel != null

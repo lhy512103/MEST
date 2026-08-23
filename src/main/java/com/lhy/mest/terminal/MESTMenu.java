@@ -7,6 +7,7 @@ import java.util.List;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -47,6 +48,7 @@ import de.mari_023.ae2wtlib.api.terminal.ItemWUT;
 import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
 
 import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.compat.plus.PlusEncodingUpload;
 import com.lhy.mest.network.PatternAccessSession;
 import com.lhy.mest.network.PatternCacheActionPacket;
 
@@ -71,10 +73,13 @@ public class MESTMenu extends CraftingTermMenu {
     private static final String ACTION_SET_PATTERN_FLUID_SUBSTITUTION = "mestSetPatternFluidSubstitution";
     private static final String ACTION_SET_STONECUTTING_RECIPE_ID = "mestSetStonecuttingRecipeId";
     private static final String ACTION_CYCLE_PROCESSING_OUTPUT = "mestCycleProcessingOutput";
+    private static final String ACTION_SCALE_ENCODING = "mestScaleEncoding";
+    private static final String ACTION_UPLOAD_PATTERN = "mestUploadPattern";
 
     private final MESTMenuHost host;
     private final PatternAccessSession patternAccessSession;
     private final PatternEncodingLogic patternEncodingLogic;
+    private boolean blankPatternFilled;
     private final FakeSlot[] patternCraftingSlots = new FakeSlot[CRAFTING_GRID_SLOTS];
     private final FakeSlot[] processingInputSlots = new FakeSlot[AEProcessingPattern.MAX_INPUT_SLOTS];
     private final FakeSlot[] processingOutputSlots = new FakeSlot[AEProcessingPattern.MAX_OUTPUT_SLOTS];
@@ -137,7 +142,7 @@ public class MESTMenu extends CraftingTermMenu {
         this.patternSubstituteFluids = patternEncodingLogic.isFluidSubstitution();
         this.stonecuttingRecipeId = patternEncodingLogic.getStonecuttingRecipeId();
 
-        registerClientAction(ACTION_ENCODE_PATTERN, this::encodePattern);
+        registerClientAction(ACTION_ENCODE_PATTERN, Boolean.class, this::encodePattern);
         registerClientAction(ACTION_CLEAR_PATTERN, this::clearPatternEncoding);
         registerClientAction(ACTION_SET_PATTERN_MODE, EncodingMode.class, this::setPatternEncodingMode);
         registerClientAction(ACTION_SET_PATTERN_SUBSTITUTION, Boolean.class, this::setPatternSubstitute);
@@ -145,6 +150,8 @@ public class MESTMenu extends CraftingTermMenu {
         registerClientAction(ACTION_SET_STONECUTTING_RECIPE_ID, ResourceLocation.class,
                 this::setStonecuttingRecipeId);
         registerClientAction(ACTION_CYCLE_PROCESSING_OUTPUT, this::cycleProcessingOutput);
+        registerClientAction(ACTION_SCALE_ENCODING, Integer.class, this::scaleEncodingPattern);
+        registerClientAction(ACTION_UPLOAD_PATTERN, Boolean.class, this::uploadEncodedPattern);
 
         updateStonecuttingRecipes();
         updatePatternCraftingOutput();
@@ -239,8 +246,12 @@ public class MESTMenu extends CraftingTermMenu {
     }
 
     public void encodePattern() {
+        encodePattern(false);
+    }
+
+    public void encodePattern(boolean shiftDown) {
         if (isClientSide()) {
-            sendClientAction(ACTION_ENCODE_PATTERN);
+            sendClientAction(ACTION_ENCODE_PATTERN, shiftDown);
             return;
         }
 
@@ -265,6 +276,16 @@ public class MESTMenu extends CraftingTermMenu {
             }
 
             this.encodedPatternSlot.set(encodedPattern);
+            if (!shiftDown
+                    && (patternEncodingMode == EncodingMode.CRAFTING
+                    || patternEncodingMode == EncodingMode.SMITHING_TABLE
+                    || patternEncodingMode == EncodingMode.STONECUTTING)
+                    && getPlayer() instanceof ServerPlayer player) {
+                var node = getGridNode();
+                if (node != null) {
+                    PlusEncodingUpload.uploadEncodedToMatrix(player, encodedPatternSlot, node.getGrid());
+                }
+            }
         } else {
             clearEncodedPatternOnly();
         }
@@ -315,6 +336,132 @@ public class MESTMenu extends CraftingTermMenu {
     public boolean canCycleProcessingOutputs() {
         return patternEncodingMode == EncodingMode.PROCESSING
                 && Arrays.stream(processingOutputSlots).filter(s -> !s.getItem().isEmpty()).count() > 1;
+    }
+
+    /**
+     * EAEP-style processing encoder scale. {@code code}: 2/3/5 multiply, -2/-3/-5 divide,
+     * 0 restore ratio, 1 rotate outputs.
+     */
+    public void scaleEncodingPattern(int code) {
+        if (isClientSide()) {
+            sendClientAction(ACTION_SCALE_ENCODING, code);
+            return;
+        }
+        if (patternEncodingMode != EncodingMode.PROCESSING) {
+            return;
+        }
+        if (code == 1) {
+            cycleProcessingOutput();
+            return;
+        }
+        if (code == 0) {
+            long gcd = sharedGcd(copyInv(encodedInputsInv), copyInv(encodedOutputsInv));
+            if (gcd > 1L) {
+                writeInv(encodedInputsInv, divideStacks(copyInv(encodedInputsInv), gcd));
+                writeInv(encodedOutputsInv, divideStacks(copyInv(encodedOutputsInv), gcd));
+            }
+            broadcastChanges();
+            return;
+        }
+        boolean divide = code < 0;
+        int scale = Math.abs(code);
+        var input = copyInvArray(encodedInputsInv);
+        var output = copyInvArray(encodedOutputsInv);
+        if (!canScale(input, scale, divide) || !canScale(output, scale, divide)) {
+            return;
+        }
+        writeInv(encodedInputsInv, Arrays.asList(scaleStacks(input, scale, divide)));
+        writeInv(encodedOutputsInv, Arrays.asList(scaleStacks(output, scale, divide)));
+        broadcastChanges();
+    }
+
+    public void uploadEncodedPattern(boolean returnLast) {
+        if (isClientSide()) {
+            sendClientAction(ACTION_UPLOAD_PATTERN, returnLast);
+            return;
+        }
+        if (!(getPlayer() instanceof ServerPlayer player)) {
+            return;
+        }
+        if (returnLast) {
+            patternAccessSession.returnLastUpload(player);
+            return;
+        }
+        if (PlusEncodingUpload.available() && PlusEncodingUpload.beginAndOpenPicker(player, encodedPatternSlot)) {
+            return;
+        }
+        if (!patternAccessSession.uploadFromSlot(encodedPatternSlot, player)) {
+            player.displayClientMessage(
+                    Component.translatable("gui.mesplicedterminal.pattern_upload.no_provider"), true);
+        }
+    }
+
+    private void tryFillBlankPattern() {
+        if (blankPatternFilled || blankPatternSlot == null || !getLinkStatus().connected()) {
+            return;
+        }
+        ItemStack current = blankPatternSlot.getItem();
+        if (!current.isEmpty() && !AEItems.BLANK_PATTERN.is(current)) {
+            return;
+        }
+        int space = Math.min(
+                blankPatternSlot.getMaxStackSize() - current.getCount(),
+                AEItems.BLANK_PATTERN.stack(1).getMaxStackSize());
+        if (space <= 0) {
+            blankPatternFilled = true;
+            return;
+        }
+        var node = getGridNode();
+        if (node == null || node.getGrid() == null) {
+            return;
+        }
+        var storage = node.getGrid().getStorageService().getInventory();
+        var power = node.getGrid().getEnergyService();
+        if (storage == null || power == null) {
+            return;
+        }
+        AEItemKey blankKey = AEItemKey.of(AEItems.BLANK_PATTERN.asItem());
+        long extracted = appeng.api.storage.StorageHelper.poweredExtraction(
+                power, storage, blankKey, space, getActionSource());
+        if (extracted <= 0L) {
+            return;
+        }
+        int toInsert = (int) Math.min(extracted, space);
+        if (current.isEmpty()) {
+            blankPatternSlot.set(AEItems.BLANK_PATTERN.stack(toInsert));
+        } else {
+            current.grow(toInsert);
+            blankPatternSlot.set(current);
+        }
+        long leftover = extracted - toInsert;
+        if (leftover > 0L) {
+            appeng.api.storage.StorageHelper.poweredInsert(
+                    power, storage, blankKey, leftover, getActionSource());
+        }
+        blankPatternFilled = true;
+    }
+
+    private static List<GenericStack> copyInv(ConfigInventory inventory) {
+        var result = new ArrayList<GenericStack>(inventory.size());
+        for (int i = 0; i < inventory.size(); i++) {
+            result.add(inventory.getStack(i));
+        }
+        return result;
+    }
+
+    private static GenericStack[] copyInvArray(ConfigInventory inventory) {
+        return copyInv(inventory).toArray(GenericStack[]::new);
+    }
+
+    private static void writeInv(ConfigInventory inventory, List<GenericStack> stacks) {
+        inventory.beginBatch();
+        try {
+            for (int i = 0; i < inventory.size(); i++) {
+                inventory.setStack(i, i < stacks.size() ? stacks.get(i) : null);
+            }
+        } finally {
+            inventory.endBatch();
+        }
     }
 
     @Contract("null -> false")
@@ -786,6 +933,9 @@ public class MESTMenu extends CraftingTermMenu {
         // AEBaseMenu construction can invoke this override before our fields are initialized.
         if (patternAccessSession != null) {
             patternAccessSession.serverTick();
+        }
+        if (isServerSide()) {
+            tryFillBlankPattern();
         }
     }
 
