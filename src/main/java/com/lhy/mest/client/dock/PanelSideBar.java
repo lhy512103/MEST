@@ -45,11 +45,14 @@ public class PanelSideBar {
         int currentY = groupTop + ANCHOR_Y + MARGIN;
         int maxWidth = 0;
         for (Button button : buttons) {
-            button.visible = show;
-            button.active = show;
             if (!show) {
+                button.visible = false;
                 continue;
             }
+            if (!button.visible) {
+                continue;
+            }
+            button.active = true;
             button.setX(groupLeft + ANCHOR_X - MARGIN - button.getWidth());
             button.setY(currentY);
             currentY += button.getHeight() + SPACING;

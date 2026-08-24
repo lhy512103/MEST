@@ -19,6 +19,7 @@ import de.mari_023.ae2wtlib.api.AE2wtlibAPI;
 import de.mari_023.ae2wtlib.api.gui.Icon;
 import de.mari_023.ae2wtlib.api.registration.AddTerminalEvent;
 
+import com.lhy.mest.compat.MestAddonUpgrades;
 import com.lhy.mest.item.ItemMEST;
 import com.lhy.mest.registry.ModItems;
 
@@ -89,6 +90,7 @@ public final class MestTerminal {
         event.enqueueWork(() -> {
             var item = ModItems.SPLICED_TERMINAL.get();
             GridLinkables.register(item, WirelessTerminalItem.LINKABLE_HANDLER);
+            MestAddonUpgrades.register();
         });
     }
 }

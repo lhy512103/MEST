@@ -115,6 +115,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private final PanelSideBar meSideBar = new PanelSideBar();
     private ExtraChrome upgradeColumn;
     private ExtraSlotColumn viewCellColumn;
+    private final MestAddonUpgradeButtons addonUpgradeButtons = new MestAddonUpgradeButtons();
     private ToolbarIconButton viewCellsToggleBtn;
     private boolean viewCellsVisible = true;
     private ToolbarIconButton lockLayoutBtn;
@@ -189,6 +190,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 () -> viewCellsVisible,
                 b -> toggleViewCellsPanel()));
         addLayoutActions();
+        addonUpgradeButtons.install(this, meSideBar);
     }
 
     /**
@@ -522,6 +524,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             meSideBar.hide();
             return;
         }
+        addonUpgradeButtons.update(this);
         meSideBar.layoutAgainst(group.x(), group.y(), true);
     }
 
