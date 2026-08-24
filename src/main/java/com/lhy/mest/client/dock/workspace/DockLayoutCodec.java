@@ -212,7 +212,10 @@ public final class DockLayoutCodec {
             String leafId = uniqueIdentifier(DockWorkspaceDefaults.leafNodeId(moduleId), usedIdentifiers, "leaf");
             usedIdentifiers.add(leafId);
             boolean visible = DockWorkspaceDefaults.defaultVisible(moduleId);
-            retainedPolicies.put(moduleId, new ModuleLayoutPolicy(visible, true, true));
+            boolean floating = DockWorkspaceDefaults.defaultFloating(moduleId)
+                    || DockWorkspaceDefaults.defaultPinned(moduleId);
+            boolean pinned = DockWorkspaceDefaults.defaultPinned(moduleId);
+            retainedPolicies.put(moduleId, new ModuleLayoutPolicy(visible, true, true, floating, pinned));
             retainedRoots.add(new FloatingRoot(
                     rootId,
                     migrationContext.defaultRootBounds(catalog.metrics(moduleId), defaultIndex++),

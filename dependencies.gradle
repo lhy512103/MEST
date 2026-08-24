@@ -23,6 +23,7 @@ dependencies {
     // AE2 + AE2WTLib API (compile-time only)
     compileOnly "org.appliedenergistics:appliedenergistics2:${ae2_version}"
     compileOnly "de.mari_023:ae2wtlib_api:${ae2wtlib_version}"
+    compileOnly "de.mari_023:ae2wtlib:${ae2wtlib_version}"
 
     // AE2 addons (compile-time only, for optional integration code).
     // ExtendedAE (ex-pattern-provider) is required at compile time so the pattern-access

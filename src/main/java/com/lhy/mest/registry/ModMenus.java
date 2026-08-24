@@ -6,6 +6,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.terminal.MESTMenu;
+import com.lhy.mest.terminal.MestMagnetMenu;
 
 /**
  * Menu type registration. The {@link MenuType} itself is built (unregistered) inside {@link MESTMenu}
@@ -19,4 +20,7 @@ public final class ModMenus {
 
     public static final DeferredHolder<MenuType<?>, MenuType<MESTMenu>> SPLICED_TERMINAL_MENU =
             MENUS.register("spliced_terminal", () -> MESTMenu.TYPE);
+
+    public static final DeferredHolder<MenuType<?>, MenuType<MestMagnetMenu>> MAGNET_MENU =
+            MENUS.register("magnet", () -> MestMagnetMenu.TYPE);
 }

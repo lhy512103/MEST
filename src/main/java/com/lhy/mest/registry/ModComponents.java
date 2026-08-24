@@ -24,6 +24,11 @@ public final class ModComponents {
                     .persistent(ItemContainerContents.CODEC)
                     .networkSynchronized(ItemContainerContents.STREAM_CODEC));
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> TRASH_INV =
+            register("trash_inv", builder -> builder
+                    .persistent(ItemContainerContents.CODEC)
+                    .networkSynchronized(ItemContainerContents.STREAM_CODEC));
+
     private static <T> DeferredHolder<DataComponentType<?>, DataComponentType<T>> register(
             String name, Consumer<DataComponentType.Builder<T>> configurer) {
         return DATA_COMPONENTS.register(name, () -> {

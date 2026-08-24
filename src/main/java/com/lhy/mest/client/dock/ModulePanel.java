@@ -170,6 +170,11 @@ public abstract class ModulePanel {
         return false;
     }
 
+    /** False when this module must stay a standalone window and cannot join a spliced split. */
+    public boolean canSplice() {
+        return true;
+    }
+
     /**
      * When several right-edge scroll rails stack in one window, only the top panel paints
      * the shared 9-slice background; others keep their own track/handle.

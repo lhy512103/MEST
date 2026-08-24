@@ -6,6 +6,9 @@
   "mixins": [
     "RemoteMenuMixin"
   ],
+  "client": [
+    "GuiRestockMixin"
+  ],
   "injectors": {
     "defaultRequire": 0
   }

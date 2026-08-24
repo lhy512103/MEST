@@ -80,6 +80,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
 
     private AETextField searchField;
     private TabButton craftingStatusBtn;
+    private CraftingTerminalPanel utilitySource;
     private boolean scrollbarDragging;
 
     private int cols = 9;
@@ -119,6 +120,10 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         this.craftingStatusBtn = button;
     }
 
+    public void setUtilitySource(CraftingTerminalPanel source) {
+        this.utilitySource = source;
+    }
+
     @Override
     public String id() {
         return "me_list";
@@ -156,7 +161,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
 
     @Override
     protected int titleRightInset() {
-        return SEARCH_WIDTH + 8 + (pinVisible() ? 16 : 0);
+        return SEARCH_WIDTH + 8 + (pinVisible() ? 16 : 0) + utilityBarWidth();
     }
 
     @Override
@@ -263,6 +268,9 @@ public class MEListPanel extends ModulePanel implements ISortSource {
                 StackSizeRenderer.renderSizeLabel(g, font, x, y, String.valueOf(jobs));
             }
         }
+        if (utilitySource != null && utilitySource.hostUtilitiesOnMeList()) {
+            utilitySource.renderUtilities(g, mouseX, mouseY, partialTicks);
+        }
         if (searchField != null && searchField.isVisible()) {
             searchField.render(g, mouseX, mouseY, partialTicks);
         }
@@ -335,7 +343,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     }
 
     public boolean inTitleBarControls(double mx, double my) {
-        return inSearchField(mx, my) || inPinButton(mx, my);
+        return inSearchField(mx, my) || inPinButton(mx, my) || hoveredUtility(mx, my) != null;
     }
 
     public boolean inSearchField(double mx, double my) {
@@ -384,8 +392,17 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         }
         layoutChrome();
         if (searchField != null && searchField.visible && searchField.isMouseOver(mx, my)) {
+            if (button == 1) {
+                searchField.setValue("");
+                onSearchChanged("");
+                searchField.setFocused(true);
+                return true;
+            }
             searchField.mouseClicked(mx, my, button);
             searchField.setFocused(true);
+            return true;
+        }
+        if (utilitySource != null && utilitySource.mouseClickedUtilities(mx, my, button)) {
             return true;
         }
         setSearchFocused(false);
@@ -400,7 +417,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         if (!visible) {
             return false;
         }
-        if (inSearchField(mx, my)) {
+        if (inSearchField(mx, my) || hoveredUtility(mx, my) != null) {
             return true;
         }
         return craftingStatusBtn != null && craftingStatusBtn.visible && craftingStatusBtn.isMouseOver(mx, my);
@@ -548,9 +565,14 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         if (searchField != null) {
             boolean external = AEConfig.instance().isUseExternalSearch();
             searchField.setVisible(show && !external);
+            int searchX = contentLeft() + cols * SLOT - SEARCH_WIDTH;
+            int searchY = y + TITLE_SEARCH_TOP;
             if (searchField.visible) {
-                int searchX = contentLeft() + cols * SLOT - SEARCH_WIDTH;
-                searchField.move(new Point(searchX, y + TITLE_SEARCH_TOP));
+                searchField.move(new Point(searchX, searchY));
+            }
+            if (utilitySource != null && utilitySource.hostUtilitiesOnMeList()) {
+                utilitySource.layoutUtilitiesOnSearch(
+                        searchX, searchY, CraftingTerminalPanel.SEARCH_BUTTON);
             }
         }
         if (craftingStatusBtn != null) {
@@ -667,6 +689,17 @@ public class MEListPanel extends ModulePanel implements ISortSource {
                 && craftingStatusBtn.isMouseOver(mouseX, mouseY)) {
             return craftingStatusBtn;
         }
-        return null;
+        return hoveredUtility(mouseX, mouseY);
+    }
+
+    private AbstractWidget hoveredUtility(double mx, double my) {
+        return utilitySource == null ? null : utilitySource.hoveredUtility((int) mx, (int) my);
+    }
+
+    private int utilityBarWidth() {
+        if (utilitySource == null || !utilitySource.hostUtilitiesOnMeList()) {
+            return 0;
+        }
+        return utilitySource.utilityBarWidth(CraftingTerminalPanel.SEARCH_BUTTON);
     }
 }

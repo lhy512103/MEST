@@ -23,11 +23,30 @@ public final class DockWorkspaceDefaults {
                     geometry.defaultRootBounds(catalog.metrics(moduleId), index++),
                     leaf));
         }
-        return new DockWorkspace(roots);
+        DockWorkspace workspace = new DockWorkspace(roots);
+        var policies = new java.util.LinkedHashMap<>(workspace.policies());
+        for (String moduleId : catalog.moduleIds()) {
+            if (defaultFloating(moduleId) || defaultPinned(moduleId)) {
+                policies.put(moduleId, workspace.policyFor(moduleId)
+                        .withFloating(defaultFloating(moduleId) || defaultPinned(moduleId))
+                        .withPinned(defaultPinned(moduleId)));
+            }
+        }
+        return workspace.withPolicies(policies);
     }
 
     public static boolean defaultVisible(String moduleId) {
-        return !"provider_select".equals(moduleId);
+        return !"provider_select".equals(moduleId)
+                && !"wireless_settings".equals(moduleId)
+                && !"trash".equals(moduleId);
+    }
+
+    public static boolean defaultFloating(String moduleId) {
+        return "wireless_settings".equals(moduleId) || "trash".equals(moduleId);
+    }
+
+    public static boolean defaultPinned(String moduleId) {
+        return "trash".equals(moduleId);
     }
 
     public static String leafNodeId(String moduleId) {

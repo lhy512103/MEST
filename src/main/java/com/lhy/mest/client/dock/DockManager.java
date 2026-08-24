@@ -1024,9 +1024,8 @@ public final class DockManager {
         if (cached == null) {
             cached = java.util.Optional.empty();
             for (ModulePanel panel : panels) {
-                if (panel.visible && panel.ownsSlot(slot)) {
+                if (isEffectivelyVisible(panel) && panel.ownsSlot(slot)) {
                     cached = java.util.Optional.of(panel);
-                    break;
                 }
             }
             cache.put(slot, cached);
@@ -1650,8 +1649,30 @@ public final class DockManager {
         }
         DockRect bounds = projection.visibleLeaf(targetLeaf.nodeId()).orElseThrow().bounds();
         dragHoverBounds = bounds;
+        if (!draggedCanSplice() || !moduleCanSplice(targetLeaf.moduleId())) {
+            dropCandidate = null;
+            return;
+        }
         DockEdge edge = dropEdge(bounds, mouseX, mouseY);
         dropCandidate = edge == null ? null : new DropCandidate(targetLeaf.nodeId(), edge, dropBounds(bounds, edge));
+    }
+
+    private boolean moduleCanSplice(String moduleId) {
+        ModulePanel panel = panelsByModuleId.get(moduleId);
+        return panel == null || panel.canSplice();
+    }
+
+    private boolean draggedCanSplice() {
+        FloatingRoot dragged = rootById(activeRootId);
+        if (dragged == null) {
+            return true;
+        }
+        for (LeafNode leaf : LayoutTrees.leaves(dragged.content())) {
+            if (!moduleCanSplice(leaf.moduleId())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void executeDrop(DropCandidate candidate) {

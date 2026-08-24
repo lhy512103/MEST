@@ -1,0 +1,93 @@
+package com.lhy.mest.client;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.EventPriority;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.InputEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
+
+import de.mari_023.ae2wtlib.api.AE2wtlibComponents;
+
+import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.compat.MestWtlibSupport;
+import com.lhy.mest.compat.plus.PlusJeiHotkeys;
+import com.lhy.mest.network.MestPickBlockPacket;
+
+/**
+ * Survival middle-click pick is handled by wtlib only for the crafting terminal item.
+ * When pick-block is enabled on MEST, send our own packet using the same public pick APIs.
+ */
+@EventBusSubscriber(modid = MESplicedterminal.MODID, value = Dist.CLIENT)
+public final class MestWtlibClientEvents {
+    private MestWtlibClientEvents() {
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onFillSearch(ScreenEvent.KeyPressed.Pre event) {
+        if (!ModList.get().isLoaded("extendedae_plus") || !ModList.get().isLoaded("jei")) {
+            return;
+        }
+        if (!(event.getScreen() instanceof MESTScreen screen)) {
+            return;
+        }
+        if (PlusJeiHotkeys.fillSearchFromHoveredIngredient(
+                screen.meListPanel(), event.getKeyCode(), event.getScanCode())) {
+            event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPickBlock(InputEvent.InteractionKeyMappingTriggered event) {
+        if (!event.isPickBlock()) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        LocalPlayer player = minecraft.player;
+        if (player == null || minecraft.level == null || minecraft.screen != null) {
+            return;
+        }
+        if (player.getAbilities().instabuild || player.isSpectator()) {
+            return;
+        }
+        ItemStack mest = MestWtlibSupport.mestStack(player);
+        if (mest.isEmpty() || !mest.getOrDefault(AE2wtlibComponents.PICK_BLOCK, false)) {
+            return;
+        }
+        ItemStack picked = stackFromHit(minecraft);
+        if (picked.isEmpty() || player.getInventory().findSlotMatchingItem(picked) != -1) {
+            return;
+        }
+        PacketDistributor.sendToServer(new MestPickBlockPacket(picked));
+    }
+
+    private static ItemStack stackFromHit(Minecraft minecraft) {
+        HitResult hit = minecraft.hitResult;
+        if (hit == null || minecraft.level == null || minecraft.player == null) {
+            return ItemStack.EMPTY;
+        }
+        if (hit.getType() == HitResult.Type.BLOCK && hit instanceof BlockHitResult blockHit) {
+            BlockPos pos = blockHit.getBlockPos();
+            BlockState state = minecraft.level.getBlockState(pos);
+            return state.getBlock().getCloneItemStack(minecraft.level, pos, state);
+        }
+        if (hit.getType() == HitResult.Type.ENTITY && hit instanceof EntityHitResult entityHit) {
+            Entity entity = entityHit.getEntity();
+            ItemStack stack = entity.getPickedResult(entityHit);
+            return stack == null ? ItemStack.EMPTY : stack;
+        }
+        return ItemStack.EMPTY;
+    }
+}

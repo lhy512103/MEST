@@ -68,6 +68,7 @@ import appeng.menu.me.common.GridInventoryEntry;
 import appeng.util.Platform;
 
 import de.mari_023.ae2wtlib.api.gui.AE2wtlibSlotSemantics;
+import de.mari_023.ae2wtlib.wct.ArmorSlot;
 import de.mari_023.ae2wtlib.api.terminal.IUniversalTerminalCapable;
 import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
 
@@ -81,12 +82,15 @@ import com.lhy.mest.client.dock.PanelSideBar;
 import com.lhy.mest.client.dock.ScrollingUpgradeColumn;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.panel.CraftingPanel;
+import com.lhy.mest.client.panel.CraftingTerminalPanel;
 import com.lhy.mest.client.panel.InventoryPanel;
 import com.lhy.mest.client.panel.MEListPanel;
 import com.lhy.mest.client.panel.PatternAccessPanel;
 import com.lhy.mest.client.panel.PatternCachePanel;
 import com.lhy.mest.client.panel.PatternEncodingPanel;
 import com.lhy.mest.client.panel.ProviderSelectPanel;
+import com.lhy.mest.client.panel.TrashPanel;
+import com.lhy.mest.client.panel.WirelessSettingsPanel;
 import com.lhy.mest.compat.plus.PlusJeiHotkeys;
 
 import net.neoforged.fml.ModList;
@@ -134,12 +138,19 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private boolean hoverToolbar;
     private MEListPanel meListPanel;
     private CraftingPanel craftingPanel;
+    private CraftingTerminalPanel craftingTerminalPanel;
     private PatternEncodingPanel patternEncodingPanel;
     private PatternAccessPanel patternAccessPanel;
     private PatternCachePanel patternCachePanel;
     private InventoryPanel inventoryPanel;
     private ProviderSelectPanel providerSelectPanel;
+    private WirelessSettingsPanel wirelessSettingsPanel;
+    private TrashPanel trashPanel;
     private boolean keepPendingOnRemove;
+
+    public MEListPanel meListPanel() {
+        return meListPanel;
+    }
 
     public MESTScreen(MESTMenu menu, Inventory playerInventory, Component title, ScreenStyle style) {
         super(menu, playerInventory, title, style);
@@ -222,6 +233,57 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         switchToScreen(new MestTerminalSettingsScreen(this));
     }
 
+    public void switchToWirelessTerminalSettings() {
+        if (wirelessSettingsPanel == null) {
+            return;
+        }
+        dock.revealModule(wirelessSettingsPanel);
+        wirelessSettingsPanel.reloadFromStack();
+    }
+
+    public void openTrash() {
+        if (trashPanel == null) {
+            return;
+        }
+        dock.revealModule(trashPanel);
+        getMenu().openTrashMenu();
+    }
+
+    public void closeTrash() {
+        getMenu().closeTrash();
+        if (trashPanel != null && dock.isEffectivelyVisible(trashPanel)) {
+            dock.hideModule(trashPanel);
+        }
+    }
+
+    public void dismissWirelessSettings() {
+        if (wirelessSettingsPanel == null) {
+            return;
+        }
+        var policy = dock.policyFor(wirelessSettingsPanel);
+        if (!policy.floating() || policy.pinned()) {
+            return;
+        }
+        if (!dock.isEffectivelyVisible(wirelessSettingsPanel)) {
+            return;
+        }
+        dock.hideModule(wirelessSettingsPanel);
+    }
+
+    private void syncUtilityHost() {
+        if (craftingTerminalPanel == null || meListPanel == null) {
+            return;
+        }
+        boolean onMeList = !dock.isEffectivelyVisible(craftingTerminalPanel)
+                && dock.isEffectivelyVisible(meListPanel);
+        craftingTerminalPanel.setHostUtilitiesOnMeList(onMeList);
+    }
+
+    private boolean isCraftingModuleVisible() {
+        return craftingPanel != null && dock.isEffectivelyVisible(craftingPanel)
+                || craftingTerminalPanel != null && dock.isEffectivelyVisible(craftingTerminalPanel);
+    }
+
     private Component viewCellsMessage() {
         return viewCellsMessage(viewCellsVisible);
     }
@@ -298,6 +360,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             panels.add(meListPanel);
             craftingPanel = new CraftingPanel(getMenu());
             panels.add(craftingPanel);
+            craftingTerminalPanel = new CraftingTerminalPanel(getMenu(), this);
+            meListPanel.setUtilitySource(craftingTerminalPanel);
+            panels.add(craftingTerminalPanel);
             patternEncodingPanel = new PatternEncodingPanel(getMenu());
             panels.add(patternEncodingPanel);
             patternAccessPanel = new PatternAccessPanel(style);
@@ -306,6 +371,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             panels.add(patternCachePanel);
             inventoryPanel = new InventoryPanel(getMenu());
             panels.add(inventoryPanel);
+            wirelessSettingsPanel = new WirelessSettingsPanel(getMenu(), style);
+            panels.add(wirelessSettingsPanel);
+            trashPanel = new TrashPanel(getMenu(), this);
+            panels.add(trashPanel);
             if (ModList.get().isLoaded("extendedae_plus")) {
                 providerSelectPanel = new ProviderSelectPanel(style);
                 panels.add(providerSelectPanel);
@@ -339,8 +408,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         setTextHidden("dialog_title", true);
         setTextHidden("entriesShown", true);
 
+        syncUtilityHost();
         dock.layoutAll();
         dock.applyPendingCenter();
+        if (trashPanel != null && dock.isEffectivelyVisible(trashPanel) && !getMenu().isTrashOpen()) {
+            getMenu().openTrashMenu();
+        }
         dock.relayoutAllSlots();
         if (patternAccessPanel != null) {
             patternAccessPanel.rebindSearchField(this);
@@ -375,11 +448,11 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         var selected = MestRecipeTransferContext.targetFor(getMenu());
         if (selected == MestRecipeTransferContext.Target.PATTERN_ENCODING
                 && !dock.isEffectivelyVisible(patternEncodingPanel)
-                && dock.isEffectivelyVisible(craftingPanel)) {
+                && isCraftingModuleVisible()) {
             MestRecipeTransferContext.select(
                     getMenu(), MestRecipeTransferContext.Target.CRAFTING);
         } else if (selected == MestRecipeTransferContext.Target.CRAFTING
-                && !dock.isEffectivelyVisible(craftingPanel)
+                && !isCraftingModuleVisible()
                 && dock.isEffectivelyVisible(patternEncodingPanel)) {
             MestRecipeTransferContext.select(
                     getMenu(), MestRecipeTransferContext.Target.PATTERN_ENCODING);
@@ -406,12 +479,20 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     protected void updateBeforeRender() {
         super.updateBeforeRender();
         refreshLayoutActions();
+        syncUtilityHost();
         if (meListPanel != null && dock.isEffectivelyVisible(meListPanel)) {
             meListPanel.tick(hasShiftDown());
             updateViewCellFilter();
         }
         if (patternEncodingPanel != null && dock.isEffectivelyVisible(patternEncodingPanel)) {
             patternEncodingPanel.tick();
+        }
+        if (craftingTerminalPanel != null && (dock.isEffectivelyVisible(craftingTerminalPanel)
+                || craftingTerminalPanel.hostUtilitiesOnMeList())) {
+            craftingTerminalPanel.tick();
+        }
+        if (wirelessSettingsPanel != null && dock.isEffectivelyVisible(wirelessSettingsPanel)) {
+            wirelessSettingsPanel.reloadFromStack();
         }
         if (patternAccessPanel != null && dock.isEffectivelyVisible(patternAccessPanel)) {
             patternAccessPanel.tick();
@@ -432,7 +513,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         MestRecipeTransferContext.updateAvailability(
                 getMenu(),
                 patternEncodingPanel != null && dock.isEffectivelyVisible(patternEncodingPanel),
-                craftingPanel != null && dock.isEffectivelyVisible(craftingPanel));
+                isCraftingModuleVisible());
     }
 
     private void attachMeSideBar() {
@@ -821,10 +902,13 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         return switch (panel.id()) {
             case "me_list" -> Icon.VIEW_MODE_ALL;
             case "crafting" -> Icon.CRAFT_HAMMER;
+            case "crafting_terminal" -> Icon.CRAFT_HAMMER;
             case "pattern_encoding" -> Icon.TAB_CRAFTING;
             case "pattern_access" -> Icon.PATTERN_ACCESS_SHOW;
             case "pattern_cache" -> Icon.BACKGROUND_ENCODED_PATTERN;
             case "provider_select" -> Icon.ARROW_UP;
+            case "wireless_settings" -> Icon.COG;
+            case "trash" -> Icon.BACKGROUND_TRASH;
             case "inventory" -> Icon.S_STORAGE;
             default -> Icon.COG;
         };
@@ -935,6 +1019,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 meListPanel.renderRepoSlot(g, this.font, repoSlot);
             }
             return;
+        }
+        if (s instanceof ArmorSlot armorSlot && armorSlot.getItem().isEmpty() && armorSlot.isSlotEnabled()) {
+            armorSlot.icon().getBlitter()
+                    .dest(armorSlot.x, armorSlot.y)
+                    .opacity(armorSlot.getOpacityOfIcon())
+                    .blit(g);
         }
         super.renderSlot(g, s);
         if (getMenu().isPatternEncodingInputSlot(s)) {
@@ -1060,8 +1150,11 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (target != providerSelectPanel) {
             dismissProviderPicker(true);
         }
+        if (target != wirelessSettingsPanel) {
+            dismissWirelessSettings();
+        }
 
-        if (target == craftingPanel) {
+        if (target == craftingPanel || target == craftingTerminalPanel) {
             MestRecipeTransferContext.select(
                     getMenu(), MestRecipeTransferContext.Target.CRAFTING);
         } else if (target == patternEncodingPanel) {

@@ -14,6 +14,9 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Equipable;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CraftingRecipe;
@@ -25,17 +28,25 @@ import net.minecraft.world.item.crafting.StonecutterRecipe;
 
 import it.unimi.dsi.fastutil.ints.IntArraySet;
 import it.unimi.dsi.fastutil.ints.IntSet;
+import appeng.api.config.Actionable;
+import appeng.api.inventories.InternalInventory;
 import appeng.api.networking.IGridNode;
 import appeng.api.stacks.AEItemKey;
+import appeng.api.stacks.AEKey;
 import appeng.api.stacks.GenericStack;
+import appeng.api.storage.MEStorage;
+import appeng.helpers.InventoryAction;
 import appeng.api.crafting.PatternDetailsHelper;
 import appeng.core.definitions.AEItems;
 import appeng.crafting.pattern.AECraftingPattern;
 import appeng.crafting.pattern.AEProcessingPattern;
+import appeng.menu.MenuOpener;
+import appeng.menu.SlotSemantic;
 import appeng.menu.SlotSemantics;
 import appeng.menu.guisync.GuiSync;
 import appeng.menu.implementations.MenuTypeBuilder;
 import appeng.menu.me.items.CraftingTermMenu;
+import appeng.menu.slot.AppEngSlot;
 import appeng.menu.slot.FakeSlot;
 import appeng.menu.slot.PatternTermSlot;
 import appeng.menu.slot.RestrictedInputSlot;
@@ -46,6 +57,9 @@ import appeng.util.ConfigInventory;
 import de.mari_023.ae2wtlib.api.gui.AE2wtlibSlotSemantics;
 import de.mari_023.ae2wtlib.api.terminal.ItemWUT;
 import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
+import de.mari_023.ae2wtlib.wct.ArmorSlot;
+import de.mari_023.ae2wtlib.wct.magnet_card.MagnetHandler;
+import de.mari_023.ae2wtlib.wct.magnet_card.MagnetMode;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.compat.plus.PlusEncodingUpload;
@@ -76,6 +90,9 @@ public class MESTMenu extends CraftingTermMenu {
     private static final String ACTION_SCALE_ENCODING = "mestScaleEncoding";
     private static final String ACTION_UPLOAD_PATTERN = "mestUploadPattern";
     private static final String ACTION_REQUEST_PROVIDERS = "mestRequestProviders";
+    private static final String ACTION_MAGNET_MENU = "magnetMenu";
+    private static final String ACTION_TRASH_MENU = "trash";
+    private static final String ACTION_CLOSE_TRASH = "closeTrash";
 
     private final MESTMenuHost host;
     private final PatternAccessSession patternAccessSession;
@@ -118,6 +135,8 @@ public class MESTMenu extends CraftingTermMenu {
     @GuiSync(90)
     @Nullable
     public ResourceLocation stonecuttingRecipeId;
+    @GuiSync(89)
+    public boolean trashOpen;
 
     public final IntSet patternSlotsSupportingFluidSubstitution = new IntArraySet();
 
@@ -134,9 +153,11 @@ public class MESTMenu extends CraftingTermMenu {
                         host.getSubInventory(WTMenuHost.INV_SINGULARITY),
                         0),
                 AE2wtlibSlotSemantics.SINGULARITY);
+        addCraftingTerminalEquipmentSlots(ip);
 
         addPatternEncodingSlots();
         addPatternCacheSlots();
+        addTrashSlots();
 
         this.patternEncodingMode = patternEncodingLogic.getMode();
         this.patternSubstitute = patternEncodingLogic.isSubstitution();
@@ -154,6 +175,9 @@ public class MESTMenu extends CraftingTermMenu {
         registerClientAction(ACTION_SCALE_ENCODING, Integer.class, this::scaleEncodingPattern);
         registerClientAction(ACTION_UPLOAD_PATTERN, Boolean.class, this::uploadEncodedPattern);
         registerClientAction(ACTION_REQUEST_PROVIDERS, this::requestProviderList);
+        registerClientAction(ACTION_MAGNET_MENU, this::openMagnetMenu);
+        registerClientAction(ACTION_TRASH_MENU, this::openTrashMenu);
+        registerClientAction(ACTION_CLOSE_TRASH, this::closeTrash);
 
         updateStonecuttingRecipes();
         updatePatternCraftingOutput();
@@ -183,8 +207,77 @@ public class MESTMenu extends CraftingTermMenu {
         return node != null && node.isActive() && node.getGrid() != null;
     }
 
+    public MESTMenuHost getMestHost() {
+        return host;
+    }
+
     public boolean isWUT() {
         return host.getItemStack().getItem() instanceof ItemWUT;
+    }
+
+    public MagnetMode getMagnetMode() {
+        return MagnetHandler.getMagnetMode(host.getItemStack());
+    }
+
+    public void openMagnetMenu() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_MAGNET_MENU);
+            return;
+        }
+        MenuOpener.open(MestMagnetMenu.TYPE, getPlayer(), getLocator());
+    }
+
+    public void openTrashMenu() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_TRASH_MENU);
+            return;
+        }
+        trashOpen = true;
+    }
+
+    public void closeTrash() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_CLOSE_TRASH);
+            return;
+        }
+        host.clearTrash();
+        trashOpen = false;
+    }
+
+    public boolean isTrashOpen() {
+        return trashOpen;
+    }
+
+    public List<Slot> getTrashSlots() {
+        return getSlots(AE2wtlibSlotSemantics.TRASH);
+    }
+
+    @Override
+    protected boolean canSlotsBeHidden(SlotSemantic semantic) {
+        return semantic == AE2wtlibSlotSemantics.OFFHAND
+                || semantic == AE2wtlibSlotSemantics.HELMET
+                || semantic == AE2wtlibSlotSemantics.CHESTPLATE
+                || semantic == AE2wtlibSlotSemantics.LEGGINGS
+                || semantic == AE2wtlibSlotSemantics.BOOTS;
+    }
+
+    private void addCraftingTerminalEquipmentSlots(Inventory ip) {
+        addSlot(new ArmorSlot(ip, ArmorSlot.Armor.HEAD) {
+            @Override
+            public boolean mayPlace(ItemStack stack) {
+                Item item = stack.getItem();
+                return item instanceof BlockItem blockItem && blockItem.getBlock() instanceof Equipable
+                        || super.mayPlace(stack);
+            }
+        }, AE2wtlibSlotSemantics.HELMET);
+        addSlot(new ArmorSlot(ip, ArmorSlot.Armor.CHEST), AE2wtlibSlotSemantics.CHESTPLATE);
+        addSlot(new ArmorSlot(ip, ArmorSlot.Armor.LEGS), AE2wtlibSlotSemantics.LEGGINGS);
+        addSlot(new ArmorSlot(ip, ArmorSlot.Armor.FEET), AE2wtlibSlotSemantics.BOOTS);
+        if (Integer.valueOf(40).equals(host.getPlayerInventorySlot())) {
+            addSlot(new ArmorSlot.DisabledOffhandSlot(ip), AE2wtlibSlotSemantics.OFFHAND);
+        } else {
+            addSlot(new ArmorSlot(ip, ArmorSlot.Armor.OFFHAND), AE2wtlibSlotSemantics.OFFHAND);
+        }
     }
 
     public PatternEncodingLogic getPatternEncodingLogic() {
@@ -646,6 +739,13 @@ public class MESTMenu extends CraftingTermMenu {
         return getSlots(MestSlotSemantics.PATTERN_CACHE);
     }
 
+    private void addTrashSlots() {
+        InternalInventory inventory = host.getTrashInventory();
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            addSlot(new AppEngSlot(inventory, slot), AE2wtlibSlotSemantics.TRASH);
+        }
+    }
+
     private ItemStack updatePatternCraftingOutput() {
         // During super-construction (CraftingTermMenu.<init> calls updateCurrentRecipeAndOutput, which
         // fires onSlotChange before our fields are initialised) encodedInputsInv is still null, and
@@ -992,6 +1092,17 @@ public class MESTMenu extends CraftingTermMenu {
     protected int transferStackToMenu(ItemStack input) {
         int initialCount = input.getCount();
 
+        if (trashOpen) {
+            for (Slot trashSlot : getTrashSlots()) {
+                if (trashSlot.mayPlace(input)) {
+                    input = trashSlot.safeInsert(input);
+                    if (input.isEmpty()) {
+                        return initialCount;
+                    }
+                }
+            }
+        }
+
         if (blankPatternSlot.mayPlace(input)) {
             input = blankPatternSlot.safeInsert(input);
             if (input.isEmpty()) {
@@ -1019,6 +1130,51 @@ public class MESTMenu extends CraftingTermMenu {
 
         int transferred = initialCount - input.getCount();
         return transferred + super.transferStackToMenu(input);
+    }
+
+    @Override
+    protected void handleNetworkInteraction(ServerPlayer player, AEKey clickedKey, InventoryAction action) {
+        if (trashOpen && clickedKey instanceof AEItemKey itemKey) {
+            if (action == InventoryAction.SHIFT_CLICK) {
+                insertFromNetworkToTrash(itemKey);
+                return;
+            }
+            if (action == InventoryAction.MOVE_REGION) {
+                int limit = getTrashSlots().size();
+                for (int i = 0; i < limit && insertFromNetworkToTrash(itemKey); i++) {
+                }
+                return;
+            }
+        }
+        super.handleNetworkInteraction(player, clickedKey, action);
+    }
+
+    private boolean insertFromNetworkToTrash(AEItemKey itemKey) {
+        IGridNode node = getGridNode();
+        if (node == null || node.getGrid() == null || node.getGrid().getStorageService() == null) {
+            return false;
+        }
+        MEStorage storage = node.getGrid().getStorageService().getInventory();
+        int max = itemKey.getMaxStackSize();
+        long available = storage.extract(itemKey, max, Actionable.SIMULATE, getActionSource());
+        if (available <= 0L) {
+            return false;
+        }
+        ItemStack stack = itemKey.toStack((int) available);
+        for (Slot trashSlot : getTrashSlots()) {
+            if (stack.isEmpty()) {
+                break;
+            }
+            if (trashSlot.mayPlace(stack)) {
+                stack = trashSlot.safeInsert(stack);
+            }
+        }
+        int inserted = (int) available - stack.getCount();
+        if (inserted <= 0) {
+            return false;
+        }
+        storage.extract(itemKey, inserted, Actionable.MODULATE, getActionSource());
+        return true;
     }
 
     public void handlePatternCacheAction(PatternCacheActionPacket.Action action, boolean value) {

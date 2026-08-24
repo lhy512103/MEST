@@ -25,6 +25,11 @@ public final class MestPackets {
                 PatternCacheActionPacket.STREAM_CODEC,
                 PatternCacheActionPacket::handle);
 
+        registrar.playToServer(
+                MestPickBlockPacket.TYPE,
+                MestPickBlockPacket.STREAM_CODEC,
+                MestPickBlockPacket::handle);
+
         registrar.playToClient(
                 PatternProviderListPacket.TYPE,
                 PatternProviderListPacket.STREAM_CODEC,
@@ -34,5 +39,10 @@ public final class MestPackets {
                 ProviderPickerListPacket.TYPE,
                 ProviderPickerListPacket.STREAM_CODEC,
                 ProviderPickerClientBridge::handle);
+
+        registrar.playToClient(
+                MestRestockAmountPacket.TYPE,
+                MestRestockAmountPacket.STREAM_CODEC,
+                MestRestockAmountPacket::handle);
     }
 }

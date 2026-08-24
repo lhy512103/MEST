@@ -3,6 +3,7 @@ package com.lhy.mest.compat.plus;
 import java.util.Optional;
 
 import mezz.jei.api.ingredients.ITypedIngredient;
+import net.minecraft.client.Minecraft;
 import net.neoforged.fml.ModList;
 
 import com.extendedae_plus.client.ModKeybindings;
@@ -22,6 +23,16 @@ public final class PlusJeiHotkeys {
             return false;
         }
         Optional<ITypedIngredient<?>> hovered = JeiRuntimeCompat.getIngredientUnderMouse();
+        if (hovered.isEmpty()) {
+            Minecraft minecraft = Minecraft.getInstance();
+            double mouseX = minecraft.mouseHandler.xpos()
+                    * minecraft.getWindow().getGuiScaledWidth()
+                    / Math.max(1, minecraft.getWindow().getScreenWidth());
+            double mouseY = minecraft.mouseHandler.ypos()
+                    * minecraft.getWindow().getGuiScaledHeight()
+                    / Math.max(1, minecraft.getWindow().getScreenHeight());
+            hovered = JeiRuntimeCompat.getIngredientUnderMouse(mouseX, mouseY);
+        }
         if (hovered.isEmpty()) {
             return false;
         }

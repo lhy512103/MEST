@@ -8,6 +8,7 @@ import appeng.init.client.InitScreens;
 import com.lhy.mest.network.PatternProviderClientBridge;
 import com.lhy.mest.network.ProviderPickerClientBridge;
 import com.lhy.mest.terminal.MESTMenu;
+import com.lhy.mest.terminal.MestMagnetMenu;
 
 /**
  * Client-side setup: registers menu screens. AE2 resolves ScreenStyle JSON paths against its own
@@ -24,5 +25,6 @@ public final class MestClient {
 
     private static void onRegisterScreens(RegisterMenuScreensEvent event) {
         InitScreens.register(event, MESTMenu.TYPE, MESTScreen::new, "/screens/terminals/wireless_terminal.json");
+        InitScreens.register(event, MestMagnetMenu.TYPE, MestMagnetScreen::new, "/screens/wtlib/magnet.json");
     }
 }
