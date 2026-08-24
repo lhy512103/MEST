@@ -67,7 +67,10 @@ import appeng.menu.SlotSemantics;
 import appeng.menu.me.common.GridInventoryEntry;
 import appeng.util.Platform;
 
+import de.mari_023.ae2wtlib.api.AE2wtlibAPI;
+import de.mari_023.ae2wtlib.api.TextConstants;
 import de.mari_023.ae2wtlib.api.gui.AE2wtlibSlotSemantics;
+import de.mari_023.ae2wtlib.api.registration.WTDefinition;
 import de.mari_023.ae2wtlib.wct.ArmorSlot;
 import de.mari_023.ae2wtlib.api.terminal.IUniversalTerminalCapable;
 import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
@@ -113,11 +116,22 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private final DockManager dock = new DockManager();
     private final List<SettingToggleButton<?>> meSettingButtons = new ArrayList<>();
     private final PanelSideBar meSideBar = new PanelSideBar();
+    private final PanelSideBar moreSettingsBar = new PanelSideBar();
     private ExtraChrome upgradeColumn;
     private ExtraSlotColumn viewCellColumn;
     private final MestAddonUpgradeButtons addonUpgradeButtons = new MestAddonUpgradeButtons();
     private ToolbarIconButton viewCellsToggleBtn;
     private boolean viewCellsVisible = true;
+    private ToolbarIconButton moreSettingsToggleBtn;
+    private boolean moreSettingsVisible = false;
+    private final List<String> moreSettingsButtonIds = new ArrayList<>();
+    private int moreSettingsPressIndex = -1;
+    private double moreSettingsPressY;
+    private boolean moreSettingsDragging;
+    private static final String MORE_LOCK = "lock_layout";
+    private static final String MORE_UNDO = "undo_layout";
+    private static final String MORE_EDIT = "edit_layout";
+    private static final int MORE_SETTINGS_SHIFT = 3;
     private ToolbarIconButton lockLayoutBtn;
     private ToolbarIconButton undoLayoutBtn;
     private AETextField searchField;
@@ -189,28 +203,14 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         viewCellsToggleBtn = addMeSideButton(new ViewCellsToggleButton(
                 () -> viewCellsVisible,
                 b -> toggleViewCellsPanel()));
-        addLayoutActions();
+        moreSettingsToggleBtn = addMeSideButton(new ToolbarIconButton(
+                Icon.COG,
+                moreSettingsMessage(),
+                b -> toggleMoreSettings()));
         addonUpgradeButtons.install(this, meSideBar);
-    }
-
-    /**
-     * Extension point for the AE2-style left rail. Settings, guide and layout actions all
-     * go through {@link #addMeSideButton(Button)} so extra controls stay in one column.
-     */
-    private void addLayoutActions() {
-        lockLayoutBtn = addMeSideButton(new ToolbarIconButton(
-                dock.isLayoutLocked() ? Icon.LOCKED : Icon.UNLOCKED,
-                layoutLockMessage(),
-                b -> dock.toggleLayoutLocked()));
-        undoLayoutBtn = addMeSideButton(new ToolbarIconButton(
-                Icon.BACK,
-                Component.translatable("gui.mesplicedterminal.undo_layout"),
-                b -> dock.undoLayout()));
-        undoLayoutBtn.active = dock.canUndoLayout();
-        addMeSideButton(new ToolbarIconButton(
-                Icon.TERMINAL_STYLE_SMALL,
-                Component.translatable("gui.mesplicedterminal.edit_layout"),
-                b -> Minecraft.getInstance().setScreen(new MESTLayoutEditorScreen(this, dock))));
+        if (getMenu().isWUT()) {
+            addMeSideButton(new CycleTerminalToolbarButton());
+        }
     }
 
     private ToolbarIconButton addMeSideButton(ToolbarIconButton button) {
@@ -305,6 +305,21 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         attachExtraSlotColumns();
     }
 
+    private Component moreSettingsMessage() {
+        return Component.translatable(moreSettingsVisible
+                ? "gui.mesplicedterminal.more_settings.hide"
+                : "gui.mesplicedterminal.more_settings.show");
+    }
+
+    private void toggleMoreSettings() {
+        moreSettingsVisible = !moreSettingsVisible;
+        dock.setMoreSettingsVisible(moreSettingsVisible);
+        if (moreSettingsToggleBtn != null) {
+            moreSettingsToggleBtn.setMessage(moreSettingsMessage());
+        }
+        attachMeSideBar();
+    }
+
     private void toggleTerminalStyle(SettingToggleButton<appeng.api.config.TerminalStyle> btn, boolean backwards) {
         appeng.api.config.TerminalStyle next = btn.getNextValue(backwards);
         AEConfig.instance().setTerminalStyle(next);
@@ -383,8 +398,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             }
             dock.init(panels, this.width, this.height);
             viewCellsVisible = dock.viewCellsVisible();
+            moreSettingsVisible = dock.moreSettingsVisible();
             if (viewCellsToggleBtn != null) {
                 viewCellsToggleBtn.setMessage(viewCellsMessage());
+            }
+            if (moreSettingsToggleBtn != null) {
+                moreSettingsToggleBtn.setMessage(moreSettingsMessage());
             }
             patternAccessPanel.applyRememberedButtons();
             if (providerSelectPanel != null) {
@@ -522,10 +541,91 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         DockRect group = dock.anchoredGroupBounds();
         if (group == null) {
             meSideBar.hide();
+            moreSettingsBar.hide();
             return;
         }
         addonUpgradeButtons.update(this);
+        rebuildMoreSettingsModules();
         meSideBar.layoutAgainst(group.x(), group.y(), true);
+        for (Button button : moreSettingsBar.buttons()) {
+            button.visible = true;
+        }
+        int moreLeft = (meSideBar.isVisible() ? meSideBar.bounds().getX() : group.x()) - MORE_SETTINGS_SHIFT;
+        moreSettingsBar.layoutAgainst(moreLeft, group.y(), moreSettingsVisible);
+    }
+
+    private void rebuildMoreSettingsModules() {
+        if (moreSettingsDragging) {
+            return;
+        }
+        List<String> available = new ArrayList<>();
+        available.add(MORE_LOCK);
+        available.add(MORE_UNDO);
+        available.add(MORE_EDIT);
+        for (ModulePanel panel : dock.panels()) {
+            if (panel != null && dock.policyFor(panel).showTerminalButton()) {
+                available.add(panel.id());
+            }
+        }
+        List<String> resolved = new ArrayList<>();
+        for (String id : dock.moreSettingsOrder()) {
+            if (available.contains(id) && !resolved.contains(id)) {
+                resolved.add(id);
+            }
+        }
+        for (String id : available) {
+            if (!resolved.contains(id)) {
+                resolved.add(id);
+            }
+        }
+        if (resolved.equals(moreSettingsButtonIds) && !moreSettingsBar.buttons().isEmpty()) {
+            return;
+        }
+        moreSettingsButtonIds.clear();
+        moreSettingsButtonIds.addAll(resolved);
+        moreSettingsBar.clearFrom(0);
+        for (String id : resolved) {
+            moreSettingsBar.add(createMoreSettingsButton(id));
+        }
+    }
+
+    private Button createMoreSettingsButton(String id) {
+        return switch (id) {
+            case MORE_LOCK -> {
+                lockLayoutBtn = new ToolbarIconButton(
+                        dock.isLayoutLocked() ? Icon.LOCKED : Icon.UNLOCKED,
+                        layoutLockMessage(),
+                        b -> dock.toggleLayoutLocked());
+                yield lockLayoutBtn;
+            }
+            case MORE_UNDO -> {
+                undoLayoutBtn = new ToolbarIconButton(
+                        Icon.BACK,
+                        Component.translatable("gui.mesplicedterminal.undo_layout"),
+                        b -> dock.undoLayout());
+                undoLayoutBtn.active = dock.canUndoLayout();
+                yield undoLayoutBtn;
+            }
+            case MORE_EDIT -> new ToolbarIconButton(
+                    Icon.TERMINAL_STYLE_SMALL,
+                    Component.translatable("gui.mesplicedterminal.edit_layout"),
+                    b -> Minecraft.getInstance().setScreen(new MESTLayoutEditorScreen(this, dock)));
+            default -> {
+                ModulePanel panel = panelById(id);
+                yield panel == null
+                        ? new ToolbarIconButton(Icon.COG, Component.literal(id), b -> { })
+                        : new ModuleToggleButton(panel);
+            }
+        };
+    }
+
+    private ModulePanel panelById(String id) {
+        for (ModulePanel panel : dock.panels()) {
+            if (panel != null && id.equals(panel.id())) {
+                return panel;
+            }
+        }
+        return null;
     }
 
     private void attachExtraSlotColumns() {
@@ -690,6 +790,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 return;
             }
         }
+        ITooltip moreSettings = moreSettingsBar.hoveredTooltip(mouseX, mouseY);
+        if (moreSettings != null && moreSettings.isTooltipAreaVisible()
+                && !moreSettings.getTooltipMessage().isEmpty()) {
+            drawAeWidgetTooltip(g, mouseX, mouseY, moreSettings);
+            return;
+        }
         ITooltip sidebar = meSideBar.hoveredTooltip(mouseX, mouseY);
         if (sidebar != null && sidebar.isTooltipAreaVisible() && !sidebar.getTooltipMessage().isEmpty()) {
             drawAeWidgetTooltip(g, mouseX, mouseY, sidebar);
@@ -724,6 +830,18 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             meSideBar.renderBackground(g);
             for (Button button : meSideBar.buttons()) {
                 button.render(g, mouseX, mouseY, partialTicks);
+            }
+        }
+        if (moreSettingsBar.isVisible()) {
+            g.pose().pushPose();
+            try {
+                g.pose().translate(0.0F, 0.0F, 80.0F);
+                moreSettingsBar.renderBackground(g);
+                for (Button button : moreSettingsBar.buttons()) {
+                    button.render(g, mouseX, mouseY, partialTicks);
+                }
+            } finally {
+                g.pose().popPose();
             }
         }
         drawingPanelSlots = true;
@@ -812,6 +930,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         int top = group.y();
         int right = group.right();
         int bottom = group.bottom();
+        if (moreSettingsBar.isVisible()) {
+            Rect2i rail = moreSettingsBar.bounds();
+            left = Math.min(left, rail.getX() - 2);
+            top = Math.min(top, rail.getY() - 1);
+            bottom = Math.max(bottom, rail.getY() + rail.getHeight() + 3);
+        }
         if (meSideBar.isVisible()) {
             Rect2i rail = meSideBar.bounds();
             left = Math.min(left, rail.getX() - 2);
@@ -851,6 +975,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 continue;
             }
             zones.add(new Rect2i(panel.x, panel.y, panel.width, panel.height));
+        }
+        if (moreSettingsBar.isVisible()) {
+            Rect2i rail = moreSettingsBar.bounds();
+            zones.add(new Rect2i(rail.getX() - 2, rail.getY() - 1, rail.getWidth() + 1, rail.getHeight() + 4));
         }
         if (meSideBar.isVisible()) {
             Rect2i rail = meSideBar.bounds();
@@ -901,6 +1029,17 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     /** Shared AE2 icon mapping for a module panel; also used by the layout editor sidebar. */
+    public static void blitPanelIcon(GuiGraphics graphics, ModulePanel panel, int x, int y) {
+        if ("trash".equals(panel.id())) {
+            de.mari_023.ae2wtlib.api.gui.Icon.TRASH.getBlitter().dest(x, y).blit(graphics);
+            return;
+        }
+        Icon icon = iconForPanel(panel);
+        icon.getBlitter()
+                .dest(x + (16 - icon.width) / 2, y + (16 - icon.height) / 2)
+                .blit(graphics);
+    }
+
     public static Icon iconForPanel(ModulePanel panel) {
         return switch (panel.id()) {
             case "me_list" -> Icon.VIEW_MODE_ALL;
@@ -1002,6 +1141,95 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
     }
 
+    private final class CycleTerminalToolbarButton extends ToolbarIconButton {
+        CycleTerminalToolbarButton() {
+            super(Icon.CRAFT_HAMMER, TextConstants.TERMINAL_EMPTY, b -> { });
+        }
+
+        @Override
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partial) {
+            WTDefinition terminal = WTDefinition.ofOrNull(getHost().getItemStack());
+            setMessage(terminal == null ? TextConstants.TERMINAL_EMPTY : TextConstants.currentTerminal(terminal));
+            if (!visible) {
+                return;
+            }
+            int yOffset = isHovered() ? 1 : 0;
+            Icon bgIcon = isHovered()
+                    ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER
+                    : isFocused() ? Icon.TOOLBAR_BUTTON_BACKGROUND_FOCUS : Icon.TOOLBAR_BUTTON_BACKGROUND;
+            bgIcon.getBlitter()
+                    .dest(getX() - 1, getY() + yOffset, 18, 20)
+                    .zOffset(2)
+                    .blit(guiGraphics);
+            de.mari_023.ae2wtlib.api.gui.Icon icon = terminal == null
+                    ? de.mari_023.ae2wtlib.api.gui.Icon.CRAFTING
+                    : terminal.icon();
+            icon.getBlitter()
+                    .dest(getX(), getY() + 1 + yOffset)
+                    .zOffset(3)
+                    .blit(guiGraphics);
+        }
+    }
+
+    private final class ModuleToggleButton extends ToolbarIconButton {
+        private final ModulePanel panel;
+
+        ModuleToggleButton(ModulePanel panel) {
+            super(iconForPanel(panel), moduleToggleMessage(panel, dock.isEffectivelyVisible(panel)),
+                    button -> toggleModule(panel));
+            this.panel = panel;
+        }
+
+        @Override
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partial) {
+            boolean shown = dock.isEffectivelyVisible(panel);
+            setMessage(moduleToggleMessage(panel, shown));
+            if (!visible) {
+                return;
+            }
+            int yOffset = isHovered() ? 1 : 0;
+            Icon bgIcon = isHovered()
+                    ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER
+                    : isFocused() ? Icon.TOOLBAR_BUTTON_BACKGROUND_FOCUS : Icon.TOOLBAR_BUTTON_BACKGROUND;
+            bgIcon.getBlitter()
+                    .dest(getX() - 1, getY() + yOffset, 18, 20)
+                    .zOffset(2)
+                    .blit(guiGraphics);
+            int ix = getX();
+            int iy = getY() + 1 + yOffset;
+            if ("trash".equals(panel.id())) {
+                var blitter = de.mari_023.ae2wtlib.api.gui.Icon.TRASH.getBlitter();
+                if (!shown) {
+                    blitter.opacity(0.4f);
+                }
+                blitter.dest(ix, iy).zOffset(3).blit(guiGraphics);
+                return;
+            }
+            Icon icon = getIcon();
+            var blitter = icon.getBlitter();
+            if (!shown) {
+                blitter.opacity(0.4f);
+            }
+            blitter.dest(ix + (16 - icon.width) / 2, iy + (16 - icon.height) / 2).zOffset(3).blit(guiGraphics);
+        }
+    }
+
+    private void toggleModule(ModulePanel panel) {
+        var policy = dock.policyFor(panel);
+        dock.setModulePolicy(panel, policy.withVisible(!policy.visible()));
+        dock.save();
+        attachMeSideBar();
+        attachExtraSlotColumns();
+    }
+
+    private static Component moduleToggleMessage(ModulePanel panel, boolean visible) {
+        return Component.translatable(visible
+                        ? "gui.mesplicedterminal.module_toggle.hide"
+                        : "gui.mesplicedterminal.module_toggle.show")
+                .append(": ")
+                .append(panel.title());
+    }
+
     /**
      * Delegate RepoSlot rendering to the ME list panel; everything else uses the base behaviour.
      *
@@ -1013,7 +1241,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
      */
     @Override
     public void renderSlot(GuiGraphics g, Slot s) {
-        if (!drawingPanelSlots && (s instanceof RepoSlot || extraColumnOwns(s) || dock.panelForSlot(s) != null)) {
+        if (!drawingPanelSlots && (s instanceof RepoSlot || extraColumnOwns(s) || dock.ownsSlot(s))) {
             // Vanilla per-slot loop: chrome pass already drew this slot. Skip.
             return;
         }
@@ -1021,6 +1249,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             if (meListPanel != null) {
                 meListPanel.renderRepoSlot(g, this.font, repoSlot);
             }
+            return;
+        }
+        if (s.x <= -1000 || s.y <= -1000) {
             return;
         }
         if (s instanceof ArmorSlot armorSlot && armorSlot.getItem().isEmpty() && armorSlot.isSlotEnabled()) {
@@ -1134,7 +1365,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 return true;
             }
             boolean handled = super.mouseClicked(mx, my, button);
-            return handled || extraColumnAt(mx, my) != null || meSideBar.isMouseOver(mx, my);
+            return handled || extraColumnAt(mx, my) != null
+                    || meSideBar.isMouseOver(mx, my)
+                    || moreSettingsBar.isMouseOver(mx, my);
         }
 
         // Raise the pointed root before dispatching to panel-owned controls. A finally block commits
@@ -1233,7 +1466,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         hoverFloating = dock.isFloatingWindow(hoverTop);
         hoverExtra = extraColumnAt(mx, my);
         hoverToolbar = (hoverTop == null || !hoverFloating)
-                && (meSideBar.isMouseOver(mx, my) || hoverExtra != null);
+                && (meSideBar.isMouseOver(mx, my)
+                        || moreSettingsBar.isMouseOver(mx, my)
+                        || hoverExtra != null);
         hoverFrameReady = true;
     }
 
@@ -1243,16 +1478,68 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     private boolean mouseClickedSideBar(double mx, double my, int button) {
+        if (button == 0 && moreSettingsBar.isVisible()) {
+            List<Button> buttons = moreSettingsBar.buttons();
+            for (int index = 0; index < buttons.size(); index++) {
+                Button widget = buttons.get(index);
+                if (widget.visible && widget.isMouseOver(mx, my)) {
+                    moreSettingsPressIndex = index;
+                    moreSettingsPressY = my;
+                    moreSettingsDragging = false;
+                    return true;
+                }
+            }
+        }
         for (Button widget : meSideBar.buttons()) {
-            if (widget.visible && widget.mouseClicked(mx, my, button)) {
+            if (!widget.visible || !widget.isMouseOver(mx, my)) {
+                continue;
+            }
+            if (widget instanceof CycleTerminalToolbarButton) {
+                storeState();
+                AE2wtlibAPI.cycleTerminal(button == 1);
+                return true;
+            }
+            if (widget.mouseClicked(mx, my, button)) {
                 return true;
             }
         }
         return false;
     }
 
+    private void reorderMoreSettings(double mouseY) {
+        List<Button> buttons = moreSettingsBar.buttons();
+        if (moreSettingsPressIndex < 0 || moreSettingsPressIndex >= buttons.size()) {
+            return;
+        }
+        int target = moreSettingsPressIndex;
+        for (int index = 0; index < buttons.size(); index++) {
+            Button widget = buttons.get(index);
+            if (!widget.visible) {
+                continue;
+            }
+            int mid = widget.getY() + widget.getHeight() / 2;
+            if (mouseY < mid) {
+                target = index;
+                break;
+            }
+            target = index;
+        }
+        if (target == moreSettingsPressIndex) {
+            return;
+        }
+        Button moved = buttons.remove(moreSettingsPressIndex);
+        String id = moreSettingsButtonIds.remove(moreSettingsPressIndex);
+        buttons.add(target, moved);
+        moreSettingsButtonIds.add(target, id);
+        moreSettingsPressIndex = target;
+        attachMeSideBar();
+    }
+
     private boolean mouseReleasedSideBar(double mx, double my, int button) {
         boolean handled = false;
+        for (Button widget : moreSettingsBar.buttons()) {
+            handled |= widget.mouseReleased(mx, my, button);
+        }
         for (Button widget : meSideBar.buttons()) {
             handled |= widget.mouseReleased(mx, my, button);
         }
@@ -1310,6 +1597,15 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY) {
+        if (button == 0 && moreSettingsPressIndex >= 0) {
+            if (!moreSettingsDragging && Math.abs(my - moreSettingsPressY) > 4) {
+                moreSettingsDragging = true;
+            }
+            if (moreSettingsDragging) {
+                reorderMoreSettings(my);
+                return true;
+            }
+        }
         for (ExtraChrome column : extraColumns()) {
             if (column.mouseDragged(mx, my)) {
                 return true;
@@ -1328,6 +1624,24 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean mouseReleased(double mx, double my, int button) {
+        if (button == 0 && moreSettingsPressIndex >= 0) {
+            boolean dragged = moreSettingsDragging;
+            int index = moreSettingsPressIndex;
+            moreSettingsPressIndex = -1;
+            moreSettingsDragging = false;
+            if (dragged) {
+                dock.setMoreSettingsOrder(List.copyOf(moreSettingsButtonIds));
+                attachMeSideBar();
+                return true;
+            }
+            List<Button> buttons = moreSettingsBar.buttons();
+            if (index >= 0 && index < buttons.size()) {
+                Button widget = buttons.get(index);
+                widget.mouseClicked(mx, my, button);
+                widget.mouseReleased(mx, my, button);
+            }
+            return true;
+        }
         boolean scrollbarDrag = false;
         for (ModulePanel panel : dock.panels()) {
             scrollbarDrag |= panel.scrollbarDragging();

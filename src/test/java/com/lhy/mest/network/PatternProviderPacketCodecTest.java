@@ -125,11 +125,11 @@ class PatternProviderPacketCodecTest {
         assertFalse(PatternProviderListPacket.reset(1, 0).isWellFormed());
         assertFalse(new PatternProviderListPacket(
                 1, 2, PatternProviderListPacket.Operation.DELTA,
-                3, 4, 1, 1, 0, 0, null, new Int2ObjectArrayMap<>()).isWellFormed());
+                3, 4, 1, 1, 0, 0, null, new Int2ObjectArrayMap<>(), null).isWellFormed());
         assertFalse(new PatternProviderListPacket(
                 1, 2, PatternProviderListPacket.Operation.FULL,
                 3, 4, 0, 1, PatternProviderClientState.MAX_INVENTORY_SIZE + 1,
-                0, null, new Int2ObjectArrayMap<>()).isWellFormed());
+                0, null, new Int2ObjectArrayMap<>(), null).isWellFormed());
     }
 
     @Test

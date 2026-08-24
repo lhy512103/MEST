@@ -109,7 +109,8 @@ public class MEListPanel extends ModulePanel implements ISortSource {
                 GuiText.SearchTooltipTag.text(),
                 GuiText.SearchTooltipToolTips.text(),
                 GuiText.SearchTooltipItemId.text()));
-        if (rememberedSearch != null && !rememberedSearch.isEmpty()) {
+        if (AEConfig.instance().isRememberLastSearch()
+                && rememberedSearch != null && !rememberedSearch.isEmpty()) {
             field.setValue(rememberedSearch);
             onSearchChanged(rememberedSearch);
             field.setFocused(false);
@@ -245,9 +246,10 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     }
 
     public void rememberSearch() {
-        if (searchField != null) {
-            rememberedSearch = searchField.getValue();
+        if (searchField == null) {
+            return;
         }
+        rememberedSearch = AEConfig.instance().isRememberLastSearch() ? searchField.getValue() : "";
     }
 
     @Override
@@ -357,7 +359,9 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         searchField.setValue(value);
         repo.setSearchString(value);
         repo.updateView();
-        rememberedSearch = value;
+        if (AEConfig.instance().isRememberLastSearch()) {
+            rememberedSearch = value;
+        }
     }
 
     public void setSearchFocused(boolean focused) {

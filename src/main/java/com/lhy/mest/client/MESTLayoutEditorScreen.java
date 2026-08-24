@@ -9,8 +9,11 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
+import appeng.client.gui.AEBaseScreen;
 import appeng.client.gui.Icon;
 import appeng.client.gui.style.BackgroundGenerator;
+import appeng.client.gui.style.ScreenStyle;
+import appeng.client.gui.widgets.AECheckbox;
 import appeng.client.gui.widgets.IconButton;
 
 import com.lhy.mest.client.dock.DockManager;
@@ -43,8 +46,10 @@ public final class MESTLayoutEditorScreen extends Screen {
     private static final int SIDEBAR_ROW_HEIGHT = 22;
     private static final int SIDEBAR_HEADER_TOP = TOOLBAR_HEIGHT + 4;
     private static final int SIDEBAR_ROW_TOP = SIDEBAR_HEADER_TOP + SIDEBAR_ROW_HEIGHT;
-    private static final int PROPERTY_ROW_HEIGHT = 24;
+    private static final int PROPERTY_COUNT = 5;
+    private static final int PROPERTY_ROW_HEIGHT = 18;
     private static final int PROPERTY_ROW_TOP = SIDEBAR_ROW_TOP + 20;
+    private static final int CHECK_H = 14;
     private static final int TEXT_BUTTON_HEIGHT = 20;
     private static final int TEXT_BUTTON_PAD = 12;
     /** Above every dock root layer so editor chrome is never punched through by item icons. */
@@ -69,8 +74,10 @@ public final class MESTLayoutEditorScreen extends Screen {
 
     private final Screen parent;
     private final DockManager dock;
+    private final ScreenStyle style;
     private final List<ModulePanel> panels;
     private final List<IconButton> toolbarButtons = new ArrayList<>();
+    private final AECheckbox[] propertyChecks = new AECheckbox[PROPERTY_COUNT];
 
     private ModulePanel selected;
     private boolean sidebarCollapsed;
@@ -84,8 +91,17 @@ public final class MESTLayoutEditorScreen extends Screen {
         super(Component.translatable("gui.mesplicedterminal.layout_editor"));
         this.parent = parent;
         this.dock = dock;
+        this.style = parent instanceof AEBaseScreen<?> screen ? screen.getStyle() : null;
         this.panels = List.copyOf(dock.panels());
         dock.beginLayoutEditing();
+        if (style != null) {
+            for (int index = 0; index < PROPERTY_COUNT; index++) {
+                int property = index;
+                AECheckbox checkbox = new AECheckbox(0, 0, 120, CHECK_H, style, propertyLabel(index));
+                checkbox.setChangeListener(() -> applyProperty(property, checkbox.isSelected()));
+                propertyChecks[index] = checkbox;
+            }
+        }
     }
 
     // --- Geometry ---------------------------------------------------------
@@ -109,11 +125,10 @@ public final class MESTLayoutEditorScreen extends Screen {
         if (selected != null) {
             maxText = Math.max(maxText, measuredWidth(selected.title()));
         }
-        maxText = Math.max(maxText, measuredWidth(propertyCaption(0, true)));
-        maxText = Math.max(maxText, measuredWidth(propertyCaption(1, true)));
-        maxText = Math.max(maxText, measuredWidth(propertyCaption(2, true)));
-        maxText = Math.max(maxText, measuredWidth(propertyCaption(3, true)));
-        return SIDEBAR_PAD + maxText + 4 + TOGGLE_SIZE + SIDEBAR_PAD;
+        for (int index = 0; index < PROPERTY_COUNT; index++) {
+            maxText = Math.max(maxText, measuredWidth(propertyLabel(index)));
+        }
+        return SIDEBAR_PAD + 26 + maxText + SIDEBAR_PAD;
     }
 
     private int measuredWidth(Component text) {
@@ -204,8 +219,8 @@ public final class MESTLayoutEditorScreen extends Screen {
     private Rect propertyHelpRect() {
         int px = width - propertyWidth();
         int y = propertiesCollapsed
-                ? PROPERTY_ROW_TOP + 4 * PROPERTY_ROW_HEIGHT
-                : PROPERTY_ROW_TOP + 4 * PROPERTY_ROW_HEIGHT + 4;
+                ? PROPERTY_ROW_TOP + PROPERTY_COUNT * PROPERTY_ROW_HEIGHT
+                : PROPERTY_ROW_TOP + PROPERTY_COUNT * PROPERTY_ROW_HEIGHT + 4;
         return new Rect(px + SIDEBAR_PAD, y, TOGGLE_SIZE, TOGGLE_SIZE);
     }
 
@@ -298,28 +313,50 @@ public final class MESTLayoutEditorScreen extends Screen {
             return;
         }
         ModuleLayoutPolicy policy = dock.policyFor(selected);
+        boolean enabled = switch (index) {
+            case 0 -> !policy.visible();
+            case 1 -> !policy.movable();
+            case 2 -> !policy.resizable();
+            case 3 -> !policy.floating();
+            default -> !policy.showTerminalButton();
+        };
+        applyProperty(index, enabled);
+    }
+
+    private void applyProperty(int index, boolean enabled) {
+        if (selected == null) {
+            return;
+        }
+        ModuleLayoutPolicy policy = dock.policyFor(selected);
         ModuleLayoutPolicy next = switch (index) {
-            case 0 -> policy.withVisible(!policy.visible());
+            case 0 -> policy.withVisible(enabled);
             case 1 -> new ModuleLayoutPolicy(
-                    policy.visible(), !policy.movable(), policy.resizable(), policy.floating(), policy.pinned());
+                    policy.visible(), enabled, policy.resizable(),
+                    policy.floating(), policy.pinned(), policy.showTerminalButton());
             case 2 -> new ModuleLayoutPolicy(
-                    policy.visible(), policy.movable(), !policy.resizable(), policy.floating(), policy.pinned());
-            default -> policy.withFloating(!policy.floating());
+                    policy.visible(), policy.movable(), enabled,
+                    policy.floating(), policy.pinned(), policy.showTerminalButton());
+            case 3 -> policy.withFloating(enabled);
+            default -> policy.withShowTerminalButton(enabled);
         };
         dock.setModulePolicy(selected, next);
     }
 
+    private static Component propertyLabel(int index) {
+        return Component.translatable(switch (index) {
+            case 0 -> "gui.mesplicedterminal.layout_state_visible";
+            case 1 -> "gui.mesplicedterminal.layout_state_movable";
+            case 2 -> "gui.mesplicedterminal.layout_state_resizable";
+            case 3 -> "gui.mesplicedterminal.layout_state_floating";
+            default -> "gui.mesplicedterminal.layout_state_terminal_button";
+        });
+    }
+
     private Component propertyCaption(int index, boolean enabled) {
-        Component label = switch (index) {
-            case 0 -> Component.translatable("gui.mesplicedterminal.layout_state_visible");
-            case 1 -> Component.translatable("gui.mesplicedterminal.layout_state_movable");
-            case 2 -> Component.translatable("gui.mesplicedterminal.layout_state_resizable");
-            default -> Component.translatable("gui.mesplicedterminal.layout_state_floating");
-        };
         Component state = Component.translatable(enabled
                 ? "gui.mesplicedterminal.layout_yes"
                 : "gui.mesplicedterminal.layout_no");
-        return label.copy().append(": ").append(state);
+        return propertyLabel(index).copy().append(": ").append(state);
     }
 
     private List<Component> hintTooltip() {
@@ -382,10 +419,19 @@ public final class MESTLayoutEditorScreen extends Screen {
         }
         if (mouseX >= width - propertyWidth()) {
             if (button == 0 && selected != null) {
-                for (int index = 0; index < 4; index++) {
-                    if (propertyToggleRect(index).contains(mouseX, mouseY)) {
-                        toggleProperty(index);
-                        return true;
+                if (!propertiesCollapsed && propertyChecks[0] != null) {
+                    for (AECheckbox checkbox : propertyChecks) {
+                        if (checkbox != null && checkbox.visible
+                                && checkbox.mouseClicked(mouseX, mouseY, button)) {
+                            return true;
+                        }
+                    }
+                } else {
+                    for (int index = 0; index < PROPERTY_COUNT; index++) {
+                        if (propertyToggleRect(index).contains(mouseX, mouseY)) {
+                            toggleProperty(index);
+                            return true;
+                        }
                     }
                 }
             }
@@ -529,18 +575,16 @@ public final class MESTLayoutEditorScreen extends Screen {
         }
         if (selected != null) {
             ModuleLayoutPolicy policy = dock.policyFor(selected);
-            for (int index = 0; index < 4; index++) {
+            for (int index = 0; index < PROPERTY_COUNT; index++) {
                 if (propertyToggleRect(index).contains(mouseX, mouseY)) {
-                    boolean enabled = switch (index) {
-                        case 0 -> policy.visible();
-                        case 1 -> policy.movable();
-                        case 2 -> policy.resizable();
-                        default -> policy.floating();
-                    };
+                    boolean enabled = propertyEnabled(policy, index);
                     List<Component> lines = new ArrayList<>();
                     lines.add(propertyCaption(index, enabled));
                     if (index == 3) {
                         lines.add(Component.translatable("gui.mesplicedterminal.layout_state_floating_hint"));
+                    }
+                    if (index == 4) {
+                        lines.add(Component.translatable("gui.mesplicedterminal.layout_state_terminal_button_hint"));
                     }
                     graphics.renderComponentTooltip(font, lines, mouseX, mouseY);
                     return;
@@ -585,7 +629,7 @@ public final class MESTLayoutEditorScreen extends Screen {
             boolean hovered = row.contains(mouseX, mouseY);
             ModuleLayoutPolicy policy = dock.policyFor(panel);
             if (sidebarCollapsed) {
-                drawToolbarIconButton(graphics, row, MESTScreen.iconForPanel(panel), hovered, panel == selected);
+                drawToolbarPanelButton(graphics, row, panel, hovered, panel == selected);
                 continue;
             }
             if (panel == selected) {
@@ -593,7 +637,7 @@ public final class MESTLayoutEditorScreen extends Screen {
             } else if (hovered) {
                 graphics.fill(row.x, row.y, row.x + row.w, row.y + row.h, COLOR_HOVER);
             }
-            blitIcon(graphics, MESTScreen.iconForPanel(panel), row.x + 2, row.y + 3);
+            MESTScreen.blitPanelIcon(graphics, panel, row.x + 2, row.y + 3);
             int textColor = policy.visible() ? ModulePanel.COLOR_TITLE_TEXT : ModulePanel.COLOR_MUTED;
             graphics.drawString(font, panel.title(), row.x + 22, row.y + 7, textColor, false);
         }
@@ -612,12 +656,13 @@ public final class MESTLayoutEditorScreen extends Screen {
                     ModulePanel.COLOR_TITLE_TEXT, false);
         }
         if (selected == null) {
+            hidePropertyChecks();
             drawHelpButton(graphics, mouseX, mouseY);
             return;
         }
 
         if (propertiesCollapsed && selected != null) {
-            drawToolbarIconButton(graphics, propertySelectedRect(), MESTScreen.iconForPanel(selected),
+            drawToolbarPanelButton(graphics, propertySelectedRect(), selected,
                     propertySelectedRect().contains(mouseX, mouseY), true);
         } else if (!propertiesCollapsed) {
             graphics.drawString(font, selected.title(), px + SIDEBAR_PAD, SIDEBAR_ROW_TOP + 4,
@@ -625,16 +670,45 @@ public final class MESTLayoutEditorScreen extends Screen {
         }
 
         ModuleLayoutPolicy policy = dock.policyFor(selected);
-        drawPropertyControl(graphics, mouseX, mouseY, 0, policy.visible());
-        drawPropertyControl(graphics, mouseX, mouseY, 1, policy.movable());
-        drawPropertyControl(graphics, mouseX, mouseY, 2, policy.resizable());
-        drawPropertyControl(graphics, mouseX, mouseY, 3, policy.floating());
+        for (int index = 0; index < PROPERTY_COUNT; index++) {
+            drawPropertyControl(graphics, mouseX, mouseY, index, propertyEnabled(policy, index));
+        }
         drawHelpButton(graphics, mouseX, mouseY);
+    }
+
+    private void hidePropertyChecks() {
+        for (AECheckbox checkbox : propertyChecks) {
+            if (checkbox != null) {
+                checkbox.visible = false;
+            }
+        }
+    }
+
+    private static boolean propertyEnabled(ModuleLayoutPolicy policy, int index) {
+        return switch (index) {
+            case 0 -> policy.visible();
+            case 1 -> policy.movable();
+            case 2 -> policy.resizable();
+            case 3 -> policy.floating();
+            default -> policy.showTerminalButton();
+        };
     }
 
     private void drawPropertyControl(GuiGraphics graphics, int mouseX, int mouseY, int index, boolean enabled) {
         Rect rect = propertyToggleRect(index);
         boolean hovered = rect.contains(mouseX, mouseY);
+        AECheckbox checkbox = propertyChecks[index];
+        if (checkbox != null) {
+            checkbox.visible = !propertiesCollapsed && selected != null;
+            if (checkbox.visible) {
+                checkbox.setX(rect.x);
+                checkbox.setY(rect.y);
+                checkbox.setWidth(rect.w);
+                checkbox.setSelected(enabled);
+                checkbox.render(graphics, mouseX, mouseY, 0);
+                return;
+            }
+        }
         if (propertiesCollapsed) {
             drawToolbarIconButton(graphics, rect, propertyIcon(index, enabled), hovered, false);
             return;
@@ -658,8 +732,22 @@ public final class MESTLayoutEditorScreen extends Screen {
             case 0 -> enabled ? Icon.OVERLAY_ON : Icon.OVERLAY_OFF;
             case 1 -> enabled ? Icon.ACCESS_READ_WRITE : Icon.ACCESS_READ;
             case 2 -> enabled ? Icon.TERMINAL_STYLE_FULL : Icon.TERMINAL_STYLE_SMALL;
-            default -> enabled ? Icon.PATTERN_ACCESS_SHOW : Icon.PATTERN_ACCESS_HIDE;
+            case 3 -> enabled ? Icon.PATTERN_ACCESS_SHOW : Icon.PATTERN_ACCESS_HIDE;
+            default -> enabled ? Icon.COG : Icon.BACKGROUND_PRIMARY_OUTPUT;
         };
+    }
+
+    private static void drawToolbarPanelButton(
+            GuiGraphics graphics, Rect rect, ModulePanel panel, boolean hovered, boolean focused) {
+        Icon background = focused
+                ? Icon.TOOLBAR_BUTTON_BACKGROUND_FOCUS
+                : hovered ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER : Icon.TOOLBAR_BUTTON_BACKGROUND;
+        int bx = rect.x + (rect.w - background.width) / 2;
+        int by = rect.y + (rect.h - background.height) / 2;
+        background.getBlitter().dest(bx, by).blit(graphics);
+        MESTScreen.blitPanelIcon(graphics, panel,
+                bx + (background.width - ICON_SIZE) / 2,
+                by + (background.height - ICON_SIZE) / 2);
     }
 
     private static void drawToolbarIconButton(

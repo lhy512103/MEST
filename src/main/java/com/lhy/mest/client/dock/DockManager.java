@@ -21,6 +21,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.Slot;
 import net.neoforged.fml.loading.FMLPaths;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -144,6 +146,8 @@ public final class DockManager {
     private DockWorkspace editingOriginal;
     private boolean centerOnReturn = true;
     private boolean viewCellsVisible = true;
+    private boolean moreSettingsVisible = false;
+    private List<String> moreSettingsOrder = new ArrayList<>();
     private boolean pendingCenterOnReturn;
     private Path preferencesPath;
     private int editorInsetLeft;
@@ -389,6 +393,27 @@ public final class DockManager {
             return;
         }
         viewCellsVisible = value;
+        savePreferences();
+    }
+
+    public boolean moreSettingsVisible() {
+        return moreSettingsVisible;
+    }
+
+    public void setMoreSettingsVisible(boolean value) {
+        if (moreSettingsVisible == value) {
+            return;
+        }
+        moreSettingsVisible = value;
+        savePreferences();
+    }
+
+    public List<String> moreSettingsOrder() {
+        return moreSettingsOrder;
+    }
+
+    public void setMoreSettingsOrder(List<String> order) {
+        moreSettingsOrder = new ArrayList<>(order);
         savePreferences();
     }
 
@@ -687,12 +712,21 @@ public final class DockManager {
 
         int layer = 0;
         int lastAnchoredLayer = 0;
+        int chromeLayer = 0;
         boolean chromeDrawn = false;
-        for (FloatingRoot root : paintOrderRoots()) {
-            if (!chromeDrawn && !isAnchoredRoot(root)) {
-                anchoredChromeLayer = lastAnchoredLayer;
+        List<FloatingRoot> paintOrder = paintOrderRoots();
+        int preview = 0;
+        for (FloatingRoot root : paintOrder) {
+            if (isAnchoredRoot(root)) {
+                chromeLayer = preview;
+            }
+            preview++;
+        }
+        for (FloatingRoot root : paintOrder) {
+            if (!chromeDrawn && layer > chromeLayer) {
+                anchoredChromeLayer = chromeLayer;
                 if (anchoredChrome != null) {
-                    withRootLayer(graphics, lastAnchoredLayer, 0.0F, () ->
+                    withRootLayer(graphics, chromeLayer, 0.0F, () ->
                             anchoredChrome.render(graphics, font, mouseX, mouseY, partialTicks));
                 }
                 chromeDrawn = true;
@@ -904,9 +938,6 @@ public final class DockManager {
         if (root == null || viewportWorkspace.roots().getLast().rootId().equals(root.rootId())) {
             return;
         }
-        if (layoutLocked && isAnchoredRoot(root)) {
-            return;
-        }
         DockWorkspace beforeInteraction = workspace;
         replaceWorkspace(editor.raiseRoot(workspace, root.rootId()), false);
         if (!beforeInteraction.equals(workspace)) {
@@ -999,18 +1030,22 @@ public final class DockManager {
 
     private int paintLayerOf(FloatingRoot target) {
         int layer = 0;
-        boolean chromeDrawn = false;
         for (FloatingRoot root : paintOrderRoots()) {
-            if (!chromeDrawn && !isAnchoredRoot(root)) {
-                layer++;
-                chromeDrawn = true;
-            }
             if (root.rootId().equals(target.rootId())) {
                 return layer;
             }
             layer++;
         }
         return 0;
+    }
+
+    public boolean ownsSlot(Slot slot) {
+        for (ModulePanel panel : panels) {
+            if (panel != null && panel.ownsSlot(slot)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public ModulePanel panelForSlot(Slot slot) {
@@ -1331,6 +1366,8 @@ public final class DockManager {
         centerOnReturn = true;
         layoutLocked = false;
         viewCellsVisible = true;
+        moreSettingsVisible = false;
+        moreSettingsOrder = new ArrayList<>();
         if (preferencesPath == null || !Files.isRegularFile(preferencesPath)) {
             return;
         }
@@ -1345,6 +1382,10 @@ public final class DockManager {
             if (object.has("viewCellsVisible")) {
                 viewCellsVisible = object.get("viewCellsVisible").getAsBoolean();
             }
+            if (object.has("moreSettingsVisible")) {
+                moreSettingsVisible = object.get("moreSettingsVisible").getAsBoolean();
+            }
+            moreSettingsOrder = readStringList(object, "moreSettingsOrder");
             PatternAccessPanel.readPreferences(object);
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn("Failed to read terminal layout preferences", e);
@@ -1361,11 +1402,34 @@ public final class DockManager {
             object.addProperty("centerOnReturn", centerOnReturn);
             object.addProperty("layoutLocked", layoutLocked);
             object.addProperty("viewCellsVisible", viewCellsVisible);
+            object.addProperty("moreSettingsVisible", moreSettingsVisible);
+            object.add("moreSettingsOrder", toStringArray(moreSettingsOrder));
             PatternAccessPanel.writePreferences(object);
             Files.writeString(preferencesPath, object.toString(), StandardCharsets.UTF_8);
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn("Failed to write terminal layout preferences", e);
         }
+    }
+
+    private static List<String> readStringList(JsonObject object, String key) {
+        List<String> values = new ArrayList<>();
+        if (!object.has(key) || !object.get(key).isJsonArray()) {
+            return values;
+        }
+        for (JsonElement element : object.getAsJsonArray(key)) {
+            if (element.isJsonPrimitive()) {
+                values.add(element.getAsString());
+            }
+        }
+        return values;
+    }
+
+    private static JsonArray toStringArray(List<String> values) {
+        JsonArray array = new JsonArray();
+        for (String value : values) {
+            array.add(value);
+        }
+        return array;
     }
 
     private ModuleLayoutPolicy policyFor(LeafNode leaf) {
@@ -1429,12 +1493,8 @@ public final class DockManager {
             markRightmostLeaves(root, next);
             for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
                 ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
-                int inset = panel.preferredContentRightInset();
-                boolean insetChanged = panel.contentRightInset != inset;
-                panel.contentRightInset = inset;
-                if (panel.visible || insetChanged) {
-                    panel.layoutSlots();
-                }
+                panel.contentRightInset = panel.preferredContentRightInset();
+                panel.layoutSlots();
             }
         }
         joinOutsideRails();
@@ -1960,24 +2020,20 @@ public final class DockManager {
         if (paintOrderCache != null) {
             return paintOrderCache;
         }
-        var anchored = new ArrayList<FloatingRoot>();
-        var floating = new ArrayList<FloatingRoot>();
+        var unpinned = new ArrayList<FloatingRoot>();
         var pinned = new ArrayList<FloatingRoot>();
         for (FloatingRoot root : viewportWorkspace.roots()) {
             if (!rootEffectivelyVisible(root.rootId())) {
                 continue;
             }
-            if (isAnchoredRoot(root)) {
-                anchored.add(root);
-            } else if (isPinnedRoot(root)) {
+            if (isPinnedRoot(root)) {
                 pinned.add(root);
             } else {
-                floating.add(root);
+                unpinned.add(root);
             }
         }
-        var order = new ArrayList<FloatingRoot>(anchored.size() + floating.size() + pinned.size());
-        order.addAll(anchored);
-        order.addAll(floating);
+        var order = new ArrayList<FloatingRoot>(unpinned.size() + pinned.size());
+        order.addAll(unpinned);
         order.addAll(pinned);
         paintOrderCache = List.copyOf(order);
         return paintOrderCache;

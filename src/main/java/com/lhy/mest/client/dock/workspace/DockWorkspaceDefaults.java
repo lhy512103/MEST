@@ -6,6 +6,7 @@ import com.lhy.mest.client.dock.model.DockWorkspace;
 import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.dock.model.LeafNode;
 import com.lhy.mest.client.dock.model.ModuleCatalog;
+import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
 import com.lhy.mest.client.dock.model.NodeIds;
 
 /** Deterministic default roots for registered modules. */
@@ -26,11 +27,14 @@ public final class DockWorkspaceDefaults {
         DockWorkspace workspace = new DockWorkspace(roots);
         var policies = new java.util.LinkedHashMap<>(workspace.policies());
         for (String moduleId : catalog.moduleIds()) {
+            ModuleLayoutPolicy policy = workspace.policyFor(moduleId)
+                    .withShowTerminalButton(defaultShowTerminalButton(moduleId));
             if (defaultFloating(moduleId) || defaultPinned(moduleId)) {
-                policies.put(moduleId, workspace.policyFor(moduleId)
+                policy = policy
                         .withFloating(defaultFloating(moduleId) || defaultPinned(moduleId))
-                        .withPinned(defaultPinned(moduleId)));
+                        .withPinned(defaultPinned(moduleId));
             }
+            policies.put(moduleId, policy);
         }
         return workspace.withPolicies(policies);
     }
@@ -47,6 +51,10 @@ public final class DockWorkspaceDefaults {
 
     public static boolean defaultPinned(String moduleId) {
         return "trash".equals(moduleId);
+    }
+
+    public static boolean defaultShowTerminalButton(String moduleId) {
+        return !"provider_select".equals(moduleId) && !"wireless_settings".equals(moduleId);
     }
 
     public static String leafNodeId(String moduleId) {

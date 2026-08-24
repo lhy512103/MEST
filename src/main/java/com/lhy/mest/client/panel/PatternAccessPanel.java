@@ -1050,6 +1050,16 @@ public class PatternAccessPanel extends ModulePanel {
                 detail.copy().withStyle(ChatFormatting.GRAY));
     }
 
+    private static Blitter openUiIcon() {
+        return Blitter.texture(ResourceLocation.fromNamespaceAndPath(
+                        MESplicedterminal.MODID, "textures/guis/pattern_cache_states.png"), 256, 256)
+                .src(48, 0, 16, 16);
+    }
+
+    private static List<Component> openUiTooltip() {
+        return List.of(Component.translatable("extendedae_plus.tooltip.provider.open_ui"));
+    }
+
     private Blitter hideSlotsIcon() {
         return (showSlots ? Icon.PATTERN_ACCESS_HIDE : Icon.PATTERN_ACCESS_SHOW).getBlitter();
     }
@@ -1080,12 +1090,10 @@ public class PatternAccessPanel extends ModulePanel {
             PatternProviderLoc loc = provider.loc();
             int headerY = contentTop() + row.visibleRow() * ROW;
             int uiX = gridLeft() + gridWidth() - 16;
-            Button openUi = openUiButtons.computeIfAbsent(provider.providerId(), id -> Button.builder(
-                            Component.literal("UI"),
-                            ignored -> openProviderUi(id))
-                    .size(14, 12)
-                    .build());
-            openUi.setTooltip(null);
+            Button openUi = openUiButtons.computeIfAbsent(provider.providerId(), id -> new CompactPatButton(
+                    ignored -> openProviderUi(id),
+                    PatternAccessPanel::openUiIcon,
+                    PatternAccessPanel::openUiTooltip));
             openUi.visible = loc != null;
             openUi.active = openUi.visible;
             if (openUi.visible) {

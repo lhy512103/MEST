@@ -42,7 +42,7 @@ public final class DockLayoutCodec {
     private static final Set<String> V2_FIELDS = Set.of("version", "roots");
     private static final Set<String> V3_FIELDS = Set.of("version", "roots", "policies", "restoreSizes");
     private static final Set<String> POLICY_FIELDS =
-            Set.of("visible", "movable", "resizable", "floating", "pinned");
+            Set.of("visible", "movable", "resizable", "floating", "pinned", "showTerminalButton");
     private static final Set<String> ROOT_FIELDS = Set.of("rootId", "bounds", "content");
     private static final Set<String> BOUNDS_FIELDS = Set.of("x", "y", "width", "height");
     private static final Set<String> SIZE_FIELDS = Set.of("width", "height");
@@ -103,7 +103,12 @@ public final class DockLayoutCodec {
         for (String moduleId : catalog.moduleIds()) {
             ModuleLayoutPolicy policy = workspace.policyFor(moduleId);
             policies.put(moduleId, new PolicyDto(
-                    policy.visible(), policy.movable(), policy.resizable(), policy.floating(), policy.pinned()));
+                    policy.visible(),
+                    policy.movable(),
+                    policy.resizable(),
+                    policy.floating(),
+                    policy.pinned(),
+                    policy.showTerminalButton()));
         }
         return new DockLayoutDto(DockLayoutDto.CURRENT_VERSION, roots, policies, workspace.restoreSizes());
     }
@@ -149,7 +154,8 @@ public final class DockLayoutCodec {
                                 policy.movable(),
                                 policy.resizable(),
                                 policy.floating(),
-                                policy.pinned()));
+                                policy.pinned(),
+                                policy.showTerminalButton()));
                     }
                 });
             }
@@ -215,7 +221,9 @@ public final class DockLayoutCodec {
             boolean floating = DockWorkspaceDefaults.defaultFloating(moduleId)
                     || DockWorkspaceDefaults.defaultPinned(moduleId);
             boolean pinned = DockWorkspaceDefaults.defaultPinned(moduleId);
-            retainedPolicies.put(moduleId, new ModuleLayoutPolicy(visible, true, true, floating, pinned));
+            retainedPolicies.put(moduleId, new ModuleLayoutPolicy(
+                    visible, true, true, floating, pinned,
+                    DockWorkspaceDefaults.defaultShowTerminalButton(moduleId)));
             retainedRoots.add(new FloatingRoot(
                     rootId,
                     migrationContext.defaultRootBounds(catalog.metrics(moduleId), defaultIndex++),
@@ -328,6 +336,7 @@ public final class DockLayoutCodec {
             policy.addProperty("resizable", entry.getValue().resizable());
             policy.addProperty("floating", entry.getValue().floating());
             policy.addProperty("pinned", entry.getValue().pinned());
+            policy.addProperty("showTerminalButton", entry.getValue().showTerminalButton());
             policies.add(entry.getKey(), policy);
         }
         object.add("policies", policies);
@@ -408,7 +417,10 @@ public final class DockLayoutCodec {
                     bool(policy, "movable", path),
                     bool(policy, "resizable", path),
                     policy.has("floating") && bool(policy, "floating", path),
-                    policy.has("pinned") && bool(policy, "pinned", path)));
+                    policy.has("pinned") && bool(policy, "pinned", path),
+                    policy.has("showTerminalButton")
+                            ? bool(policy, "showTerminalButton", path)
+                            : DockWorkspaceDefaults.defaultShowTerminalButton(entry.getKey())));
         }
         return new DockLayoutDto(version, roots, policies, readRestoreSizes(object));
     }

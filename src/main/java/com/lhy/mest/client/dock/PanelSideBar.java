@@ -24,9 +24,21 @@ public class PanelSideBar {
 
     private final List<Button> buttons = new ArrayList<>();
     private Rect2i bounds = new Rect2i(0, 0, 0, 0);
+    private boolean shown;
 
     public void add(Button button) {
         buttons.add(button);
+    }
+
+    public void clearFrom(int index) {
+        if (index < 0) {
+            buttons.clear();
+            return;
+        }
+        if (index >= buttons.size()) {
+            return;
+        }
+        buttons.subList(index, buttons.size()).clear();
     }
 
     public List<Button> buttons() {
@@ -38,27 +50,32 @@ public class PanelSideBar {
     }
 
     public boolean isVisible() {
-        return bounds.getWidth() > 0 && bounds.getHeight() > 0;
+        return shown && bounds.getWidth() > 0 && bounds.getHeight() > 0;
     }
 
     public void layoutAgainst(int groupLeft, int groupTop, boolean show) {
+        shown = show;
+        if (!show) {
+            bounds = new Rect2i(0, 0, 0, 0);
+            return;
+        }
         int currentY = groupTop + ANCHOR_Y + MARGIN;
         int maxWidth = 0;
         for (Button button : buttons) {
-            if (!show) {
-                button.visible = false;
-                continue;
-            }
             if (!button.visible) {
                 continue;
             }
-            button.active = true;
-            button.setX(groupLeft + ANCHOR_X - MARGIN - button.getWidth());
+            int width = Math.max(0, button.getWidth());
+            int height = Math.max(0, button.getHeight());
+            button.setX(groupLeft + ANCHOR_X - MARGIN - Math.max(width, BUTTON));
             button.setY(currentY);
-            currentY += button.getHeight() + SPACING;
-            maxWidth = Math.max(button.getWidth(), maxWidth);
+            if (width <= 0 || height <= 0) {
+                continue;
+            }
+            currentY += height + SPACING;
+            maxWidth = Math.max(width, maxWidth);
         }
-        if (!show || maxWidth == 0) {
+        if (maxWidth == 0) {
             bounds = new Rect2i(0, 0, 0, 0);
             return;
         }
@@ -87,6 +104,9 @@ public class PanelSideBar {
     }
 
     public boolean isMouseOver(double mouseX, double mouseY) {
+        if (!isVisible()) {
+            return false;
+        }
         for (Button widget : buttons) {
             if (widget.visible && widget.isMouseOver(mouseX, mouseY)) {
                 return true;
@@ -96,6 +116,9 @@ public class PanelSideBar {
     }
 
     public AbstractWidget hovered(int mouseX, int mouseY) {
+        if (!isVisible()) {
+            return null;
+        }
         for (Button widget : buttons) {
             if (widget.visible && widget.isMouseOver(mouseX, mouseY)) {
                 return widget;

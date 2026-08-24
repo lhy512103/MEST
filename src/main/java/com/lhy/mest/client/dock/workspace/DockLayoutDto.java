@@ -34,13 +34,22 @@ public record DockLayoutDto(
     }
 
     public record PolicyDto(
-            boolean visible, boolean movable, boolean resizable, boolean floating, boolean pinned) {
+            boolean visible,
+            boolean movable,
+            boolean resizable,
+            boolean floating,
+            boolean pinned,
+            boolean showTerminalButton) {
         public PolicyDto(boolean visible, boolean movable, boolean resizable) {
-            this(visible, movable, resizable, false, false);
+            this(visible, movable, resizable, false, false, true);
         }
 
         public PolicyDto(boolean visible, boolean movable, boolean resizable, boolean floating) {
-            this(visible, movable, resizable, floating, false);
+            this(visible, movable, resizable, floating, false, true);
+        }
+
+        public PolicyDto(boolean visible, boolean movable, boolean resizable, boolean floating, boolean pinned) {
+            this(visible, movable, resizable, floating, pinned, true);
         }
     }
 

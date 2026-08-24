@@ -136,7 +136,12 @@ public final class DockWorkspaceEditor {
         policies.put(
                 leaf.moduleId(),
                 new ModuleLayoutPolicy(
-                        visible, current.movable(), current.resizable(), current.floating(), current.pinned()));
+                        visible,
+                        current.movable(),
+                        current.resizable(),
+                        current.floating(),
+                        current.pinned(),
+                        current.showTerminalButton()));
         DockWorkspace next = workspace.withPolicies(policies);
         if (current.visible() == visible) {
             return validated(next);
