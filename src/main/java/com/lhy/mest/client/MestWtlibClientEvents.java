@@ -23,7 +23,7 @@ import de.mari_023.ae2wtlib.api.AE2wtlibComponents;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.compat.MestWtlibSupport;
-import com.lhy.mest.compat.plus.PlusJeiHotkeys;
+import com.lhy.mest.compat.plus.PlusScreenSupport;
 import com.lhy.mest.network.MestPickBlockPacket;
 
 /**
@@ -37,13 +37,13 @@ public final class MestWtlibClientEvents {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onFillSearch(ScreenEvent.KeyPressed.Pre event) {
-        if (!ModList.get().isLoaded("extendedae_plus") || !ModList.get().isLoaded("jei")) {
+        if (!PlusScreenSupport.loaded() || !ModList.get().isLoaded("jei")) {
             return;
         }
         if (!(event.getScreen() instanceof MESTScreen screen)) {
             return;
         }
-        if (PlusJeiHotkeys.fillSearchFromHoveredIngredient(
+        if (PlusScreenSupport.fillSearchFromHoveredIngredient(
                 screen.meListPanel(), event.getKeyCode(), event.getScanCode())) {
             event.setCanceled(true);
         }

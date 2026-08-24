@@ -94,12 +94,9 @@ import com.lhy.mest.client.panel.PatternEncodingPanel;
 import com.lhy.mest.client.panel.ProviderSelectPanel;
 import com.lhy.mest.client.panel.TrashPanel;
 import com.lhy.mest.client.panel.WirelessSettingsPanel;
-import com.lhy.mest.compat.plus.PlusJeiHotkeys;
-
 import net.neoforged.fml.ModList;
 import com.lhy.mest.integration.MestRecipeTransferContext;
-import com.extendedae_plus.client.screen.ProviderSelectScreen;
-import com.extendedae_plus.network.CancelPendingPatternC2SPacket;
+import com.lhy.mest.compat.plus.PlusScreenSupport;
 import com.lhy.mest.network.PatternProviderActionPacket;
 import com.lhy.mest.network.ProviderPickerListPacket;
 import com.lhy.mest.terminal.MESTMenu;
@@ -1710,8 +1707,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         boolean floating = dock.policyFor(providerSelectPanel).floating();
         if (packet.applyPreset() && !floating) {
             keepPendingOnRemove = true;
-            minecraft.setScreen(new ProviderSelectScreen(
-                    this, packet.ids(), packet.names(), packet.emptySlots()));
+            minecraft.setScreen(PlusScreenSupport.presetPicker(this, packet));
             return;
         }
         boolean autoUploaded = providerSelectPanel.applyList(packet);
@@ -1734,8 +1730,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             return;
         }
         dock.hideModule(providerSelectPanel);
-        if (cancelPending && ModList.get().isLoaded("extendedae_plus")) {
-            PacketDistributor.sendToServer(CancelPendingPatternC2SPacket.INSTANCE);
+        if (cancelPending && PlusScreenSupport.loaded()) {
+            PlusScreenSupport.cancelPending();
         }
     }
 
@@ -2064,9 +2060,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             }
             return true;
         }
-        if (ModList.get().isLoaded("extendedae_plus")
+        if (PlusScreenSupport.loaded()
                 && ModList.get().isLoaded("jei")
-                && PlusJeiHotkeys.fillSearchFromHoveredIngredient(meListPanel, keyCode, scanCode)) {
+                && PlusScreenSupport.fillSearchFromHoveredIngredient(meListPanel, keyCode, scanCode)) {
             return true;
         }
         if (patternAccessPanel != null
@@ -2142,8 +2138,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     @Override
     public void removed() {
         closePatternAccessSubscription();
-        if (ModList.get().isLoaded("extendedae_plus") && !keepPendingOnRemove) {
-            PacketDistributor.sendToServer(CancelPendingPatternC2SPacket.INSTANCE);
+        if (PlusScreenSupport.loaded() && !keepPendingOnRemove) {
+            PlusScreenSupport.cancelPending();
         }
         keepPendingOnRemove = false;
         dock.save();

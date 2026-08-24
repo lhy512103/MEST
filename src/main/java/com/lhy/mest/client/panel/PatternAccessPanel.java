@@ -40,7 +40,7 @@ import appeng.client.gui.widgets.Scrollbar;
 import appeng.core.localization.ButtonToolTips;
 import appeng.core.localization.GuiText;
 
-import com.extendedae_plus.util.GuiUtil;
+import com.lhy.mest.compat.plus.PlusPatternAccess;
 import com.glodblock.github.extendedae.client.button.EPPIcon;
 import com.glodblock.github.extendedae.client.button.HighlightButtonSmall;
 import com.glodblock.github.extendedae.util.MessageUtil;
@@ -409,7 +409,7 @@ public class PatternAccessPanel extends ModulePanel {
                 if (!search.isBlank()) {
                     if (matchesSearch(pattern)) {
                         if (ModList.get().isLoaded("extendedae_plus")) {
-                            GuiUtil.drawSlotRainbowHighlight(g, iconX, y + 1);
+                            PlusPatternAccess.drawSlotRainbowHighlight(g, iconX, y + 1);
                         } else {
                             g.fill(iconX - 1, y, iconX + 17, y + 18, MATCH_HIGHLIGHT);
                         }
@@ -457,8 +457,7 @@ public class PatternAccessPanel extends ModulePanel {
 
     private String patternAmountText(ItemStack pattern) {
         if (ModList.get().isLoaded("extendedae_plus")) {
-            String text = GuiUtil.getPatternOutputText(pattern);
-            return text == null ? "" : text;
+            return PlusPatternAccess.patternOutputText(pattern);
         }
         var details = PatternDetailsHelper.decodePattern(pattern, Minecraft.getInstance().level);
         if (details == null || details.getOutputs().isEmpty()) {

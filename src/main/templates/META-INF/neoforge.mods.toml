@@ -62,3 +62,10 @@ A spliceable, drag-and-drop ME terminal that unifies AE2 wireless terminal modul
     type="optional"
     ordering="AFTER"
     side="CLIENT"
+
+# ExtendedAE Plus — optional. Provider picker, pattern upload and encoding extras load only when present.
+[[dependencies.${mod_id}]]
+    modId="extendedae_plus"
+    type="optional"
+    ordering="AFTER"
+    side="BOTH"

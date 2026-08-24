@@ -15,6 +15,7 @@ import com.lhy.mest.network.MestPackets;
 import com.lhy.mest.registry.ModComponents;
 import com.lhy.mest.registry.ModItems;
 import com.lhy.mest.registry.ModMenus;
+import com.lhy.mest.registry.ModRecipes;
 import com.lhy.mest.terminal.MestTerminal;
 
 // The value here should match an entry in the META-INF/neoforge.mods.toml file
@@ -33,6 +34,7 @@ public class MESplicedterminal {
         ModMenus.MENUS.register(modEventBus);
         ModItems.CREATIVE_TABS.register(modEventBus);
         ModComponents.DATA_COMPONENTS.register(modEventBus);
+        ModRecipes.SERIALIZERS.register(modEventBus);
         container.registerConfig(ModConfig.Type.COMMON, MestConfig.SPEC);
 
         // Hook into AE2/AE2WTLib lifecycle (terminal registration, capabilities, ...).

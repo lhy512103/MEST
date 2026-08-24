@@ -22,13 +22,14 @@ import appeng.client.gui.widgets.IconButton;
 import com.extendedae_plus.client.gui.widgets.ScaledTextureButton;
 import com.extendedae_plus.network.ReturnLastPatternC2SPacket;
 import com.extendedae_plus.network.ScaleEncodingPatternC2SPacket;
+import com.lhy.mest.client.panel.PatternEncodingExtras;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
  * EAEP processing-scale and upload chrome, using Plus widgets/textures/packets and the same
  * offsets Plus injects into {@code ProcessingEncodingPanel} / {@code PatternEncodingTermScreen}.
  */
-public final class PlusEncodingChrome {
+public final class PlusEncodingChrome implements PatternEncodingExtras {
     private static final ResourceLocation SCALE_TEXTURE =
             ResourceLocation.fromNamespaceAndPath("extendedae_plus", "textures/gui/beizeng.png");
     private static final ResourceLocation SWAP_TEXTURE =

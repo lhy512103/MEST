@@ -9,7 +9,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
-import net.neoforged.fml.ModList;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
@@ -34,7 +33,6 @@ import appeng.parts.encoding.EncodingMode;
 
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.Scrollbar;
-import com.lhy.mest.compat.plus.PlusEncodingChrome;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -68,7 +66,7 @@ public class PatternEncodingPanel extends ModulePanel {
     private final MESTMenu menu;
     private final Map<EncodingMode, TabButton> modeTabs = new EnumMap<>(EncodingMode.class);
     private final ActionButton encodeBtn;
-    private final PlusEncodingChrome plusChrome;
+    private final PatternEncodingExtras plusChrome;
     private final ActionButton craftingClearBtn;
     private final ActionButton processingClearBtn;
     private final ActionButton processingCycleBtn;
@@ -123,7 +121,7 @@ public class PatternEncodingPanel extends ModulePanel {
         encodeBtn = new ActionButton(ActionItems.ENCODE,
                 () -> menu.encodePattern(net.minecraft.client.gui.screens.Screen.hasShiftDown()));
         widgets.add(encodeBtn);
-        plusChrome = ModList.get().isLoaded("extendedae_plus") ? new PlusEncodingChrome(menu) : null;
+        plusChrome = PatternEncodingExtras.create(menu);
         if (plusChrome != null) {
             widgets.addAll(plusChrome.widgets());
         }
