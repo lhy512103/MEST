@@ -33,7 +33,7 @@ import com.lhy.mest.client.dock.model.DockRect;
 public abstract class ModulePanel {
     public static final int TITLE_BAR_HEIGHT = 17;
     public static final int CONTENT_PADDING = 7;
-    public static final int RESIZE_HANDLE = 6;
+    public static final int RESIZE_HANDLE = 10;
 
     // Panel bounds in absolute screen coordinates.
     public int x;
@@ -433,10 +433,16 @@ public abstract class ModulePanel {
         if (bounds == null || bounds.width() < 2 || bounds.height() < 2) {
             return;
         }
-        int hx = bounds.right() - RESIZE_HANDLE;
-        int hy = bounds.bottom() - RESIZE_HANDLE;
-        g.fill(hx + 1, bounds.bottom() - 3, bounds.right() - 2, bounds.bottom() - 2, COLOR_MUTED);
-        g.fill(bounds.right() - 3, hy + 1, bounds.right() - 2, bounds.bottom() - 2, COLOR_MUTED);
+        int right = bounds.right();
+        int bottom = bounds.bottom();
+        for (int row = 0; row < 3; row++) {
+            int dots = 3 - row;
+            for (int col = 0; col < dots; col++) {
+                int x = right - 3 - col * 3;
+                int y = bottom - 3 - row * 3;
+                g.fill(x, y, x + 2, y + 2, COLOR_DARK);
+            }
+        }
     }
 
     /** Draw a single AE2-style recessed 18x18 slot whose top-left is at (px,py) (the 16x16 item area

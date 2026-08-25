@@ -1,13 +1,11 @@
 package com.lhy.mest.terminal;
 
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.neoforged.neoforge.registries.RegisterEvent;
 
 import appeng.api.features.GridLinkables;
 import appeng.api.upgrades.Upgrades;
@@ -45,50 +43,20 @@ public final class MestTerminal {
                     16));
 
     /**
-     * Enqueue our terminal definition. This only adds a callback to AddTerminalEvent's handler list;
-     * the callback runs later when AE2WTLib fires AddTerminalEvent.run() during the ITEM RegisterEvent.
-     * By then the ItemMEST instance created by the deferred register already exists, which is all the
-     * builder needs (it captures the item object, not its registry entry).
+     * Enqueue our terminal definition. AE2WTLib fires {@code AddTerminalEvent.run()} during its
+     * own ITEM {@code RegisterEvent}, before this mod's DeferredItem is bound, so the builder
+     * must receive the eager item instance rather than {@code DeferredHolder.get()}.
      */
     public static void registerTerminal() {
         AddTerminalEvent.register(event -> event
-                .builder(TERMINAL_NAME, MESTMenuHost::new, MESTMenu.TYPE, ModItems.SPLICED_TERMINAL.get(), SPLICED_TERMINAL_ICON)
+                .builder(TERMINAL_NAME, MESTMenuHost::new, MESTMenu.TYPE, ModItems.splicedTerminalItem(), SPLICED_TERMINAL_ICON)
                 .upgradeCount(3)
                 .addTerminal());
     }
 
-    /**
-     * Runs before AE2wtlib_api's ITEM listener calls {@code AddTerminalEvent.run()}, so this
-     * handler is last and {@link ItemMEST#upgradeInventorySize()} already sees every terminal.
-     * Associations must be recorded <em>before</em> {@code UpgradeHelper.addUpgrades()} writes the
-     * per-terminal {@code upgradeCount} (3), because {@link Upgrades#getMaxInstallable} keeps the
-     * first match.
-     */
-    public static void onRegisterItems(RegisterEvent event) {
-        if (!event.getRegistryKey().equals(Registries.ITEM)) {
-            return;
-        }
-        AddTerminalEvent.register(ignored -> registerEnergyCardCapacities());
-    }
-
-    private static void registerEnergyCardCapacities() {
-        int count = ItemMEST.upgradeInventorySize();
-        var item = ModItems.SPLICED_TERMINAL.get();
-        String group = GuiText.WirelessTerminals.getTranslationKey();
-        for (var card : BuiltInRegistries.ITEM) {
-            if (card instanceof EnergyCardItem) {
-                Upgrades.add(card, item, count, group);
-            }
-        }
-        var magnet = BuiltInRegistries.ITEM.get(AE2wtlibAPI.id("magnet_card"));
-        if (magnet != Items.AIR) {
-            Upgrades.add(magnet, item, 1, group);
-        }
-    }
-
     /** AE2 powered items must expose an energy capability for the wireless battery to work. */
     public static void onRegisterCapabilities(RegisterCapabilitiesEvent event) {
-        var item = ModItems.SPLICED_TERMINAL.get();
+        var item = ModItems.splicedTerminalItem();
         event.registerItem(Capabilities.EnergyStorage.ITEM,
                 (stack, ctx) -> new PoweredItemCapabilities(stack, item), item);
     }
@@ -100,8 +68,19 @@ public final class MestTerminal {
      */
     public static void onCommonSetup(FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
-            var item = ModItems.SPLICED_TERMINAL.get();
+            var item = ModItems.splicedTerminalItem();
             GridLinkables.register(item, WirelessTerminalItem.LINKABLE_HANDLER);
+            String group = GuiText.WirelessTerminals.getTranslationKey();
+            int count = ItemMEST.upgradeInventorySize();
+            for (var card : BuiltInRegistries.ITEM) {
+                if (card instanceof EnergyCardItem) {
+                    Upgrades.add(card, item, count, group);
+                }
+            }
+            var magnet = BuiltInRegistries.ITEM.get(AE2wtlibAPI.id("magnet_card"));
+            if (magnet != Items.AIR) {
+                Upgrades.add(magnet, item, 1, group);
+            }
             MestAddonUpgrades.register();
         });
     }

@@ -2,7 +2,6 @@ package com.lhy.mest.registry;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
-import net.minecraft.world.item.Item;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -20,12 +19,21 @@ public final class ModItems {
     public static final DeferredRegister<CreativeModeTab> CREATIVE_TABS =
             DeferredRegister.create(net.minecraft.core.registries.Registries.CREATIVE_MODE_TAB, MESplicedterminal.MODID);
 
+    private static ItemMEST splicedTerminalItem;
+
     /**
-     * The spliced terminal item. We supply a singleton {@link ItemMEST} instance via the deferred
-     * register so the very same object reference is captured by the AE2WTLib terminal definition.
+     * Create the item only while the item registry is unfrozen (wtlib's ITEM RegisterEvent).
+     * The DeferredRegister later binds this same instance.
      */
+    public static ItemMEST splicedTerminalItem() {
+        if (splicedTerminalItem == null) {
+            splicedTerminalItem = new ItemMEST();
+        }
+        return splicedTerminalItem;
+    }
+
     public static final DeferredItem<ItemMEST> SPLICED_TERMINAL =
-            ITEMS.registerItem("spliced_terminal", props -> new ItemMEST(), new Item.Properties().stacksTo(1));
+            ITEMS.register("spliced_terminal", ModItems::splicedTerminalItem);
 
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> TAB =
             CREATIVE_TABS.register("main", () -> CreativeModeTab.builder()
