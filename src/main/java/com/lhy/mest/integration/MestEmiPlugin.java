@@ -6,8 +6,16 @@ import java.util.List;
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 
@@ -15,14 +23,18 @@ import dev.emi.emi.api.EmiEntrypoint;
 import dev.emi.emi.api.EmiPlugin;
 import dev.emi.emi.api.EmiRegistry;
 import dev.emi.emi.api.widget.Bounds;
+import dev.emi.emi.api.widget.Widget;
+import dev.emi.emi.api.widget.WidgetHolder;
 import dev.emi.emi.api.recipe.EmiPlayerInventory;
 import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.recipe.VanillaEmiRecipeCategories;
 import dev.emi.emi.api.recipe.handler.EmiCraftContext;
 import dev.emi.emi.api.recipe.handler.StandardRecipeHandler;
 
+import appeng.client.gui.Icon;
 import appeng.integration.modules.emi.EmiStackHelper;
 import appeng.integration.modules.emi.EmiUseCraftingRecipeHandler;
+import appeng.integration.modules.itemlists.CraftingHelper;
 import appeng.menu.SlotSemantics;
 
 import com.lhy.mest.client.MESTScreen;
@@ -58,7 +70,30 @@ public class MestEmiPlugin implements EmiPlugin {
             }
         });
         registry.addRecipeHandler(MESTMenu.TYPE, new MestEmiPatternEncodingHandler());
-        registry.addRecipeHandler(MESTMenu.TYPE, new EmiUseCraftingRecipeHandler<>(MESTMenu.class));
+        registry.addRecipeHandler(MESTMenu.TYPE, new EmiUseCraftingRecipeHandler<>(MESTMenu.class) {
+            @Override
+            public boolean supportsRecipe(EmiRecipe recipe) {
+                return !MestPullItemsSupport.shouldShowExtraButton() && super.supportsRecipe(recipe);
+            }
+        });
+        registry.addRecipeDecorator(MestEmiPlugin::decoratePullItems);
+    }
+
+    private static void decoratePullItems(EmiRecipe recipe, WidgetHolder widgets) {
+        if (!MestPullItemsSupport.shouldShowExtraButton() || !isCraftingRecipe(recipe)) {
+            return;
+        }
+        int x = recipe.getDisplayWidth() + 5 + 14;
+        int y = Math.max(0, recipe.getDisplayHeight() - 12);
+        widgets.add(new PullItemsWidget(x, y, recipe));
+    }
+
+    private static boolean isCraftingRecipe(EmiRecipe recipe) {
+        if (recipe.getCategory().equals(VanillaEmiRecipeCategories.CRAFTING)) {
+            return true;
+        }
+        RecipeHolder<?> holder = recipe.getBackingRecipe();
+        return holder != null && holder.value() instanceof CraftingRecipe;
     }
 
     private static final class MestEmiPatternEncodingHandler implements StandardRecipeHandler<MESTMenu> {
@@ -91,8 +126,9 @@ public class MestEmiPlugin implements EmiPlugin {
             var player = Minecraft.getInstance().player;
             return player != null
                     && player.containerMenu instanceof MESTMenu menu
-                    && MestRecipeTransferContext.targetFor(menu)
-                            == MestRecipeTransferContext.Target.PATTERN_ENCODING;
+                    && (MestPullItemsSupport.shouldShowExtraButton()
+                            || MestRecipeTransferContext.targetFor(menu)
+                            == MestRecipeTransferContext.Target.PATTERN_ENCODING);
         }
 
         @Override
@@ -153,6 +189,66 @@ public class MestEmiPlugin implements EmiPlugin {
                         .orElse(null);
             }
             return null;
+        }
+    }
+
+    private static final class PullItemsWidget extends Widget {
+        private static final int SIZE = 12;
+        private static final ResourceLocation EMI_BUTTONS =
+                ResourceLocation.fromNamespaceAndPath("emi", "textures/gui/buttons.png");
+
+        private final int x;
+        private final int y;
+        private final EmiRecipe recipe;
+
+        private PullItemsWidget(int x, int y, EmiRecipe recipe) {
+            this.x = x;
+            this.y = y;
+            this.recipe = recipe;
+        }
+
+        @Override
+        public Bounds getBounds() {
+            return new Bounds(x, y, SIZE, SIZE);
+        }
+
+        @Override
+        public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
+            if (!MestPullItemsSupport.shouldShowExtraButton()) {
+                return;
+            }
+            boolean hovered = getBounds().contains(mouseX, mouseY);
+            graphics.blit(EMI_BUTTONS, x, y, SIZE, SIZE, 72, hovered ? 12 : 0, SIZE, SIZE, 256, 256);
+            Icon.CRAFT_HAMMER.getBlitter().dest(x + 1, y + 1, 10, 10).blit(graphics);
+        }
+
+        @Override
+        public List<ClientTooltipComponent> getTooltip(int mouseX, int mouseY) {
+            return List.of(ClientTooltipComponent.create(
+                    Component.translatable("gui.mesplicedterminal.recipe.pull_items").getVisualOrderText()));
+        }
+
+        @Override
+        public boolean mouseClicked(int mouseX, int mouseY, int button) {
+            if (button != 0 || !getBounds().contains(mouseX, mouseY)
+                    || !MestPullItemsSupport.shouldShowExtraButton()) {
+                return false;
+            }
+            var player = Minecraft.getInstance().player;
+            if (player == null || !(player.containerMenu instanceof MESTMenu menu)) {
+                return false;
+            }
+            RecipeHolder<?> holder = recipe.getBackingRecipe();
+            if (holder == null || !(holder.value() instanceof CraftingRecipe crafting)) {
+                return false;
+            }
+            CraftingHelper.performTransfer(menu, holder.id(), crafting, Screen.hasControlDown());
+            Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+            Screen screen = Minecraft.getInstance().screen;
+            if (screen != null) {
+                screen.onClose();
+            }
+            return true;
         }
     }
 }

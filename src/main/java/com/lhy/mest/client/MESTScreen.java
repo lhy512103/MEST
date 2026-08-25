@@ -378,7 +378,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             panels.add(patternCachePanel);
             inventoryPanel = new InventoryPanel(getMenu());
             panels.add(inventoryPanel);
-            wirelessSettingsPanel = new WirelessSettingsPanel(getMenu(), style);
+            wirelessSettingsPanel = new WirelessSettingsPanel(getMenu(), style, dock);
             panels.add(wirelessSettingsPanel);
             trashPanel = new TrashPanel(getMenu(), this);
             panels.add(trashPanel);

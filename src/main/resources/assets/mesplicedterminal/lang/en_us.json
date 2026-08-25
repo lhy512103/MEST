@@ -67,6 +67,8 @@
   "gui.mesplicedterminal.crafting_terminal": "Crafting Terminal",
   "gui.mesplicedterminal.trash": "Trash",
   "gui.mesplicedterminal.wireless_settings.magnet": "Magnet",
+  "gui.mesplicedterminal.wireless_settings.pull_items": "Show JEI/EMI pull-items button",
+  "gui.mesplicedterminal.recipe.pull_items": "Pull items into the crafting grid",
   "gui.mesplicedterminal.pattern_encoding": "Pattern Encoding",
   "gui.mesplicedterminal.pattern_access": "Pattern Management",
   "gui.mesplicedterminal.pattern_cache": "Pattern Cache",

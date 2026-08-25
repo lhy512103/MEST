@@ -25,6 +25,7 @@ import de.mari_023.ae2wtlib.networking.TerminalSettingsPacket;
 import de.mari_023.ae2wtlib.wct.magnet_card.MagnetHandler;
 import de.mari_023.ae2wtlib.wct.magnet_card.MagnetMode;
 
+import com.lhy.mest.client.dock.DockManager;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.terminal.MESTMenu;
 
@@ -40,29 +41,35 @@ public class WirelessSettingsPanel extends ModulePanel {
 
     private final MESTMenu menu;
     private final ScreenStyle style;
+    private final DockManager dock;
     private final AECheckbox pickBlock;
     private final AECheckbox craftIfMissing;
     private final AECheckbox restock;
+    private final AECheckbox pullItems;
     private final AECheckbox magnet;
     private final AECheckbox pickupToME;
     private final List<AbstractWidget> widgets = new ArrayList<>();
 
-    public WirelessSettingsPanel(MESTMenu menu, ScreenStyle style) {
+    public WirelessSettingsPanel(MESTMenu menu, ScreenStyle style, DockManager dock) {
         this.menu = menu;
         this.style = style;
+        this.dock = dock;
         pickBlock = checkbox(TextConstants.PICK_BLOCK);
         craftIfMissing = checkbox(TextConstants.CRAFT_IF_MISSING);
         restock = checkbox(TextConstants.RESTOCK);
+        pullItems = checkbox(Component.translatable("gui.mesplicedterminal.wireless_settings.pull_items"));
         magnet = checkbox(TextConstants.MAGNET);
         pickupToME = checkbox(TextConstants.PICKUP_TO_ME);
         pickBlock.setChangeListener(this::onPickBlockChanged);
         craftIfMissing.setChangeListener(this::save);
         restock.setChangeListener(this::save);
+        pullItems.setChangeListener(this::savePullItems);
         magnet.setChangeListener(this::save);
         pickupToME.setChangeListener(this::save);
         widgets.add(pickBlock);
         widgets.add(craftIfMissing);
         widgets.add(restock);
+        widgets.add(pullItems);
         widgets.add(magnet);
         widgets.add(pickupToME);
         reloadFromStack();
@@ -108,7 +115,7 @@ public class WirelessSettingsPanel extends ModulePanel {
     }
 
     private static int neededContentHeight() {
-        return ROW * 3 + HEADER + ROW * 2 + 4;
+        return ROW * 4 + HEADER + ROW * 2 + 4;
     }
 
     public void reloadFromStack() {
@@ -117,6 +124,7 @@ public class WirelessSettingsPanel extends ModulePanel {
         craftIfMissing.setSelected(stack.getOrDefault(AE2wtlibComponents.CRAFT_IF_MISSING, false));
         craftIfMissing.active = pickBlock.isSelected();
         restock.setSelected(stack.getOrDefault(AE2wtlibComponents.RESTOCK, false));
+        pullItems.setSelected(dock.pullItemsRecipeButton());
         MagnetMode mode = stack.getOrDefault(AE2wtlibAdditionalComponents.MAGNET_SETTINGS, MagnetMode.OFF);
         magnet.setSelected(mode.magnet());
         pickupToME.setSelected(mode.pickupToME());
@@ -129,6 +137,10 @@ public class WirelessSettingsPanel extends ModulePanel {
     private void onPickBlockChanged() {
         craftIfMissing.active = pickBlock.isSelected();
         save();
+    }
+
+    private void savePullItems() {
+        dock.setPullItemsRecipeButton(pullItems.isSelected());
     }
 
     private void save() {
@@ -169,6 +181,8 @@ public class WirelessSettingsPanel extends ModulePanel {
         place(craftIfMissing, show, left, y, width);
         y += ROW;
         place(restock, show, left, y, width);
+        y += ROW;
+        place(pullItems, show, left, y, width);
         y += ROW + HEADER;
         place(magnet, show, left, y, width);
         y += ROW;
@@ -190,7 +204,7 @@ public class WirelessSettingsPanel extends ModulePanel {
         int left = contentLeft();
         int top = contentTop();
         g.drawString(font, Component.translatable("gui.mesplicedterminal.wireless_settings.magnet"),
-                left, top + ROW * 3 + 1, color, false);
+                left, top + ROW * 4 + 1, color, false);
         for (AbstractWidget widget : widgets) {
             widget.render(g, mouseX, mouseY, partialTicks);
         }

@@ -151,6 +151,7 @@ public final class DockManager {
     private boolean centerOnReturn = true;
     private boolean viewCellsVisible = true;
     private boolean moreSettingsVisible = false;
+    private boolean pullItemsRecipeButton = true;
     private List<String> moreSettingsOrder = new ArrayList<>();
     private boolean pendingCenterOnReturn;
     private Path preferencesPath;
@@ -425,6 +426,19 @@ public final class DockManager {
             return;
         }
         moreSettingsVisible = value;
+        savePreferences();
+    }
+
+    public boolean pullItemsRecipeButton() {
+        return pullItemsRecipeButton;
+    }
+
+    public void setPullItemsRecipeButton(boolean value) {
+        if (pullItemsRecipeButton == value) {
+            return;
+        }
+        pullItemsRecipeButton = value;
+        com.lhy.mest.integration.MestPullItemsSupport.setEnabled(value);
         savePreferences();
     }
 
@@ -1553,7 +1567,9 @@ public final class DockManager {
         layoutLocked = false;
         viewCellsVisible = true;
         moreSettingsVisible = false;
+        pullItemsRecipeButton = true;
         moreSettingsOrder = new ArrayList<>();
+        com.lhy.mest.integration.MestPullItemsSupport.setEnabled(pullItemsRecipeButton);
         if (preferencesPath == null || !Files.isRegularFile(preferencesPath)) {
             return;
         }
@@ -1571,8 +1587,12 @@ public final class DockManager {
             if (object.has("moreSettingsVisible")) {
                 moreSettingsVisible = object.get("moreSettingsVisible").getAsBoolean();
             }
+            if (object.has("pullItemsRecipeButton")) {
+                pullItemsRecipeButton = object.get("pullItemsRecipeButton").getAsBoolean();
+            }
             moreSettingsOrder = readStringList(object, "moreSettingsOrder");
             PatternAccessPanel.readPreferences(object);
+            com.lhy.mest.integration.MestPullItemsSupport.setEnabled(pullItemsRecipeButton);
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn("Failed to read terminal layout preferences", e);
         }
@@ -1589,6 +1609,7 @@ public final class DockManager {
             object.addProperty("layoutLocked", layoutLocked);
             object.addProperty("viewCellsVisible", viewCellsVisible);
             object.addProperty("moreSettingsVisible", moreSettingsVisible);
+            object.addProperty("pullItemsRecipeButton", pullItemsRecipeButton);
             object.add("moreSettingsOrder", toStringArray(moreSettingsOrder));
             PatternAccessPanel.writePreferences(object);
             Files.writeString(preferencesPath, object.toString(), StandardCharsets.UTF_8);

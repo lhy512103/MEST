@@ -42,6 +42,11 @@ public final class MestRecipeTransferContext {
         return targetFor(menu, menu.containerId);
     }
 
+    public static boolean bothRecipeModulesVisible(MESTMenu menu) {
+        Objects.requireNonNull(menu, "menu");
+        return bothRecipeModulesVisible(menu, menu.containerId);
+    }
+
     public static void clear(MESTMenu menu) {
         Objects.requireNonNull(menu, "menu");
         clear(menu, menu.containerId);
@@ -127,6 +132,14 @@ public final class MestRecipeTransferContext {
         return menuIdentity == currentMenuIdentity && containerId == currentContainerId
                 ? effectiveTarget()
                 : Target.CRAFTING;
+    }
+
+    static synchronized boolean bothRecipeModulesVisible(Object currentMenuIdentity, int currentContainerId) {
+        Objects.requireNonNull(currentMenuIdentity, "currentMenuIdentity");
+        return menuIdentity == currentMenuIdentity
+                && containerId == currentContainerId
+                && encodingVisible
+                && craftingVisible;
     }
 
     private static Target effectiveTarget() {

@@ -6,6 +6,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.Rect2i;
@@ -33,12 +35,21 @@ import mezz.jei.api.recipe.transfer.IRecipeTransferError;
 import mezz.jei.api.recipe.transfer.IRecipeTransferHandler;
 import mezz.jei.api.recipe.transfer.IRecipeTransferHandlerHelper;
 import mezz.jei.api.recipe.transfer.IUniversalRecipeTransferHandler;
+import mezz.jei.api.gui.buttons.IButtonState;
+import mezz.jei.api.gui.buttons.IIconButtonController;
+import mezz.jei.api.gui.drawable.IDrawable;
 import mezz.jei.api.gui.handlers.IGuiProperties;
+import mezz.jei.api.gui.IRecipeLayoutDrawable;
+import mezz.jei.api.gui.inputs.IJeiUserInput;
+import mezz.jei.api.recipe.advanced.IRecipeButtonControllerFactory;
+import mezz.jei.api.registration.IAdvancedRegistration;
 import mezz.jei.api.registration.IGuiHandlerRegistration;
 import mezz.jei.api.registration.IRecipeTransferRegistration;
 import mezz.jei.api.runtime.IIngredientVisibility;
 
+import appeng.client.gui.Icon;
 import appeng.api.stacks.AEFluidKey;
+import appeng.api.stacks.AEItemKey;
 import appeng.api.stacks.AEKey;
 import appeng.api.stacks.GenericStack;
 import appeng.core.localization.ItemModText;
@@ -72,6 +83,11 @@ public class MestJeiPlugin implements IModPlugin {
     @Override
     public ResourceLocation getPluginUid() {
         return UID;
+    }
+
+    @Override
+    public void registerAdvanced(IAdvancedRegistration registration) {
+        registration.addRecipeButtonFactory(new PullItemsButtonFactory());
     }
 
     @Override
@@ -125,6 +141,7 @@ public class MestJeiPlugin implements IModPlugin {
 
     @Override
     public void registerRecipeTransferHandlers(IRecipeTransferRegistration registration) {
+        PullItemsButtonController.helper = registration.getTransferHelper();
         var encodingHandler = new MestPatternEncodingTransferHandler(
                 registration.getTransferHelper(),
                 registration.getJeiHelpers().getIngredientVisibility());
@@ -176,8 +193,9 @@ public class MestJeiPlugin implements IModPlugin {
         public IRecipeTransferError transferRecipe(T menu, RecipeHolder<CraftingRecipe> recipe,
                 IRecipeSlotsView slotsView, Player player, boolean maxTransfer, boolean doTransfer) {
             if (menu instanceof MESTMenu mestMenu
-                    && MestRecipeTransferContext.targetFor(mestMenu)
-                    == MestRecipeTransferContext.Target.PATTERN_ENCODING) {
+                    && (MestPullItemsSupport.shouldShowExtraButton()
+                            || MestRecipeTransferContext.targetFor(mestMenu)
+                            == MestRecipeTransferContext.Target.PATTERN_ENCODING)) {
                 return encodingHandler.transferRecipe(
                         mestMenu, recipe, slotsView, player, maxTransfer, doTransfer);
             }
@@ -257,7 +275,8 @@ public class MestJeiPlugin implements IModPlugin {
                 Player player,
                 boolean maxTransfer,
                 boolean doTransfer) {
-            if (MestRecipeTransferContext.targetFor(menu)
+            if (!MestPullItemsSupport.shouldShowExtraButton()
+                    && MestRecipeTransferContext.targetFor(menu)
                     != MestRecipeTransferContext.Target.PATTERN_ENCODING) {
                 return helper.createInternalError();
             }
@@ -333,6 +352,10 @@ public class MestJeiPlugin implements IModPlugin {
         }
 
         private static GenericStack toGenericStack(ITypedIngredient<?> ingredient) {
+            GenericStack converted = convertRegisteredIngredient(ingredient);
+            if (converted != null) {
+                return converted;
+            }
             ItemStack item = ingredient.getCastIngredient(VanillaTypes.ITEM_STACK);
             if (item != null && !item.isEmpty()) {
                 return GenericStack.fromItemStack(item);
@@ -341,6 +364,19 @@ public class MestJeiPlugin implements IModPlugin {
             if (fluid != null && !fluid.isEmpty()) {
                 AEFluidKey key = AEFluidKey.of(fluid);
                 return key == null ? null : new GenericStack(key, fluid.getAmount());
+            }
+            return null;
+        }
+
+        private static <T> GenericStack convertRegisteredIngredient(ITypedIngredient<T> ingredient) {
+            try {
+                var converter = tamaized.ae2jeiintegration.api.integrations.jei.IngredientConverters
+                        .getConverter(ingredient.getType());
+                if (converter != null) {
+                    return converter.getStackFromIngredient(ingredient.getIngredient());
+                }
+            } catch (NoClassDefFoundError | RuntimeException ignored) {
+                // ae2-jei-integration or Applied Mekanistics may be absent.
             }
             return null;
         }
@@ -426,6 +462,161 @@ public class MestJeiPlugin implements IModPlugin {
         @Override
         public void getTooltip(ITooltipBuilder tooltip) {
             tooltip.add(ItemModText.NO_ITEMS.text());
+        }
+    }
+
+    private static final class PullItemsButtonFactory implements IRecipeButtonControllerFactory {
+        @Override
+        public <T> IIconButtonController createButtonController(IRecipeLayoutDrawable<T> recipeLayout) {
+            return new PullItemsButtonController(recipeLayout);
+        }
+    }
+
+    private static final class PullItemsButtonController implements IIconButtonController {
+        static IRecipeTransferHandlerHelper helper;
+
+        private final IRecipeLayoutDrawable<?> recipeLayout;
+        private int buttonHighlight;
+        private boolean allMissing;
+        private CraftingTermMenu.MissingIngredientSlots missingSlots;
+
+        private final IDrawable icon = new IDrawable() {
+            @Override
+            public int getWidth() {
+                return 10;
+            }
+
+            @Override
+            public int getHeight() {
+                return 10;
+            }
+
+            @Override
+            public void draw(GuiGraphics graphics, int xOffset, int yOffset) {
+                if (buttonHighlight != 0 && !allMissing) {
+                    graphics.fill(xOffset - 1, yOffset - 1, xOffset + 11, yOffset + 11, buttonHighlight);
+                }
+                Icon.CRAFT_HAMMER.getBlitter().dest(xOffset, yOffset, 10, 10).blit(graphics);
+            }
+        };
+
+        private PullItemsButtonController(IRecipeLayoutDrawable<?> recipeLayout) {
+            this.recipeLayout = recipeLayout;
+        }
+
+        @Override
+        public void initState(IButtonState state) {
+            state.setIcon(icon);
+            updateState(state);
+        }
+
+        @Override
+        public void updateState(IButtonState state) {
+            boolean show = MestPullItemsSupport.shouldShowExtraButton() && craftingRecipe() != null;
+            refreshHighlights();
+            state.setVisible(show);
+            state.setActive(show && !allMissing);
+        }
+
+        @Override
+        public void drawExtras(GuiGraphics graphics, net.minecraft.client.renderer.Rect2i buttonArea,
+                int mouseX, int mouseY, float partialTicks) {
+            if (!MestPullItemsSupport.shouldShowExtraButton() || missingSlots == null) {
+                return;
+            }
+            if (mouseX < buttonArea.getX() || mouseX >= buttonArea.getX() + buttonArea.getWidth()
+                    || mouseY < buttonArea.getY() || mouseY >= buttonArea.getY() + buttonArea.getHeight()) {
+                return;
+            }
+            var recipeRect = recipeLayout.getRect();
+            var pose = graphics.pose();
+            pose.pushPose();
+            pose.translate(recipeRect.getX(), recipeRect.getY(), 0);
+            var slotViews = recipeLayout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.INPUT);
+            for (int i = 0; i < slotViews.size(); i++) {
+                boolean missing = missingSlots.missingSlots().contains(i);
+                boolean craftable = missingSlots.craftableSlots().contains(i);
+                if (!missing && !craftable) {
+                    continue;
+                }
+                slotViews.get(i).drawHighlight(graphics,
+                        missing ? TransferHelper.RED_SLOT_HIGHLIGHT_COLOR : TransferHelper.BLUE_SLOT_HIGHLIGHT_COLOR);
+            }
+            pose.popPose();
+        }
+
+        @Override
+        public boolean onPress(IJeiUserInput input) {
+            if (!MestPullItemsSupport.shouldShowExtraButton() || allMissing) {
+                return false;
+            }
+            RecipeHolder<CraftingRecipe> holder = craftingRecipe();
+            if (holder == null) {
+                return false;
+            }
+            if (input.isSimulate()) {
+                return true;
+            }
+            var player = Minecraft.getInstance().player;
+            if (player == null || !(player.containerMenu instanceof MESTMenu menu)) {
+                return false;
+            }
+            boolean craftMissing = Screen.hasControlDown();
+            CraftingHelper.performTransfer(menu, holder.id(), holder.value(), craftMissing);
+            Screen screen = Minecraft.getInstance().screen;
+            if (screen != null) {
+                screen.onClose();
+            }
+            return true;
+        }
+
+        @Override
+        public void getTooltips(ITooltipBuilder tooltip) {
+            if (allMissing) {
+                tooltip.add(ItemModText.MOVE_ITEMS.text());
+                tooltip.add(ItemModText.NO_ITEMS.text().withStyle(ChatFormatting.RED));
+                return;
+            }
+            if (missingSlots != null && missingSlots.totalSize() > 0) {
+                tooltip.addAll(TransferHelper.createCraftingTooltip(
+                        missingSlots, Screen.hasControlDown(), true));
+                return;
+            }
+            tooltip.add(ItemModText.MOVE_ITEMS.text());
+        }
+
+        private void refreshHighlights() {
+            buttonHighlight = 0;
+            allMissing = false;
+            missingSlots = null;
+            if (helper == null) {
+                return;
+            }
+            var player = Minecraft.getInstance().player;
+            RecipeHolder<CraftingRecipe> holder = craftingRecipe();
+            if (player == null || holder == null || !(player.containerMenu instanceof MESTMenu menu)) {
+                return;
+            }
+            Map<Integer, net.minecraft.world.item.crafting.Ingredient> ingredients =
+                    helper.getGuiSlotIndexToIngredientMap(holder);
+            missingSlots = menu.findMissingIngredients(ingredients);
+            allMissing = !ingredients.isEmpty()
+                    && missingSlots.missingSlots().size() == ingredients.size();
+            if (!allMissing && missingSlots.totalSize() > 0) {
+                buttonHighlight = missingSlots.anyMissing()
+                        ? TransferHelper.ORANGE_PLUS_BUTTON_COLOR
+                        : TransferHelper.BLUE_PLUS_BUTTON_COLOR;
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        private RecipeHolder<CraftingRecipe> craftingRecipe() {
+            Object recipe = recipeLayout.getRecipe();
+            if (recipe instanceof RecipeHolder<?> holder
+                    && holder.value() instanceof CraftingRecipe) {
+                return (RecipeHolder<CraftingRecipe>) holder;
+            }
+            return null;
         }
     }
 }
