@@ -27,6 +27,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.client.CursorHelper;
 import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockEdge;
 import com.lhy.mest.client.dock.model.DockInsets;
@@ -2014,6 +2015,54 @@ public final class DockManager {
      */
     public float cursorItemZ() {
         return Math.min(anchoredChromeZ() + ROOT_LAYER_Z + 300.0F, 1800.0F);
+    }
+
+    public CursorHelper.Shape pointerCursor(double mouseX, double mouseY) {
+        ensureProjection();
+        if (mode == Mode.RESIZE_ROOT) {
+            return CursorHelper.Shape.NWSE;
+        }
+        if (mode == Mode.RESIZE_DIVIDER) {
+            return dividerCursor(activeSplitId);
+        }
+        if (mode == Mode.DRAG_ROOT || mode == Mode.PENDING_LEAF_DRAG) {
+            return CursorHelper.Shape.HAND;
+        }
+        FloatingRoot root = topRootAt(mouseX, mouseY, null);
+        if (root == null) {
+            return CursorHelper.Shape.ARROW;
+        }
+        boolean lockedAnchored = layoutLocked && !editingLayout && isAnchoredRoot(root);
+        if (!lockedAnchored
+                && inRootResizeHandle(root.bounds(), mouseX, mouseY)
+                && (editingLayout || canResizeNode(root.content()))) {
+            return CursorHelper.Shape.NWSE;
+        }
+        if (!lockedAnchored) {
+            DividerHit divider = dividerAt(root, mouseX, mouseY);
+            if (divider != null) {
+                return dividerCursor(divider.splitNodeId());
+            }
+        }
+        if (!lockedAnchored) {
+            ModulePanel leaf = leafAt(root, mouseX, mouseY);
+            LeafNode leafNode = leafNodeAt(root, mouseX, mouseY);
+            if (leaf != null && leafNode != null
+                    && leaf.inTitleBar(mouseX, mouseY)
+                    && !leaf.inPinButton(mouseX, mouseY)
+                    && (editingLayout || policyFor(leafNode).movable())) {
+                return CursorHelper.Shape.HAND;
+            }
+        }
+        return CursorHelper.Shape.ARROW;
+    }
+
+    private CursorHelper.Shape dividerCursor(String splitNodeId) {
+        LayoutNode node = findNode(splitNodeId);
+        if (node instanceof SplitNode split && split.axis() == DockAxis.VERTICAL) {
+            return CursorHelper.Shape.NS;
+        }
+        return CursorHelper.Shape.EW;
     }
 
     private List<FloatingRoot> paintOrderRoots() {

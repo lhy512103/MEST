@@ -108,7 +108,13 @@ public class PanelSideBar {
             return false;
         }
         for (Button widget : buttons) {
-            if (widget.visible && widget.isMouseOver(mouseX, mouseY)) {
+            if (!widget.visible) {
+                continue;
+            }
+            if (widget.isMouseOver(mouseX, mouseY)) {
+                return true;
+            }
+            if (widget instanceof ITooltip tooltip && tooltip.getTooltipArea().contains((int) mouseX, (int) mouseY)) {
                 return true;
             }
         }
@@ -120,7 +126,13 @@ public class PanelSideBar {
             return null;
         }
         for (Button widget : buttons) {
-            if (widget.visible && widget.isMouseOver(mouseX, mouseY)) {
+            if (!widget.visible) {
+                continue;
+            }
+            if (widget.isMouseOver(mouseX, mouseY)) {
+                return widget;
+            }
+            if (widget instanceof ITooltip tooltip && tooltip.getTooltipArea().contains(mouseX, mouseY)) {
                 return widget;
             }
         }

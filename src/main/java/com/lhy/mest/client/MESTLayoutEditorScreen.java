@@ -290,11 +290,13 @@ public final class MESTLayoutEditorScreen extends Screen {
     }
 
     private void saveAndReturn() {
+        CursorHelper.resetCursor();
         dock.commitLayoutEditing();
         Minecraft.getInstance().setScreen(parent);
     }
 
     private void cancel() {
+        CursorHelper.resetCursor();
         dock.cancelLayoutEditing();
         Minecraft.getInstance().setScreen(parent);
     }
@@ -302,6 +304,16 @@ public final class MESTLayoutEditorScreen extends Screen {
     @Override
     public void onClose() {
         cancel();
+    }
+
+    @Override
+    public void mouseMoved(double mouseX, double mouseY) {
+        super.mouseMoved(mouseX, mouseY);
+        syncResizeCursor(mouseX, mouseY);
+    }
+
+    private void syncResizeCursor(double mouseX, double mouseY) {
+        CursorHelper.apply(dock.pointerCursor(mouseX, mouseY));
     }
 
     private void select(ModulePanel panel) {
@@ -475,10 +487,10 @@ public final class MESTLayoutEditorScreen extends Screen {
                 return true;
             }
         }
-        if (dock.mouseReleased(mouseX, mouseY, button)) {
-            return true;
-        }
-        return super.mouseReleased(mouseX, mouseY, button);
+        boolean handled = dock.mouseReleased(mouseX, mouseY, button)
+                || super.mouseReleased(mouseX, mouseY, button);
+        syncResizeCursor(mouseX, mouseY);
+        return handled;
     }
 
     @Override
@@ -496,6 +508,7 @@ public final class MESTLayoutEditorScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        syncResizeCursor(mouseX, mouseY);
         renderBackground(graphics, mouseX, mouseY, partialTick);
         syncEditorCanvas();
         renderCanvas(graphics);

@@ -67,10 +67,7 @@ import appeng.menu.SlotSemantics;
 import appeng.menu.me.common.GridInventoryEntry;
 import appeng.util.Platform;
 
-import de.mari_023.ae2wtlib.api.AE2wtlibAPI;
-import de.mari_023.ae2wtlib.api.TextConstants;
 import de.mari_023.ae2wtlib.api.gui.AE2wtlibSlotSemantics;
-import de.mari_023.ae2wtlib.api.registration.WTDefinition;
 import de.mari_023.ae2wtlib.wct.ArmorSlot;
 import de.mari_023.ae2wtlib.api.terminal.IUniversalTerminalCapable;
 import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
@@ -131,6 +128,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private static final int MORE_SETTINGS_SHIFT = 3;
     private ToolbarIconButton lockLayoutBtn;
     private ToolbarIconButton undoLayoutBtn;
+    private Button cycleTerminalBtn;
     private AETextField searchField;
     private TabButton craftingStatusBtn;
     private final List<ItemStack> currentViewCells = new ArrayList<>();
@@ -206,7 +204,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 b -> toggleMoreSettings()));
         addonUpgradeButtons.install(this, meSideBar);
         if (getMenu().isWUT()) {
-            addMeSideButton(new CycleTerminalToolbarButton());
+            cycleTerminalBtn = cycleTerminalButton();
+            addMeSideButton(cycleTerminalBtn);
         }
     }
 
@@ -549,6 +548,18 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         int moreLeft = (meSideBar.isVisible() ? meSideBar.bounds().getX() : group.x()) - MORE_SETTINGS_SHIFT;
         moreSettingsBar.layoutAgainst(moreLeft, group.y(), moreSettingsVisible);
+        ensureCyclePickerOnScreen();
+    }
+
+    private void ensureCyclePickerOnScreen() {
+        if (!(cycleTerminalBtn instanceof ITooltip tooltip) || !cycleTerminalBtn.visible) {
+            return;
+        }
+        Rect2i area = tooltip.getTooltipArea();
+        if (area.getX() >= 0) {
+            return;
+        }
+        cycleTerminalBtn.setX(cycleTerminalBtn.getX() - area.getX());
     }
 
     private void rebuildMoreSettingsModules() {
@@ -717,6 +728,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public void drawBG(GuiGraphics g, int offsetX, int offsetY, int mouseX, int mouseY, float partialTicks) {
+        syncResizeCursor(mouseX, mouseY);
         // No global background (floating panels only). Draw each panel's frame → background content → owned
         // slot icons back-to-front, so a top panel's frame paints over a lower panel's slot icons. Slot icons
         // are drawn here (in the panel pass) instead of in the vanilla per-slot loop to get z-order right.
@@ -772,9 +784,18 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 g.pose().popPose();
             }
         }
+        syncResizeCursor(mouseX, mouseY);
     }
 
     private void renderAttachedChromeTooltips(GuiGraphics g, int mouseX, int mouseY) {
+        if (cycleTerminalBtn instanceof ITooltip cycleTooltip
+                && cycleTerminalBtn.visible
+                && cycleTooltip.isTooltipAreaVisible()
+                && cyclePickerHit(mouseX, mouseY)
+                && !cycleTooltip.getTooltipMessage().isEmpty()) {
+            drawAeWidgetTooltip(g, mouseX, mouseY, cycleTooltip);
+            return;
+        }
         ModulePanel top = dock.topPanelAt(mouseX, mouseY);
         if (top != null && dock.isFloatingWindow(top)) {
             return;
@@ -837,6 +858,15 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 for (Button button : moreSettingsBar.buttons()) {
                     button.render(g, mouseX, mouseY, partialTicks);
                 }
+            } finally {
+                g.pose().popPose();
+            }
+        }
+        if (cycleTerminalBtn != null && cycleTerminalBtn.visible) {
+            g.pose().pushPose();
+            try {
+                g.pose().translate(0.0F, 0.0F, 120.0F);
+                cycleTerminalBtn.render(g, mouseX, mouseY, partialTicks);
             } finally {
                 g.pose().popPose();
             }
@@ -1135,36 +1165,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 blitter.opacity(0.5f);
             }
             blitter.dest(ix, iy).zOffset(3).blit(guiGraphics);
-        }
-    }
-
-    private final class CycleTerminalToolbarButton extends ToolbarIconButton {
-        CycleTerminalToolbarButton() {
-            super(Icon.CRAFT_HAMMER, TextConstants.TERMINAL_EMPTY, b -> { });
-        }
-
-        @Override
-        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partial) {
-            WTDefinition terminal = WTDefinition.ofOrNull(getHost().getItemStack());
-            setMessage(terminal == null ? TextConstants.TERMINAL_EMPTY : TextConstants.currentTerminal(terminal));
-            if (!visible) {
-                return;
-            }
-            int yOffset = isHovered() ? 1 : 0;
-            Icon bgIcon = isHovered()
-                    ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER
-                    : isFocused() ? Icon.TOOLBAR_BUTTON_BACKGROUND_FOCUS : Icon.TOOLBAR_BUTTON_BACKGROUND;
-            bgIcon.getBlitter()
-                    .dest(getX() - 1, getY() + yOffset, 18, 20)
-                    .zOffset(2)
-                    .blit(guiGraphics);
-            de.mari_023.ae2wtlib.api.gui.Icon icon = terminal == null
-                    ? de.mari_023.ae2wtlib.api.gui.Icon.CRAFTING
-                    : terminal.icon();
-            icon.getBlitter()
-                    .dest(getX(), getY() + 1 + yOffset)
-                    .zOffset(3)
-                    .blit(guiGraphics);
         }
     }
 
@@ -1487,20 +1487,31 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 }
             }
         }
-        for (Button widget : meSideBar.buttons()) {
-            if (!widget.visible || !widget.isMouseOver(mx, my)) {
-                continue;
-            }
-            if (widget instanceof CycleTerminalToolbarButton) {
-                storeState();
-                AE2wtlibAPI.cycleTerminal(button == 1);
+        if (cycleTerminalBtn != null && cycleTerminalBtn.visible && cyclePickerHit(mx, my)) {
+            if (cycleTerminalBtn.mouseClicked(mx, my, button)) {
                 return true;
+            }
+        }
+        for (Button widget : meSideBar.buttons()) {
+            if (widget == cycleTerminalBtn || !widget.visible || !widget.isMouseOver(mx, my)) {
+                continue;
             }
             if (widget.mouseClicked(mx, my, button)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private boolean cyclePickerHit(double mx, double my) {
+        if (cycleTerminalBtn == null || !cycleTerminalBtn.visible) {
+            return false;
+        }
+        if (cycleTerminalBtn.isMouseOver(mx, my)) {
+            return true;
+        }
+        return cycleTerminalBtn instanceof ITooltip tooltip
+                && tooltip.getTooltipArea().contains((int) mx, (int) my);
     }
 
     private void reorderMoreSettings(double mouseY) {
@@ -1652,10 +1663,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (scrollbarDrag || extraDrag) {
             return true;
         }
-        if (dock.mouseReleased(mx, my, button)) {
-            return true;
-        }
-        return super.mouseReleased(mx, my, button);
+        boolean handled = dock.mouseReleased(mx, my, button) || super.mouseReleased(mx, my, button);
+        syncResizeCursor(mx, my);
+        return handled;
     }
 
     @Override
@@ -2088,6 +2098,11 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (patternAccessPanel != null) {
             patternAccessPanel.shiftHoverExtract(mx, my);
         }
+        syncResizeCursor(mx, my);
+    }
+
+    private void syncResizeCursor(double mx, double my) {
+        CursorHelper.apply(dock.pointerCursor(mx, my));
     }
 
     @Override
@@ -2132,6 +2147,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             meListPanel.rememberSearch();
         }
         clearRecipeTransferContext();
+        CursorHelper.resetCursor();
         super.onClose();
     }
 
@@ -2144,6 +2160,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         keepPendingOnRemove = false;
         dock.save();
         dock.saveUiPreferences();
+        CursorHelper.resetCursor();
         super.removed();
     }
 }
