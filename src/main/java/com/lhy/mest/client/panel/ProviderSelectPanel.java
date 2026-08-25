@@ -81,7 +81,7 @@ public class ProviderSelectPanel extends ModulePanel {
         this.scrollbar.setCaptureMouseWheel(false);
         this.autoButton = new CompactToggle(
                 btn -> PlusPickerPrefs.toggleAutoUploadUniqueMatch(),
-                Icon.SORT_BY_NAME,
+                6,
                 () -> List.of(
                         Component.translatable("gui.mesplicedterminal.provider_picker.auto"),
                         Component.translatable(PlusPickerPrefs.autoUploadUniqueMatch()
@@ -89,7 +89,7 @@ public class ProviderSelectPanel extends ModulePanel {
                                 : "gui.mesplicedterminal.provider_picker.auto.off")));
         this.processingButton = new CompactToggle(
                 btn -> PlusPickerPrefs.toggleProcessingButtons(),
-                Icon.TAB_PROCESSING,
+                7,
                 () -> List.of(
                         Component.translatable("gui.mesplicedterminal.provider_picker.processing"),
                         Component.translatable(PlusPickerPrefs.showProcessingButtons()
@@ -104,7 +104,7 @@ public class ProviderSelectPanel extends ModulePanel {
                     rebuildVisible();
                     layoutSlots();
                 },
-                Icon.BACKGROUND_ENCODED_PATTERN,
+                8,
                 () -> List.of(Component.translatable("gui.mesplicedterminal.provider_picker.mapping")));
         this.addMappingButton = new CompactToggle(
                 btn -> addMappingFromFields(),
@@ -737,11 +737,20 @@ public class ProviderSelectPanel extends ModulePanel {
 
     private static final class CompactToggle extends Button implements ITooltip {
         private final Icon icon;
+        private final int atlasCol;
         private final java.util.function.Supplier<List<Component>> tooltip;
 
         private CompactToggle(OnPress onPress, Icon icon, java.util.function.Supplier<List<Component>> tooltip) {
             super(0, 0, BUTTON, BUTTON, Component.empty(), onPress, Button.DEFAULT_NARRATION);
             this.icon = icon;
+            this.atlasCol = -1;
+            this.tooltip = tooltip;
+        }
+
+        private CompactToggle(OnPress onPress, int atlasCol, java.util.function.Supplier<List<Component>> tooltip) {
+            super(0, 0, BUTTON, BUTTON, Component.empty(), onPress, Button.DEFAULT_NARRATION);
+            this.icon = Icon.COG;
+            this.atlasCol = atlasCol;
             this.tooltip = tooltip;
         }
 
@@ -759,7 +768,12 @@ public class ProviderSelectPanel extends ModulePanel {
                     ? EPPIcon.TERMINAL_BUTTON_HOVER
                     : (isFocused() ? EPPIcon.TERMINAL_BUTTON_FOCUS : EPPIcon.TERMINAL_BUTTON);
             background.dest(getX(), getY() + yOffset, BUTTON, BUTTON).zOffset(2).blit(graphics);
-            icon.getBlitter().dest(getX(), getY() + yOffset, BUTTON, BUTTON).zOffset(3).blit(graphics);
+            if (atlasCol >= 0) {
+                com.lhy.mest.client.MestGuiIcons.blit(
+                        graphics, atlasCol, 1, getX(), getY() + yOffset, BUTTON, BUTTON);
+            } else {
+                icon.getBlitter().dest(getX(), getY() + yOffset, BUTTON, BUTTON).zOffset(3).blit(graphics);
+            }
         }
 
         @Override

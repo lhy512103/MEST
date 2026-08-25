@@ -2,6 +2,7 @@ package com.lhy.mest.terminal;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
@@ -19,6 +20,7 @@ import de.mari_023.ae2wtlib.api.AE2wtlibAPI;
 import de.mari_023.ae2wtlib.api.gui.Icon;
 import de.mari_023.ae2wtlib.api.registration.AddTerminalEvent;
 
+import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.compat.MestAddonUpgrades;
 import com.lhy.mest.item.ItemMEST;
 import com.lhy.mest.registry.ModItems;
@@ -31,6 +33,16 @@ public final class MestTerminal {
 
     /** Internal terminal name used by AE2WTLib's registry/hotkey/universal-terminal systems. */
     public static final String TERMINAL_NAME = "spliced";
+    private static final Icon SPLICED_TERMINAL_ICON = new Icon(
+            0,
+            0,
+            16,
+            16,
+            new Icon.Texture(
+                    ResourceLocation.fromNamespaceAndPath(
+                            MESplicedterminal.MODID, "textures/guis/spliced_terminal_icon.png"),
+                    16,
+                    16));
 
     /**
      * Enqueue our terminal definition. This only adds a callback to AddTerminalEvent's handler list;
@@ -40,7 +52,7 @@ public final class MestTerminal {
      */
     public static void registerTerminal() {
         AddTerminalEvent.register(event -> event
-                .builder(TERMINAL_NAME, MESTMenuHost::new, MESTMenu.TYPE, ModItems.SPLICED_TERMINAL.get(), Icon.CRAFTING)
+                .builder(TERMINAL_NAME, MESTMenuHost::new, MESTMenu.TYPE, ModItems.SPLICED_TERMINAL.get(), SPLICED_TERMINAL_ICON)
                 .upgradeCount(3)
                 .addTerminal());
     }

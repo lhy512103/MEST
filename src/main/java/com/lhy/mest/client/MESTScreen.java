@@ -128,6 +128,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private static final int MORE_SETTINGS_SHIFT = 3;
     private ToolbarIconButton lockLayoutBtn;
     private ToolbarIconButton undoLayoutBtn;
+    private ToolbarIconButton cyclePresetBtn;
     private Button cycleTerminalBtn;
     private AETextField searchField;
     private TabButton craftingStatusBtn;
@@ -193,15 +194,15 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         addMeSideButton(new SettingToggleButton<>(Settings.SORT_DIRECTION,
                 cm.getSetting(Settings.SORT_DIRECTION), this::toggleServerSetting));
         addMeSideButton(new ActionButton(ActionItems.TERMINAL_SETTINGS, this::showSettings));
-        addMeSideButton(new SettingToggleButton<>(Settings.TERMINAL_STYLE,
-                AEConfig.instance().getTerminalStyle(), this::toggleTerminalStyle));
+        cyclePresetBtn = addMeSideButton(new CyclePresetButton());
         viewCellsToggleBtn = addMeSideButton(new ViewCellsToggleButton(
                 () -> viewCellsVisible,
                 b -> toggleViewCellsPanel()));
-        moreSettingsToggleBtn = addMeSideButton(new ToolbarIconButton(
-                Icon.COG,
+        moreSettingsToggleBtn = addMeSideButton(new AtlasToolbarButton(
+                4, 1,
                 moreSettingsMessage(),
-                b -> toggleMoreSettings()));
+                b -> toggleMoreSettings(),
+                () -> !moreSettingsVisible));
         addonUpgradeButtons.install(this, meSideBar);
         if (getMenu().isWUT()) {
             cycleTerminalBtn = cycleTerminalButton();
@@ -216,8 +217,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     private void addMeSideButton(Button button) {
         meSideBar.add(button);
-        if (button instanceof SettingToggleButton<?> settingButton
-                && settingButton.getSetting() != Settings.TERMINAL_STYLE) {
+        if (button instanceof SettingToggleButton<?> settingButton) {
             meSettingButtons.add(settingButton);
         }
     }
@@ -314,12 +314,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             moreSettingsToggleBtn.setMessage(moreSettingsMessage());
         }
         attachMeSideBar();
-    }
-
-    private void toggleTerminalStyle(SettingToggleButton<appeng.api.config.TerminalStyle> btn, boolean backwards) {
-        appeng.api.config.TerminalStyle next = btn.getNextValue(backwards);
-        AEConfig.instance().setTerminalStyle(next);
-        btn.set(next);
     }
 
     private <SE extends Enum<SE>> void toggleServerSetting(SettingToggleButton<SE> btn, boolean backwards) {
@@ -490,6 +484,15 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (undoLayoutBtn != null) {
             undoLayoutBtn.active = dock.canUndoLayout();
         }
+        if (cyclePresetBtn != null) {
+            cyclePresetBtn.setMessage(cyclePresetMessage());
+        }
+    }
+
+    private Component cyclePresetMessage() {
+        return Component.translatable(
+                "gui.mesplicedterminal.layout_preset.cycle",
+                dock.presetName(dock.activePreset()));
     }
 
     @Override
@@ -614,8 +617,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 undoLayoutBtn.active = dock.canUndoLayout();
                 yield undoLayoutBtn;
             }
-            case MORE_EDIT -> new ToolbarIconButton(
-                    Icon.TERMINAL_STYLE_SMALL,
+            case MORE_EDIT -> new AtlasToolbarButton(
+                    5, 1,
                     Component.translatable("gui.mesplicedterminal.edit_layout"),
                     b -> Minecraft.getInstance().setScreen(new MESTLayoutEditorScreen(this, dock)));
             default -> {
@@ -1057,14 +1060,34 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     /** Shared AE2 icon mapping for a module panel; also used by the layout editor sidebar. */
     public static void blitPanelIcon(GuiGraphics graphics, ModulePanel panel, int x, int y) {
+        blitPanelIcon(graphics, panel, x, y, 16, 16);
+    }
+
+    public static void blitPanelIcon(GuiGraphics graphics, ModulePanel panel, int x, int y, int w, int h) {
+        blitPanelIcon(graphics, panel, x, y, w, h, 1.0F);
+    }
+
+    public static void blitPanelIcon(
+            GuiGraphics graphics, ModulePanel panel, int x, int y, int w, int h, float opacity) {
+        if (MestGuiIcons.blitPanel(graphics, panel.id(), x, y, w, h, opacity)) {
+            return;
+        }
         if ("trash".equals(panel.id())) {
-            de.mari_023.ae2wtlib.api.gui.Icon.TRASH.getBlitter().dest(x, y).blit(graphics);
+            var blitter = de.mari_023.ae2wtlib.api.gui.Icon.TRASH.getBlitter().dest(x, y, w, h).zOffset(3);
+            if (opacity < 1.0F) {
+                blitter.opacity(opacity);
+            }
+            blitter.blit(graphics);
             return;
         }
         Icon icon = iconForPanel(panel);
-        icon.getBlitter()
-                .dest(x + (16 - icon.width) / 2, y + (16 - icon.height) / 2)
-                .blit(graphics);
+        var blitter = icon.getBlitter()
+                .dest(x + (w - icon.width) / 2, y + (h - icon.height) / 2)
+                .zOffset(3);
+        if (opacity < 1.0F) {
+            blitter.opacity(opacity);
+        }
+        blitter.blit(graphics);
     }
 
     public static Icon iconForPanel(ModulePanel panel) {
@@ -1084,9 +1107,41 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     /**
-     * View-cell show/hide uses the WCWT icon pair already copied into
-     * {@code pattern_cache_states.png} (u=144 shown, u=160 hidden, v=32).
+     * Preset cycle uses row 2, icons 10–12 of {@code layout_preset_icons.png} (16×16).
      */
+    private final class CyclePresetButton extends ToolbarIconButton {
+        private static final ResourceLocation ICONS = ResourceLocation.fromNamespaceAndPath(
+                MESplicedterminal.MODID, "textures/guis/layout_preset_icons.png");
+        private static final int ICON_U0 = 144;
+        private static final int ICON_V = 16;
+        private static final int ICON_SIZE = 16;
+
+        CyclePresetButton() {
+            super(Icon.SCHEDULING_ROUND_ROBIN, cyclePresetMessage(), b -> dock.cyclePreset());
+        }
+
+        @Override
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partial) {
+            if (!visible) {
+                return;
+            }
+            int yOffset = isHovered() ? 1 : 0;
+            Icon bgIcon = isHovered()
+                    ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER
+                    : isFocused() ? Icon.TOOLBAR_BUTTON_BACKGROUND_FOCUS : Icon.TOOLBAR_BUTTON_BACKGROUND;
+            bgIcon.getBlitter()
+                    .dest(getX() - 1, getY() + yOffset, 18, 20)
+                    .zOffset(2)
+                    .blit(guiGraphics);
+            int iconU = ICON_U0 + dock.activePreset() * ICON_SIZE;
+            Blitter.texture(ICONS, 256, 256)
+                    .src(iconU, ICON_V, ICON_SIZE, ICON_SIZE)
+                    .dest(getX(), getY() + 1 + yOffset)
+                    .zOffset(3)
+                    .blit(guiGraphics);
+        }
+    }
+
     private static final class ViewCellsToggleButton extends ToolbarIconButton {
         private static final ResourceLocation STATES = ResourceLocation.fromNamespaceAndPath(
                 MESplicedterminal.MODID, "textures/guis/pattern_cache_states.png");
@@ -1168,6 +1223,41 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
     }
 
+    private static class AtlasToolbarButton extends ToolbarIconButton {
+        private final int col;
+        private final int row;
+        private final java.util.function.BooleanSupplier dimmed;
+
+        AtlasToolbarButton(int col, int row, Component tooltip, OnPress onPress) {
+            this(col, row, tooltip, onPress, () -> false);
+        }
+
+        AtlasToolbarButton(
+                int col, int row, Component tooltip, OnPress onPress, java.util.function.BooleanSupplier dimmed) {
+            super(Icon.COG, tooltip, onPress);
+            this.col = col;
+            this.row = row;
+            this.dimmed = dimmed;
+        }
+
+        @Override
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partial) {
+            if (!visible) {
+                return;
+            }
+            int yOffset = isHovered() ? 1 : 0;
+            Icon bgIcon = isHovered()
+                    ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER
+                    : isFocused() ? Icon.TOOLBAR_BUTTON_BACKGROUND_FOCUS : Icon.TOOLBAR_BUTTON_BACKGROUND;
+            bgIcon.getBlitter()
+                    .dest(getX() - 1, getY() + yOffset, 18, 20)
+                    .zOffset(2)
+                    .blit(guiGraphics);
+            MestGuiIcons.blit(
+                    guiGraphics, col, row, getX(), getY() + 1 + yOffset, 16, 16, dimmed.getAsBoolean() ? 0.5F : 1.0F);
+        }
+    }
+
     private final class ModuleToggleButton extends ToolbarIconButton {
         private final ModulePanel panel;
 
@@ -1194,20 +1284,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                     .blit(guiGraphics);
             int ix = getX();
             int iy = getY() + 1 + yOffset;
-            if ("trash".equals(panel.id())) {
-                var blitter = de.mari_023.ae2wtlib.api.gui.Icon.TRASH.getBlitter();
-                if (!shown) {
-                    blitter.opacity(0.4f);
-                }
-                blitter.dest(ix, iy).zOffset(3).blit(guiGraphics);
-                return;
-            }
-            Icon icon = getIcon();
-            var blitter = icon.getBlitter();
-            if (!shown) {
-                blitter.opacity(0.4f);
-            }
-            blitter.dest(ix + (16 - icon.width) / 2, iy + (16 - icon.height) / 2).zOffset(3).blit(guiGraphics);
+            blitPanelIcon(guiGraphics, panel, ix, iy, 16, 16, shown ? 1.0F : 0.5F);
         }
     }
 

@@ -11,7 +11,6 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.Slot;
 
-import appeng.client.gui.Icon;
 import appeng.client.gui.style.BackgroundGenerator;
 import appeng.client.gui.style.Blitter;
 import appeng.core.AppEng;
@@ -419,8 +418,7 @@ public abstract class ModulePanel {
                     ? EPPIcon.TERMINAL_BUTTON_HOVER
                     : EPPIcon.TERMINAL_BUTTON;
             background.dest(px, py + yOffset, PIN_SIZE, PIN_SIZE).zOffset(2).blit(g);
-            Icon icon = pinned ? Icon.LOCKED : Icon.UNLOCKED;
-            icon.getBlitter().dest(px, py + yOffset, PIN_SIZE, PIN_SIZE).zOffset(3).blit(g);
+            com.lhy.mest.client.MestGuiIcons.blit(g, 12, 1, px, py + yOffset, PIN_SIZE, PIN_SIZE);
         }
     }
 

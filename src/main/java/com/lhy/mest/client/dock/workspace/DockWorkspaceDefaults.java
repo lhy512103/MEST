@@ -1,7 +1,11 @@
 package com.lhy.mest.client.dock.workspace;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 
+import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.client.dock.model.DockWorkspace;
 import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.dock.model.LeafNode;
@@ -11,10 +15,16 @@ import com.lhy.mest.client.dock.model.NodeIds;
 
 /** Deterministic default roots for registered modules. */
 public final class DockWorkspaceDefaults {
+    private static final String BUNDLED_LAYOUT = "/assets/mesplicedterminal/layouts/default.json";
+
     private DockWorkspaceDefaults() {
     }
 
     public static DockWorkspace create(ModuleCatalog catalog, LegacyMigrationContext geometry) {
+        DockWorkspace bundled = loadBundled(catalog, geometry);
+        if (bundled != null) {
+            return bundled;
+        }
         var roots = new ArrayList<FloatingRoot>();
         int index = 0;
         for (String moduleId : catalog.moduleIds()) {
@@ -37,6 +47,19 @@ public final class DockWorkspaceDefaults {
             policies.put(moduleId, policy);
         }
         return workspace.withPolicies(policies);
+    }
+
+    private static DockWorkspace loadBundled(ModuleCatalog catalog, LegacyMigrationContext geometry) {
+        try (InputStream in = DockWorkspaceDefaults.class.getResourceAsStream(BUNDLED_LAYOUT)) {
+            if (in == null) {
+                return null;
+            }
+            String json = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            return new DockLayoutCodec(catalog, geometry).decode(json).workspace();
+        } catch (IOException | RuntimeException e) {
+            MESplicedterminal.LOGGER.warn("Failed to load bundled default layout", e);
+            return null;
+        }
     }
 
     public static boolean defaultVisible(String moduleId) {

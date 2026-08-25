@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -51,8 +52,10 @@ import com.lhy.mest.client.dock.model.SplitNode;
 import com.lhy.mest.client.dock.workspace.AtomicFileDockLayoutStore;
 import com.lhy.mest.client.dock.workspace.DockLayoutCodec;
 import com.lhy.mest.client.dock.workspace.DockLayoutDto;
+import com.lhy.mest.client.dock.workspace.DockLayoutFormatException;
 import com.lhy.mest.client.dock.workspace.DockLayoutPersistence;
 import com.lhy.mest.client.dock.workspace.DockWorkspaceDefaults;
+import com.lhy.mest.client.dock.workspace.LayoutPresetBank;
 import com.lhy.mest.client.dock.workspace.LegacyMigrationContext;
 import com.lhy.mest.client.panel.PatternAccessPanel;
 
@@ -151,6 +154,10 @@ public final class DockManager {
     private List<String> moreSettingsOrder = new ArrayList<>();
     private boolean pendingCenterOnReturn;
     private Path preferencesPath;
+    private Path configDir;
+    private DockLayoutCodec layoutCodec;
+    private LayoutPresetBank.Data presets;
+    private LayoutPresetBank.Data editingPresets;
     private int editorInsetLeft;
     private int editorInsetTop;
     private int editorInsetRight;
@@ -208,10 +215,10 @@ public final class DockManager {
         editor = new DockWorkspaceEditor(catalog);
         layoutEngine = new LayoutEngine(catalog, LAYOUT_STYLE);
         var codec = new DockLayoutCodec(persistenceCatalog, migrationContext);
-        Path path = FMLPaths.CONFIGDIR.get()
-                .resolve(MESplicedterminal.MODID)
-                .resolve("layout.json");
-        preferencesPath = path.getParent().resolve("preferences.json");
+        layoutCodec = codec;
+        configDir = FMLPaths.CONFIGDIR.get().resolve(MESplicedterminal.MODID);
+        Path path = configDir.resolve("layout.json");
+        preferencesPath = configDir.resolve("preferences.json");
         loadPreferences();
         persistence = new AtomicFileDockLayoutStore(path, codec);
 
@@ -245,6 +252,10 @@ public final class DockManager {
             workspace = DockWorkspaceDefaults.create(persistenceCatalog, migrationContext);
         }
 
+        loadPresetBank(workspace);
+        if (presets != null) {
+            workspace = presets.workspaces()[presets.active()];
+        }
         viewportWorkspace = clampWorkspaceToViewport(workspace);
         workspaceRevision = 1;
         persistedRevision = loadedCurrentLayout ? workspaceRevision : -1;
@@ -325,16 +336,22 @@ public final class DockManager {
     public DockWorkspace beginLayoutEditing() {
         editingLayout = true;
         editingOriginal = workspace;
+        captureActivePreset();
+        editingPresets = presets == null ? null : presets.copy();
         return workspace;
     }
 
     public void cancelLayoutEditing() {
-        if (editingLayout && editingOriginal != null && !editingOriginal.equals(workspace)) {
+        if (editingLayout && editingPresets != null) {
+            presets = editingPresets.copy();
+            replaceWorkspace(presets.workspaces()[presets.active()], true);
+        } else if (editingLayout && editingOriginal != null && !editingOriginal.equals(workspace)) {
             replaceWorkspace(editingOriginal, true);
         }
         clearEditorCanvasInsets();
         editingLayout = false;
         editingOriginal = null;
+        editingPresets = null;
         // The editor can be closed (Esc) in the middle of a gesture; dropping the gesture state
         // here prevents a later mouse event from acting on a root that no longer exists.
         resetGestureState();
@@ -344,11 +361,13 @@ public final class DockManager {
         clearEditorCanvasInsets();
         editingLayout = false;
         editingOriginal = null;
+        editingPresets = null;
         resetGestureState();
         if (centerOnReturn) {
             centerVisibleWorkspace();
             pendingCenterOnReturn = true;
         }
+        captureActivePreset();
         save();
     }
 
@@ -615,6 +634,194 @@ public final class DockManager {
         save();
     }
 
+    public int presetCount() {
+        return LayoutPresetBank.SLOT_COUNT;
+    }
+
+    public int activePreset() {
+        return presets == null ? 0 : presets.active();
+    }
+
+    public String presetName(int index) {
+        int slot = Math.floorMod(index, LayoutPresetBank.SLOT_COUNT);
+        String custom = presets == null ? "" : presets.names()[slot];
+        if (custom != null && !custom.isBlank()) {
+            return custom;
+        }
+        return defaultPresetName(slot);
+    }
+
+    public void setPresetName(int index, String name) {
+        if (presets == null) {
+            return;
+        }
+        int slot = Math.floorMod(index, LayoutPresetBank.SLOT_COUNT);
+        String sanitized = LayoutPresetBank.sanitizeName(name);
+        if (sanitized.equals(defaultPresetName(slot))) {
+            sanitized = "";
+        }
+        if (sanitized.equals(presets.names()[slot])) {
+            return;
+        }
+        presets = presets.withName(slot, sanitized);
+        if (!editingLayout) {
+            savePresetBankQuietly();
+        }
+    }
+
+    public void cyclePreset() {
+        selectPreset(activePreset() + 1);
+    }
+
+    public void selectPreset(int index) {
+        if (presets == null) {
+            return;
+        }
+        int slot = Math.floorMod(index, LayoutPresetBank.SLOT_COUNT);
+        captureActivePreset();
+        if (slot == presets.active() && presets.workspaces()[slot].equals(workspace)) {
+            return;
+        }
+        presets = presets.withActive(slot);
+        undoStack.clear();
+        replaceWorkspace(presets.workspaces()[slot], true);
+        ensureAnchoredVisible();
+        if (!editingLayout) {
+            persistenceBlockedAfterLoadFailure = false;
+            save();
+        }
+    }
+
+    public boolean hasLayoutBackup() {
+        return configDir != null && Files.isRegularFile(backupFile());
+    }
+
+    public Path shareFolder() {
+        return configDir == null ? null : configDir.resolve("share");
+    }
+
+    public Path shareZipFile() {
+        Path share = shareFolder();
+        return share == null ? null : share.resolve(LayoutPresetBank.SHARE_ZIP_FILE);
+    }
+
+    public record LayoutShareResult(boolean ok, Component message, Path reveal) {
+        public static LayoutShareResult ok(Component message, Path reveal) {
+            return new LayoutShareResult(true, message, reveal);
+        }
+
+        public static LayoutShareResult fail(Component message) {
+            return new LayoutShareResult(false, message, null);
+        }
+    }
+
+    public LayoutShareResult exportLayouts() {
+        if (presets == null || layoutCodec == null || configDir == null) {
+            return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_export.fail"));
+        }
+        captureActivePreset();
+        Path share = shareFolder();
+        Path zipFile = shareZipFile();
+        try {
+            Files.createDirectories(share);
+            Files.deleteIfExists(share.resolve(LayoutPresetBank.SHARE_LAYOUT_FILE));
+            Files.deleteIfExists(share.resolve(LayoutPresetBank.SHARE_PRESETS_FILE));
+            for (int index = 0; index < LayoutPresetBank.SLOT_COUNT; index++) {
+                Path slotDir = share.resolve(LayoutPresetBank.shareSlotFolder(index));
+                Files.createDirectories(slotDir);
+                LayoutPresetBank.writeAtomic(
+                        slotDir.resolve(LayoutPresetBank.SHARE_LAYOUT_FILE),
+                        LayoutPresetBank.encodeSlot(
+                                presets.workspaces()[index], presets.names()[index], layoutCodec));
+                Files.deleteIfExists(slotDir.resolve(LayoutPresetBank.SHARE_NAME_FILE));
+            }
+            LayoutPresetBank.zipShareSlots(share, zipFile);
+            return LayoutShareResult.ok(
+                    Component.translatable(
+                            "gui.mesplicedterminal.layout_export.ok",
+                            "config/" + MESplicedterminal.MODID + "/share/" + LayoutPresetBank.SHARE_ZIP_FILE),
+                    share);
+        } catch (IOException | RuntimeException e) {
+            MESplicedterminal.LOGGER.warn("Failed to export terminal layout", e);
+            return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_export.fail"));
+        }
+    }
+
+    public LayoutShareResult importLayouts() {
+        if (presets == null || layoutCodec == null || configDir == null) {
+            return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_import.fail"));
+        }
+        try {
+            LayoutPresetBank.Data imported = importFromShareFolders();
+            if (imported == null) {
+                Path zipFile = shareZipFile();
+                if (zipFile != null && Files.isRegularFile(zipFile)) {
+                    imported = LayoutPresetBank.readShareZip(zipFile, layoutCodec, presets);
+                }
+            }
+            if (imported == null) {
+                String json = readImportJson();
+                if (json == null || json.isBlank()) {
+                    return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_import.missing"));
+                }
+                imported = LayoutPresetBank.read(json, layoutCodec, presets);
+            }
+            return applyImportedPresets(imported);
+        } catch (IOException | RuntimeException e) {
+            MESplicedterminal.LOGGER.warn("Failed to import terminal layout", e);
+            return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_import.fail"));
+        }
+    }
+
+    public LayoutShareResult importLayouts(Path zipFile) {
+        if (presets == null || layoutCodec == null || zipFile == null) {
+            return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_import.fail"));
+        }
+        try {
+            return applyImportedPresets(LayoutPresetBank.readShareZip(zipFile, layoutCodec, presets));
+        } catch (IOException | RuntimeException e) {
+            MESplicedterminal.LOGGER.warn("Failed to import terminal layout from {}", zipFile, e);
+            return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_import.fail"));
+        }
+    }
+
+    private LayoutShareResult applyImportedPresets(LayoutPresetBank.Data imported) throws IOException {
+        backupCurrentPresets();
+        presets = imported;
+        undoStack.clear();
+        replaceWorkspace(presets.workspaces()[presets.active()], true);
+        ensureAnchoredVisible();
+        if (!editingLayout) {
+            persistenceBlockedAfterLoadFailure = false;
+            save();
+        }
+        return LayoutShareResult.ok(Component.translatable("gui.mesplicedterminal.layout_import.ok"), null);
+    }
+
+    public LayoutShareResult restoreLayoutBackup() {
+        if (!hasLayoutBackup() || layoutCodec == null) {
+            return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_backup.missing"));
+        }
+        try {
+            LayoutPresetBank.Data restored = LayoutPresetBank.read(
+                    Files.readString(backupFile(), StandardCharsets.UTF_8),
+                    layoutCodec,
+                    presets);
+            presets = restored;
+            undoStack.clear();
+            replaceWorkspace(presets.workspaces()[presets.active()], true);
+            ensureAnchoredVisible();
+            if (!editingLayout) {
+                persistenceBlockedAfterLoadFailure = false;
+                save();
+            }
+            return LayoutShareResult.ok(Component.translatable("gui.mesplicedterminal.layout_backup.ok"), null);
+        } catch (IOException | RuntimeException e) {
+            MESplicedterminal.LOGGER.warn("Failed to restore terminal layout backup", e);
+            return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_backup.fail"));
+        }
+    }
+
     public void resetLayout() {
         DockWorkspace defaults = DockWorkspaceDefaults.create(
                 persistenceCatalog,
@@ -646,30 +853,6 @@ public final class DockManager {
         structureVersion++;
         replaceWorkspace(restore, true);
         save();
-    }
-
-    /** Compact preset: flatten leaves into default-sized, non-overlapping roots where space allows. */
-    public void applyCompactPreset() {
-        var roots = new ArrayList<FloatingRoot>();
-        int gap = 4;
-        int x = gap;
-        int y = gap;
-        int rowHeight = 0;
-        for (ModulePanel panel : panels) {
-            LeafNode leaf = leafForPanel(panel);
-            int width = Math.min(screenWidth, Math.max(panel.minWidth(), panel.defaultWidth()));
-            int height = Math.min(screenHeight, Math.max(panel.minHeight(), panel.defaultHeight()));
-            if (x > gap && (long) x + width > screenWidth) {
-                x = gap;
-                y += rowHeight + gap;
-                rowHeight = 0;
-            }
-            DockRect bounds = clampRectToViewport(new DockRect(x, y, width, height), DockSize.ZERO);
-            roots.add(new FloatingRoot(DockWorkspaceDefaults.rootId(panel.id()), bounds, leaf));
-            x += width + gap;
-            rowHeight = Math.max(rowHeight, height);
-        }
-        applyPresetWorkspace(new DockWorkspace(roots));
     }
 
     private void applyPresetWorkspace(DockWorkspace target) {
@@ -1355,6 +1538,8 @@ public final class DockManager {
         try {
             persistence.save(workspace);
             persistedRevision = workspaceRevision;
+            captureActivePreset();
+            savePresetBank();
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn(
                     "Failed to write terminal layout v{}",
@@ -1410,6 +1595,113 @@ public final class DockManager {
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn("Failed to write terminal layout preferences", e);
         }
+    }
+
+    private void loadPresetBank(DockWorkspace current) {
+        DockWorkspace filler = DockWorkspaceDefaults.create(persistenceCatalog, migrationContext);
+        LayoutPresetBank.Data fallback = LayoutPresetBank.create(current, filler, null);
+        Path file = configDir.resolve(LayoutPresetBank.PRESETS_FILE);
+        presets = LayoutPresetBank.load(file, layoutCodec, fallback);
+        if (!Files.isRegularFile(file)) {
+            savePresetBankQuietly();
+        }
+    }
+
+    private void captureActivePreset() {
+        if (presets == null || workspace == null) {
+            return;
+        }
+        presets = presets.withWorkspace(presets.active(), workspace);
+    }
+
+    private void savePresetBank() throws IOException {
+        if (presets == null || layoutCodec == null || configDir == null) {
+            return;
+        }
+        LayoutPresetBank.save(configDir.resolve(LayoutPresetBank.PRESETS_FILE), presets, layoutCodec);
+    }
+
+    private void savePresetBankQuietly() {
+        try {
+            savePresetBank();
+        } catch (IOException | RuntimeException e) {
+            MESplicedterminal.LOGGER.warn("Failed to write terminal layout presets", e);
+        }
+    }
+
+    private void backupCurrentPresets() throws IOException {
+        if (presets == null || layoutCodec == null || configDir == null) {
+            return;
+        }
+        captureActivePreset();
+        Path backupDir = configDir.resolve("backup");
+        LayoutPresetBank.clearDirectory(backupDir);
+        Files.createDirectories(backupDir);
+        LayoutPresetBank.save(backupFile(), presets, layoutCodec);
+    }
+
+    private Path backupFile() {
+        return configDir.resolve("backup").resolve(LayoutPresetBank.PRESETS_FILE);
+    }
+
+    private LayoutPresetBank.Data importFromShareFolders() throws IOException, DockLayoutFormatException {
+        Path share = configDir.resolve("share");
+        if (!Files.isDirectory(share)) {
+            return null;
+        }
+        LayoutPresetBank.Data data = presets.copy();
+        boolean any = false;
+        for (int index = 0; index < LayoutPresetBank.SLOT_COUNT; index++) {
+            Path slotDir = share.resolve(LayoutPresetBank.shareSlotFolder(index));
+            Path layoutFile = slotDir.resolve(LayoutPresetBank.SHARE_LAYOUT_FILE);
+            if (!Files.isRegularFile(layoutFile)) {
+                continue;
+            }
+            any = true;
+            LayoutPresetBank.SlotDocument document = LayoutPresetBank.decodeSlot(
+                    Files.readString(layoutFile, StandardCharsets.UTF_8), layoutCodec);
+            data = data.withWorkspace(index, document.workspace());
+            String name = document.name();
+            Path nameFile = slotDir.resolve(LayoutPresetBank.SHARE_NAME_FILE);
+            if (name.isBlank() && Files.isRegularFile(nameFile)) {
+                name = LayoutPresetBank.sanitizeName(Files.readString(nameFile, StandardCharsets.UTF_8));
+            }
+            data = data.withName(index, name);
+        }
+        return any ? data : null;
+    }
+
+    private String readImportJson() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft != null) {
+            String clipboard = minecraft.keyboardHandler.getClipboard();
+            if (clipboard != null && !clipboard.isBlank()) {
+                try {
+                    LayoutPresetBank.read(clipboard, layoutCodec, presets);
+                    return clipboard;
+                } catch (IOException | RuntimeException ignored) {
+                    // Fall through to share files.
+                }
+            }
+        }
+        Path share = configDir.resolve("share");
+        Path presetsFile = share.resolve(LayoutPresetBank.SHARE_PRESETS_FILE);
+        Path layoutFile = share.resolve(LayoutPresetBank.SHARE_LAYOUT_FILE);
+        try {
+            if (Files.isRegularFile(presetsFile)) {
+                return Files.readString(presetsFile, StandardCharsets.UTF_8);
+            }
+            if (Files.isRegularFile(layoutFile)) {
+                return Files.readString(layoutFile, StandardCharsets.UTF_8);
+            }
+        } catch (IOException e) {
+            MESplicedterminal.LOGGER.warn("Failed to read shared terminal layout", e);
+        }
+        return null;
+    }
+
+    private static String defaultPresetName(int slot) {
+        return Component.translatable("gui.mesplicedterminal.layout_preset", slot + 1).getString();
     }
 
     private static List<String> readStringList(JsonObject object, String key) {

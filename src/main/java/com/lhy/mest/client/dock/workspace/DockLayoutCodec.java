@@ -40,7 +40,8 @@ import com.lhy.mest.client.dock.workspace.DockLayoutDto.SplitDto;
 public final class DockLayoutCodec {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Set<String> V2_FIELDS = Set.of("version", "roots");
-    private static final Set<String> V3_FIELDS = Set.of("version", "roots", "policies", "restoreSizes");
+    private static final Set<String> V3_FIELDS =
+            Set.of("version", "roots", "policies", "restoreSizes", "name");
     private static final Set<String> POLICY_FIELDS =
             Set.of("visible", "movable", "resizable", "floating", "pinned", "showTerminalButton");
     private static final Set<String> ROOT_FIELDS = Set.of("rootId", "bounds", "content");

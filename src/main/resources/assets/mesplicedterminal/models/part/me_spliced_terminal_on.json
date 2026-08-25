@@ -1,0 +1,8 @@
+{
+  "parent": "ae2:part/terminal_on",
+  "textures": {
+    "lightsBright": "mesplicedterminal:part/me_spliced_terminal_bright",
+    "lightsMedium": "ae2:part/terminal_medium",
+    "lightsDark": "mesplicedterminal:part/me_spliced_terminal_dark"
+  }
+}

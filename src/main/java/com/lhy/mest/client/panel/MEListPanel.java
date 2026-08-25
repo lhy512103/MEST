@@ -635,13 +635,17 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         for (int row = 0; row < rows; row++) {
             int srcY = rowSrcY(row);
             int destY = gridTop + row * SLOT;
-            TERMINAL.src(7, srcY, nativeCols * SLOT, SLOT)
+            int nativeWidth = cols <= NATIVE_SLOT_COLS ? nativeCols * SLOT : nativeCols * SLOT - 1;
+            TERMINAL.src(7, srcY, nativeWidth, SLOT)
                     .dest(gridLeft, destY)
                     .blit(g);
             for (int col = nativeCols; col < cols; col++) {
                 TERMINAL.src(7 + SLOT, srcY, SLOT, SLOT)
                         .dest(gridLeft + col * SLOT, destY)
                         .blit(g);
+            }
+            if (cols > NATIVE_SLOT_COLS) {
+                g.vLine(gridLeft + cols * SLOT - 1, destY, destY + SLOT - 1, 0xFFF2F2F2);
             }
         }
     }

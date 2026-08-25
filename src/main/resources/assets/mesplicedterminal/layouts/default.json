@@ -1,0 +1,265 @@
+{
+  "version": 3,
+  "roots": [
+    {
+      "rootId": "root:6ed191b4-420b-358a-9719-e3bcf60ce818",
+      "bounds": {
+        "x": 114,
+        "y": 32,
+        "width": 174,
+        "height": 90
+      },
+      "content": {
+        "type": "leaf",
+        "nodeId": "leaf:6ed191b4-420b-358a-9719-e3bcf60ce818",
+        "moduleId": "crafting",
+        "visible": true
+      }
+    },
+    {
+      "rootId": "root:04461173-ccec-334f-b266-fd70f35593bf",
+      "bounds": {
+        "x": 114,
+        "y": 42,
+        "width": 195,
+        "height": 96
+      },
+      "content": {
+        "type": "leaf",
+        "nodeId": "leaf:04461173-ccec-334f-b266-fd70f35593bf",
+        "moduleId": "crafting_terminal",
+        "visible": true
+      }
+    },
+    {
+      "rootId": "root:179c8cae-787e-3854-a230-40eb5bf73d25",
+      "bounds": {
+        "x": 114,
+        "y": 74,
+        "width": 176,
+        "height": 148
+      },
+      "content": {
+        "type": "leaf",
+        "nodeId": "leaf:179c8cae-787e-3854-a230-40eb5bf73d25",
+        "moduleId": "pattern_access",
+        "visible": true
+      }
+    },
+    {
+      "rootId": "root:2d6049c6-4819-3498-9821-3da6656162f7",
+      "bounds": {
+        "x": 114,
+        "y": 90,
+        "width": 186,
+        "height": 77
+      },
+      "content": {
+        "type": "leaf",
+        "nodeId": "leaf:2d6049c6-4819-3498-9821-3da6656162f7",
+        "moduleId": "pattern_cache",
+        "visible": true
+      }
+    },
+    {
+      "rootId": "root:6e9de0fe-2811-3715-b7d4-ef8ab7574c45",
+      "bounds": {
+        "x": 132,
+        "y": 122,
+        "width": 176,
+        "height": 120
+      },
+      "content": {
+        "type": "leaf",
+        "nodeId": "leaf:6e9de0fe-2811-3715-b7d4-ef8ab7574c45",
+        "moduleId": "wireless_settings",
+        "visible": true
+      }
+    },
+    {
+      "rootId": "root:30639096-bfe4-3c4b-9f17-696ef1d02b9f",
+      "bounds": {
+        "x": 148,
+        "y": 138,
+        "width": 186,
+        "height": 78
+      },
+      "content": {
+        "type": "leaf",
+        "nodeId": "leaf:30639096-bfe4-3c4b-9f17-696ef1d02b9f",
+        "moduleId": "trash",
+        "visible": true
+      }
+    },
+    {
+      "rootId": "root:dbf63870-2512-34ba-bddf-994a7e30a1ca",
+      "bounds": {
+        "x": 164,
+        "y": 154,
+        "width": 148,
+        "height": 118
+      },
+      "content": {
+        "type": "leaf",
+        "nodeId": "leaf:dbf63870-2512-34ba-bddf-994a7e30a1ca",
+        "moduleId": "provider_select",
+        "visible": true
+      }
+    },
+    {
+      "rootId": "root:f3969031-437a-3660-8be7-ea9974062f2c",
+      "bounds": {
+        "x": 230,
+        "y": 22,
+        "width": 180,
+        "height": 330
+      },
+      "content": {
+        "type": "split",
+        "nodeId": "split:c081cd69-32b7-47c4-ac48-622516a3581d",
+        "axis": "VERTICAL",
+        "ratio": 0.43329682365826944,
+        "first": {
+          "type": "leaf",
+          "nodeId": "leaf:f3969031-437a-3660-8be7-ea9974062f2c",
+          "moduleId": "me_list",
+          "visible": true
+        },
+        "second": {
+          "type": "split",
+          "nodeId": "split:09665d8a-5cef-4a20-b230-c1e8443fc973",
+          "axis": "VERTICAL",
+          "ratio": 0.4715909090909091,
+          "first": {
+            "type": "leaf",
+            "nodeId": "leaf:936490ee-ec21-338a-879d-04ef3b24be04",
+            "moduleId": "pattern_encoding",
+            "visible": true
+          },
+          "second": {
+            "type": "leaf",
+            "nodeId": "leaf:7a1eabc3-deb7-3d02-8eb1-e16eafc41073",
+            "moduleId": "inventory",
+            "visible": true
+          }
+        }
+      }
+    }
+  ],
+  "policies": {
+    "inventory": {
+      "visible": true,
+      "movable": true,
+      "resizable": true,
+      "floating": false,
+      "pinned": false,
+      "showTerminalButton": true
+    },
+    "me_list": {
+      "visible": true,
+      "movable": true,
+      "resizable": true,
+      "floating": false,
+      "pinned": false,
+      "showTerminalButton": true
+    },
+    "provider_select": {
+      "visible": false,
+      "movable": true,
+      "resizable": true,
+      "floating": false,
+      "pinned": false,
+      "showTerminalButton": false
+    },
+    "pattern_access": {
+      "visible": false,
+      "movable": true,
+      "resizable": true,
+      "floating": false,
+      "pinned": false,
+      "showTerminalButton": true
+    },
+    "pattern_cache": {
+      "visible": false,
+      "movable": true,
+      "resizable": true,
+      "floating": false,
+      "pinned": false,
+      "showTerminalButton": true
+    },
+    "wireless_settings": {
+      "visible": false,
+      "movable": true,
+      "resizable": true,
+      "floating": true,
+      "pinned": false,
+      "showTerminalButton": false
+    },
+    "pattern_encoding": {
+      "visible": true,
+      "movable": true,
+      "resizable": true,
+      "floating": false,
+      "pinned": false,
+      "showTerminalButton": true
+    },
+    "trash": {
+      "visible": false,
+      "movable": true,
+      "resizable": true,
+      "floating": true,
+      "pinned": true,
+      "showTerminalButton": true
+    },
+    "crafting_terminal": {
+      "visible": false,
+      "movable": true,
+      "resizable": true,
+      "floating": false,
+      "pinned": false,
+      "showTerminalButton": true
+    },
+    "crafting": {
+      "visible": false,
+      "movable": true,
+      "resizable": true,
+      "floating": false,
+      "pinned": false,
+      "showTerminalButton": true
+    }
+  },
+  "restoreSizes": {
+    "split:c081cd69-32b7-47c4-ac48-622516a3581d": {
+      "width": 180,
+      "height": 239
+    },
+    "leaf:2d6049c6-4819-3498-9821-3da6656162f7": {
+      "width": 186,
+      "height": 77
+    },
+    "leaf:6ed191b4-420b-358a-9719-e3bcf60ce818": {
+      "width": 174,
+      "height": 90
+    },
+    "leaf:04461173-ccec-334f-b266-fd70f35593bf": {
+      "width": 195,
+      "height": 96
+    },
+    "leaf:f3969031-437a-3660-8be7-ea9974062f2c": {
+      "width": 185,
+      "height": 155
+    },
+    "leaf:7a1eabc3-deb7-3d02-8eb1-e16eafc41073": {
+      "width": 176,
+      "height": 100
+    },
+    "leaf:936490ee-ec21-338a-879d-04ef3b24be04": {
+      "width": 170,
+      "height": 90
+    },
+    "leaf:179c8cae-787e-3854-a230-40eb5bf73d25": {
+      "width": 176,
+      "height": 148
+    }
+  }
+}
