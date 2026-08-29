@@ -15,6 +15,8 @@ import appeng.client.gui.style.BackgroundGenerator;
 import appeng.client.gui.style.Blitter;
 import appeng.core.AppEng;
 
+import net.neoforged.fml.ModList;
+
 import com.glodblock.github.extendedae.client.button.EPPIcon;
 
 import com.lhy.mest.client.dock.model.DockRect;
@@ -414,10 +416,17 @@ public abstract class ModulePanel {
             int py = pinButtonY();
             boolean hovered = inPinButton(mouseX, mouseY);
             int yOffset = hovered ? 1 : 0;
-            Blitter background = hovered
-                    ? EPPIcon.TERMINAL_BUTTON_HOVER
-                    : EPPIcon.TERMINAL_BUTTON;
-            background.dest(px, py + yOffset, PIN_SIZE, PIN_SIZE).zOffset(2).blit(g);
+            if (ModList.get().isLoaded("extendedae")) {
+                Blitter background = hovered
+                        ? EPPIcon.TERMINAL_BUTTON_HOVER
+                        : EPPIcon.TERMINAL_BUTTON;
+                background.dest(px, py + yOffset, PIN_SIZE, PIN_SIZE).zOffset(2).blit(g);
+            } else {
+                // ExtendedAE supplies a tasteful button sprite; without it, fall back to a flat dark
+                // fill that matches the title bar so the pin glyph still reads as a button.
+                int bg = hovered ? 0xFF4A4A4A : 0xFF2E2E2E;
+                g.fill(px, py + yOffset, px + PIN_SIZE, py + yOffset + PIN_SIZE, bg);
+            }
             com.lhy.mest.client.MestGuiIcons.blit(g, 12, 1, px, py + yOffset, PIN_SIZE, PIN_SIZE);
         }
     }

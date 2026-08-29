@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -73,7 +72,6 @@ public final class DockManager {
     private static final int DROP_ZONE_MAX = 16;
     private static final int SNAP_DISTANCE = 8;
     private static final int LEAF_DRAG_THRESHOLD = 4;
-    private static final int MAX_UNDO_HISTORY = 32;
 
     private static final int DIVIDER_COLOR = 0xFF777B8C;
     private static final int DIVIDER_HOVER_COLOR = 0xFFACE9FF;
@@ -136,7 +134,7 @@ public final class DockManager {
     private int structureVersion;
     private int screenWidth;
     private int screenHeight;
-    private final ArrayDeque<DockWorkspace> undoStack = new ArrayDeque<>();
+    private final WorkspaceUndoHistory undoHistory = new WorkspaceUndoHistory(32);
     private DockWorkspace gestureStartWorkspace;
     /**
      * Original workspace captured when the screen raises a root before dispatching a click to a
@@ -260,7 +258,7 @@ public final class DockManager {
         viewportWorkspace = clampWorkspaceToViewport(workspace);
         workspaceRevision = 1;
         persistedRevision = loadedCurrentLayout ? workspaceRevision : -1;
-        undoStack.clear();
+        undoHistory.clear();
         gestureStartWorkspace = null;
         pendingFocusWorkspace = null;
         mode = Mode.NONE;
@@ -697,7 +695,7 @@ public final class DockManager {
             return;
         }
         presets = presets.withActive(slot);
-        undoStack.clear();
+        undoHistory.clear();
         replaceWorkspace(presets.workspaces()[slot], true);
         ensureAnchoredVisible();
         if (!editingLayout) {
@@ -802,7 +800,7 @@ public final class DockManager {
     private LayoutShareResult applyImportedPresets(LayoutPresetBank.Data imported) throws IOException {
         backupCurrentPresets();
         presets = imported;
-        undoStack.clear();
+        undoHistory.clear();
         replaceWorkspace(presets.workspaces()[presets.active()], true);
         ensureAnchoredVisible();
         if (!editingLayout) {
@@ -822,7 +820,7 @@ public final class DockManager {
                     layoutCodec,
                     presets);
             presets = restored;
-            undoStack.clear();
+            undoHistory.clear();
             replaceWorkspace(presets.workspaces()[presets.active()], true);
             ensureAnchoredVisible();
             if (!editingLayout) {
@@ -855,14 +853,14 @@ public final class DockManager {
     }
 
     public boolean canUndoLayout() {
-        return !undoStack.isEmpty();
+        return !undoHistory.isEmpty();
     }
 
     public void undoLayout() {
-        if (undoStack.isEmpty()) {
+        DockWorkspace restore = undoHistory.pop();
+        if (restore == null) {
             return;
         }
-        DockWorkspace restore = undoStack.removeFirst();
         persistenceBlockedAfterLoadFailure = false;
         structureVersion++;
         replaceWorkspace(restore, true);
@@ -971,9 +969,11 @@ public final class DockManager {
                         panel.renderSectionHeader(graphics, font, routedMouseX, routedMouseY);
                     }
                     panel.renderBackgroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
-                    if (isAnchoredRoot(root)) {
-                        panel.renderSlots(graphics, slotRenderer);
-                    }
+                    // Items live in renderBackground at the root's own z layer so a raised
+                    // window always composites above the items of a window stacked below it.
+                    // Drawing them in renderForeground instead (the previous design) made them
+                    // appear on top of every anchored panel because that pass runs last.
+                    panel.renderSlots(graphics, slotRenderer);
                 }
                 renderDividers(graphics, root, hoveredDivider);
                 ModulePanel.renderResizeGrip(graphics, root.bounds());
@@ -1028,9 +1028,6 @@ public final class DockManager {
                     ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
                     int routedMouseX = root == hoveredRoot && panel == hoveredLeaf ? mouseX : Integer.MIN_VALUE;
                     int routedMouseY = root == hoveredRoot && panel == hoveredLeaf ? mouseY : Integer.MIN_VALUE;
-                    if (slotRenderer != null && !isAnchoredRoot(root)) {
-                        panel.renderSlots(graphics, slotRenderer);
-                    }
                     panel.renderForegroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
                     if (panel.pinVisible() && panel.inPinButton(routedMouseX, routedMouseY)) {
                         graphics.renderComponentTooltip(
@@ -1900,15 +1897,7 @@ public final class DockManager {
         if (snapshot == null || snapshot.equals(workspace)) {
             return;
         }
-        if (!undoStack.isEmpty() && snapshot.equals(undoStack.peekFirst())) {
-            return;
-        }
-        boolean wasEmpty = undoStack.isEmpty();
-        undoStack.addFirst(snapshot);
-        while (undoStack.size() > MAX_UNDO_HISTORY) {
-            undoStack.removeLast();
-        }
-        if (wasEmpty) {
+        if (undoHistory.remember(snapshot)) {
             structureVersion++;
         }
     }
@@ -2770,8 +2759,5 @@ public final class DockManager {
     }
 
     private record DividerHit(String splitNodeId, DockRect bounds) {
-    }
-
-    private record DropCandidate(String targetNodeId, DockEdge edge, DockRect highlightBounds) {
     }
 }

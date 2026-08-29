@@ -1,5 +1,8 @@
 def mestRunJei = !project.hasProperty("mestRunJei") || project.property("mestRunJei").toString().toBoolean()
-def mestRunEmi = !project.hasProperty("mestRunEmi") || project.property("mestRunEmi").toString().toBoolean()
+// EMI runtime is opt-in: it was parked during the ExtendedAE Plus encoding work and has not been
+// re-verified since. Pass -PmestRunEmi=true to include it. Compile-time EMI integration is kept
+// regardless so the EMI plugin compiles and can be enabled per-request.
+def mestRunEmi = project.hasProperty("mestRunEmi") && project.property("mestRunEmi").toString().toBoolean()
 // Modern UI replaces the client text/tooltip pipeline; a development switch makes it easy to
 // bisect GUI rendering issues between Modern UI and vanilla rendering.
 def mestRunMui = !project.hasProperty("mestRunMui") || project.property("mestRunMui").toString().toBoolean()
@@ -16,8 +19,6 @@ if (!mestRunJei) {
 if (!mestRunEmi) {
     configurations.clientLocalRuntime.exclude group: "dev.emi"
 }
-// EMI runtime is temporarily commented out below; keep transitives out too.
-configurations.clientLocalRuntime.exclude group: "dev.emi"
 
 dependencies {
     // AE2 + AE2WTLib API (compile-time only)
@@ -135,10 +136,12 @@ dependencies {
         // and viewer-disabled launch matrices.
         clientLocalRuntime "curse.maven:just-enough-characters-250702:${jech_file}"
     }
-    // Temporarily disabled EMI runtime (keep compileOnly EMI for optional integration).
-    // if (mestRunEmi) {
-    //     clientLocalRuntime "dev.emi:emi-neoforge:${emi_version}"
-    // }
+    // EMI runtime is opt-in: it was parked during the ExtendedAE Plus encoding work and has not
+    // been re-verified since. Pass -PmestRunEmi=true to include it. Compile-time EMI integration
+    // is kept regardless so the EMI plugin compiles and can be enabled per-request.
+    if (mestRunEmi) {
+        clientLocalRuntime "dev.emi:emi-neoforge:${emi_version}"
+    }
 
     // Client-only local runtime UI and input helpers
     if (mestRunMui) {

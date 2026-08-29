@@ -69,3 +69,18 @@ A spliceable, drag-and-drop ME terminal that unifies AE2 wireless terminal modul
     type="optional"
     ordering="AFTER"
     side="BOTH"
+
+# ExtendedAE — optional. Pattern-access rows reuse its highlight and message helpers; the pin-button
+# sprite is gated so MEST still renders without it.
+[[dependencies.${mod_id}]]
+    modId="extendedae"
+    type="optional"
+    ordering="AFTER"
+    side="CLIENT"
+
+# ClientSort — optional. Its inventory-sort button positions are re-projected for the floating workspace.
+[[dependencies.${mod_id}]]
+    modId="clientsort"
+    type="optional"
+    ordering="AFTER"
+    side="CLIENT"

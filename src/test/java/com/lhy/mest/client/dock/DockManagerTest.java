@@ -64,9 +64,9 @@ class DockManagerTest {
         remember.invoke(manager, second);
 
         assertTrue(manager.canUndoLayout());
-        Object stack = getField(manager, "undoStack");
-        assertEquals(2, ((java.util.Collection<?>) stack).size());
-        assertEquals(second, ((java.util.Deque<?>) stack).peekFirst());
+        WorkspaceUndoHistory history = (WorkspaceUndoHistory) getField(manager, "undoHistory");
+        assertEquals(2, history.size());
+        assertEquals(second, history.pop());
     }
 
     @Test

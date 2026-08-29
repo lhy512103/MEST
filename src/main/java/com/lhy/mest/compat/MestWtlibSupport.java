@@ -142,8 +142,9 @@ public final class MestWtlibSupport {
         player.connection.send(new ClientboundSetCarriedItemPacket(inventory.selected));
     }
 
+    /** The spliced terminal the player is carrying, once its wireless link is confirmed live. */
     @Nullable
-    private static MEStorage mestStorage(Player player) {
+    private static WTMenuHost linkedHost(Player player) {
         ItemMenuHostLocator locator = findMest(player);
         if (locator == null) {
             return null;
@@ -154,7 +155,26 @@ public final class MestWtlibSupport {
         }
         host.updateConnectedAccessPoint();
         host.updateLinkStatus();
-        if (!host.getLinkStatus().connected()) {
+        return host.getLinkStatus().connected() ? host : null;
+    }
+
+    /**
+     * True while the player still carries a spliced terminal with a live grid connection. Used to
+     * keep remotely opened machine menus from outliving the terminal that opened them.
+     */
+    public static boolean hasLinkedTerminal(Player player) {
+        WTMenuHost host = linkedHost(player);
+        if (host == null) {
+            return false;
+        }
+        IGridNode node = host.getActionableNode();
+        return node != null && node.isActive() && node.getGrid() != null;
+    }
+
+    @Nullable
+    private static MEStorage mestStorage(Player player) {
+        WTMenuHost host = linkedHost(player);
+        if (host == null) {
             return null;
         }
         IGridNode node = host.getActionableNode();

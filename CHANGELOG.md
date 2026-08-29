@@ -26,6 +26,8 @@
   buttons, scrollbars, slots, toolbars and crafting artwork.
 - Removed repeated per-frame slot activation and geometry writes when the
   projected layout has not changed.
+- Fixed floating panels keeping their item icons above other panels by moving slot rendering back to each root's own z layer.
+- Fixed revealing a hidden panel leaving it at the bottom of the stack; the terminal module toggle now raises the panel it shows.
 
 ### Terminal Interaction
 
@@ -74,6 +76,15 @@
   component preservation, recipe advancement, Curios tag and dedicated 16x16
   item texture.
 
+### Security And Hardening
+
+- Tightened the pattern-access remote-UI flow: menus open directly instead of simulating a right-click, and the keep-alive re-checks every second that the player still holds a linked terminal.
+- Aligned the cache, pick-block and picker packets with the provider-action protocol: safe decoding, trailing-data rejection, menu validation and per-player per-tick rate limits.
+- Raised the mixin require level so a failed injection fails fast instead of silently disabling the remote-menu keep-alive or restock overlay.
+- Gated the pin-button sprite behind ExtendedAE and declared ExtendedAE and ClientSort as optional dependencies.
+- Made `-PmestRunEmi=true` actually install the EMI runtime; EMI stays off by default.
+- Extracted `WorkspaceUndoHistory` and `DropCandidate` from `DockManager` so the bounded undo ring is independently testable.
+
 ### Verification
 
 - Added focused tests for recursive layout editing and persistence, v1 migration,
@@ -86,3 +97,14 @@
   metadata and Java 21 CI wrapper validation with retained build artifacts.
 - Full in-game GUI, reconnect/provider-churn and JEI/EMI combination checks remain
   part of the release verification matrix.
+
+### 中文
+
+- 工作区：修复浮窗物品图标始终盖在其它面板之上，槽位渲染移回各自根的 z 层。
+- 工作区：修复显示隐藏面板后仍留在最底层，终端模块切换改为显示的同时置顶。
+- 安全：收紧样板访问远程开 UI，直接打开菜单而非模拟右键，保活每秒重检玩家仍持有已链接终端。
+- 安全：将缓存、取物、供应器选择三个包的校验对齐到样板供应器动作协议，含安全解码、拒绝尾部数据、校验菜单与每玩家每 tick 限流。
+- 安全：提高 mixin 的 require 级别，注入失败不再静默退化。
+- 依赖：钉住按钮贴图按 ExtendedAE 加载状态守卫，ExtendedAE 与 ClientSort 声明为可选依赖。
+- 依赖：`-PmestRunEmi=true` 现在真正安装 EMI runtime，默认仍关闭。
+- 重构：从 `DockManager` 抽出 `WorkspaceUndoHistory` 与 `DropCandidate`，撤销环独立可测。

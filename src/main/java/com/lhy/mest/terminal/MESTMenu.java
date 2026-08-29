@@ -193,14 +193,22 @@ public class MESTMenu extends CraftingTermMenu {
         return patternAccessSession;
     }
 
+    /**
+     * True while this menu is the player's open, valid terminal. Covers every client packet that
+     * mutates terminal-owned state but does not need a live ME grid link (pattern cache, trash,
+     * encoding prefs).
+     */
+    public boolean canUseTerminal(ServerPlayer player) {
+        return isServerSide()
+                && getPlayer() == player
+                && player.containerMenu == this
+                && isValidMenu()
+                && stillValid(player)
+                && host.isValid();
+    }
+
     public boolean canUsePatternAccess(ServerPlayer player) {
-        if (!isServerSide()
-                || getPlayer() != player
-                || player.containerMenu != this
-                || !isValidMenu()
-                || !stillValid(player)
-                || !host.isValid()
-                || !getLinkStatus().connected()) {
+        if (!canUseTerminal(player) || !getLinkStatus().connected()) {
             return false;
         }
         var node = getGridNode();

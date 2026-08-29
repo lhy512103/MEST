@@ -19,14 +19,20 @@ public record MestPickBlockPacket(ItemStack stack) implements CustomPacketPayloa
     public static final StreamCodec<RegistryFriendlyByteBuf, MestPickBlockPacket> STREAM_CODEC =
             ItemStack.STREAM_CODEC.map(MestPickBlockPacket::new, MestPickBlockPacket::stack);
 
+    /** Middle-click is a human-paced action; a burst of packets within one tick is never legitimate. */
+    private static final PlayerTickBudgets BUDGETS = new PlayerTickBudgets(4);
+
     @Override
     public Type<? extends CustomPacketPayload> type() {
         return TYPE;
     }
 
     public static void handle(MestPickBlockPacket packet, IPayloadContext context) {
+        if (packet.stack().isEmpty()) {
+            return;
+        }
         context.enqueueWork(() -> {
-            if (context.player() instanceof ServerPlayer player) {
+            if (context.player() instanceof ServerPlayer player && BUDGETS.tryAcquire(player)) {
                 MestWtlibSupport.pickBlock(player, packet.stack());
             }
         });

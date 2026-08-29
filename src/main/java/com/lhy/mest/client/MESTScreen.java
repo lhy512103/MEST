@@ -1290,7 +1290,15 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     private void toggleModule(ModulePanel panel) {
         var policy = dock.policyFor(panel);
-        dock.setModulePolicy(panel, policy.withVisible(!policy.visible()));
+        if (policy.visible()) {
+            // Hiding: no z-order change needed.
+            dock.setModulePolicy(panel, policy.withVisible(false));
+        } else {
+            // Showing: make visible AND raise to the top layer. A hidden panel that was
+            // stacked at the back of the root list would otherwise reappear behind the panels
+            // that cover it, so the user could never click it.
+            dock.revealModule(panel);
+        }
         dock.save();
         attachMeSideBar();
         attachExtraSlotColumns();

@@ -301,6 +301,14 @@ public final class PatternAccessSession {
         return tryOpenTarget(player, tracker.container, level, loc.pos(), loc.face());
     }
 
+    /**
+     * Opens the UI of a block adjacent to the provider.
+     *
+     * <p>The menu-provider route is tried first because it only opens a container. Falling back to
+     * {@code useWithoutItem} simulates a real right-click, which would fire every other interaction
+     * the target block has (buttons, levers, machines with a use action) on a block the player may
+     * be thousands of blocks away from.
+     */
     private static boolean tryOpenTarget(ServerPlayer player, PatternContainer patternProvider,
             ServerLevel level, BlockPos pos, Direction face) {
         if (patternProvider instanceof PatternProviderLogicHost logicHost) {
@@ -308,8 +316,8 @@ public final class PatternAccessSession {
             if (targets != null) {
                 for (Direction direction : targets) {
                     BlockPos targetPos = pos.relative(direction);
-                    if (tryUseTargetBlock(player, level, targetPos, direction)
-                            || tryOpenAt(player, level, targetPos)) {
+                    if (tryOpenAt(player, level, targetPos)
+                            || tryUseTargetBlock(player, level, targetPos, direction)) {
                         return true;
                     }
                 }
@@ -318,13 +326,13 @@ public final class PatternAccessSession {
         }
         if (face != null) {
             BlockPos targetPos = pos.relative(face);
-            return tryUseTargetBlock(player, level, targetPos, face)
-                    || tryOpenAt(player, level, targetPos);
+            return tryOpenAt(player, level, targetPos)
+                    || tryUseTargetBlock(player, level, targetPos, face);
         }
         for (Direction direction : Direction.values()) {
             BlockPos targetPos = pos.relative(direction);
-            if (tryUseTargetBlock(player, level, targetPos, direction)
-                    || tryOpenAt(player, level, targetPos)) {
+            if (tryOpenAt(player, level, targetPos)
+                    || tryUseTargetBlock(player, level, targetPos, direction)) {
                 return true;
             }
         }

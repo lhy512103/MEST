@@ -16,7 +16,7 @@ public abstract class RemoteMenuMixin {
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/world/inventory/AbstractContainerMenu;stillValid(Lnet/minecraft/world/entity/player/Player;)Z"),
-            require = 0)
+            require = 1)
     private boolean mest$keepRemoteProviderMenuOpen(boolean original) {
         if (original) {
             return true;

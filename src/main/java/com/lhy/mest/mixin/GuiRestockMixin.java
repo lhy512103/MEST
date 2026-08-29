@@ -34,7 +34,8 @@ public class GuiRestockMixin {
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/gui/GuiGraphics;renderItemDecorations(Lnet/minecraft/client/gui/Font;Lnet/minecraft/world/item/ItemStack;II)V"),
-            cancellable = true)
+            cancellable = true,
+            require = 1)
     private void mest$restockOverlay(
             GuiGraphics guiGraphics,
             int x,
