@@ -85,8 +85,10 @@ public final class DockManager {
      * its own layer or every lower window's items composite above every later window's frame.
      */
     private static final float ROOT_LAYER_Z = 400.0F;
-    /** Lift per-root foreground (buttons, labels) above that root's own item icons. */
-    private static final float FOREGROUND_Z = 250.0F;
+    /** Lift resource textures above the root background; item rendering adds up to another 200 z. */
+    public static final float SLOT_CONTENT_Z = 50.0F;
+    /** Keep controls/labels above fluid sprites and item icons/decorations, but below the next root. */
+    private static final float FOREGROUND_Z = 300.0F;
     private int anchoredChromeLayer;
 
     private static final LayoutStyle LAYOUT_STYLE =
@@ -969,11 +971,26 @@ public final class DockManager {
                         panel.renderSectionHeader(graphics, font, routedMouseX, routedMouseY);
                     }
                     panel.renderBackgroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
-                    // Items live in renderBackground at the root's own z layer so a raised
-                    // window always composites above the items of a window stacked below it.
-                    // Drawing them in renderForeground instead (the previous design) made them
-                    // appear on top of every anchored panel because that pass runs last.
-                    panel.renderSlots(graphics, slotRenderer);
+                }
+                // GUI resources do not all use the same renderer: items render immediately while
+                // fluids and add-on key types may batch vertices. Commit the whole root background
+                // before drawing its slots, then commit the slots before a higher root starts.
+                graphics.flush();
+                if (slotRenderer != null) {
+                    graphics.pose().pushPose();
+                    graphics.pose().translate(0.0F, 0.0F, SLOT_CONTENT_Z);
+                    try {
+                        for (LeafNode leaf : leavesOf(root)) {
+                            if (projection.visibleLeaf(leaf.nodeId()).isEmpty()) {
+                                continue;
+                            }
+                            ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+                            panel.renderSlots(graphics, slotRenderer);
+                        }
+                        graphics.flush();
+                    } finally {
+                        graphics.pose().popPose();
+                    }
                 }
                 renderDividers(graphics, root, hoveredDivider);
                 ModulePanel.renderResizeGrip(graphics, root.bounds());
@@ -1209,10 +1226,7 @@ public final class DockManager {
         return true;
     }
 
-    /**
-     * Pose-stack Z used for the vanilla/AE2 slot hover overlay so it composites with the
-     * same floating root as the slot icons instead of falling behind a raised window.
-     */
+    /** Pose-stack Z for the vanilla slot highlight overlay in the same root as the slot. */
     public float slotHighlightZ(ModulePanel panel) {
         ensureProjection();
         LeafNode leaf = leafForPanel(panel);

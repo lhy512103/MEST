@@ -65,6 +65,7 @@ import appeng.helpers.InventoryAction;
 import appeng.items.storage.ViewCellItem;
 import appeng.menu.SlotSemantics;
 import appeng.menu.me.common.GridInventoryEntry;
+import appeng.menu.slot.FakeSlot;
 import appeng.util.Platform;
 
 import de.mari_023.ae2wtlib.api.gui.AE2wtlibSlotSemantics;
@@ -134,12 +135,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private TabButton craftingStatusBtn;
     private final List<ItemStack> currentViewCells = new ArrayList<>();
     private final Set<AEKey> craftableKeys = new HashSet<>();
-    /**
-     * True only while drawing slot icons inside the per-panel / extra-column render pass. Distinguishes that
-     * pass (draw the icon) from the vanilla per-slot loop (skip those icons, since the chrome pass already
-     * drew them).
-     */
-    private boolean drawingPanelSlots = false;
+    /** True while DockManager is drawing owned slots inside their root's ordered composite pass. */
+    private boolean drawingRootSlots;
     private boolean hoverFrameReady;
     private int hoverCacheX = Integer.MIN_VALUE;
     private int hoverCacheY = Integer.MIN_VALUE;
@@ -732,34 +729,27 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     @Override
     public void drawBG(GuiGraphics g, int offsetX, int offsetY, int mouseX, int mouseY, float partialTicks) {
         syncResizeCursor(mouseX, mouseY);
-        // No global background (floating panels only). Draw each panel's frame → background content → owned
-        // slot icons back-to-front, so a top panel's frame paints over a lower panel's slot icons. Slot icons
-        // are drawn here (in the panel pass) instead of in the vanilla per-slot loop to get z-order right.
-        drawingPanelSlots = true;
+        // Composite every root atomically (background -> owned slots -> next root). AE key renderers
+        // mix immediate item rendering with batched fluids/add-on types, so a later global slot pass
+        // cannot preserve window order reliably even when all calls receive a pose-stack z offset.
+        drawingRootSlots = true;
         try {
             dock.renderBackground(
-                    g, this.font, mouseX, mouseY, partialTicks, this::drawPanelSlot, this::renderAnchoredChrome);
+                    g, this.font, mouseX, mouseY, partialTicks, this::drawRootSlot, this::renderAnchoredChrome);
         } finally {
-            drawingPanelSlots = false;
+            drawingRootSlots = false;
         }
     }
 
-    /**
-     * Per-slot draw delegate passed to panels. Reuses AE2's existing RepoSlot / AppEngSlot rendering (via
-     * {@link #renderSlot}, which honors {@link #drawingPanelSlots}) so no slot rendering logic is duplicated.
-     */
-    private void drawPanelSlot(GuiGraphics g, Slot s) {
-        renderSlot(g, s);
+    private void drawRootSlot(GuiGraphics g, Slot slot) {
+        renderSlotContents(g, slot);
     }
 
     @Override
     public void drawFG(GuiGraphics g, int offsetX, int offsetY, int mouseX, int mouseY) {
-        drawingPanelSlots = true;
-        try {
-            dock.renderForeground(g, this.font, mouseX, mouseY, 0, this::drawPanelSlot);
-        } finally {
-            drawingPanelSlots = false;
-        }
+        // Foreground is for panel controls and labels only. Panel-owned slots are intentionally not
+        // rendered here, otherwise every window's slots would be drawn after every window's chrome.
+        dock.renderForeground(g, this.font, mouseX, mouseY, 0);
     }
 
     @Override
@@ -874,18 +864,29 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 g.pose().popPose();
             }
         }
-        drawingPanelSlots = true;
-        try {
-            if (upgradeColumn != null && upgradeColumn.isVisible()) {
-                upgradeColumn.renderBackground(g);
-                upgradeColumn.renderSlots(g, this::drawPanelSlot);
+        if (upgradeColumn != null && upgradeColumn.isVisible()) {
+            upgradeColumn.renderBackground(g);
+            g.flush();
+            g.pose().pushPose();
+            try {
+                g.pose().translate(0.0F, 0.0F, DockManager.SLOT_CONTENT_Z);
+                upgradeColumn.renderSlots(g, this::drawRootSlot);
+                g.flush();
+            } finally {
+                g.pose().popPose();
             }
-            if (viewCellColumn != null && viewCellColumn.isVisible()) {
-                viewCellColumn.renderBackground(g);
-                viewCellColumn.renderSlots(g, this::drawPanelSlot);
+        }
+        if (viewCellColumn != null && viewCellColumn.isVisible()) {
+            viewCellColumn.renderBackground(g);
+            g.flush();
+            g.pose().pushPose();
+            try {
+                g.pose().translate(0.0F, 0.0F, DockManager.SLOT_CONTENT_Z);
+                viewCellColumn.renderSlots(g, this::drawRootSlot);
+                g.flush();
+            } finally {
+                g.pose().popPose();
             }
-        } finally {
-            drawingPanelSlots = false;
         }
     }
 
@@ -996,6 +997,71 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         return new Rect2i(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
     }
+
+    /**
+     * EMI/JEI ghost-ingredient drop onto the topmost floating (or anchored) panel. AE2's generic
+     * handler walks every {@link FakeSlot} and ignores z-order, so a covered encoding grid would
+     * steal drops from the raised window — or, with slots parked at -9999, accept nothing.
+     */
+    public boolean dropRecipeViewerStack(GenericStack stack, int x, int y) {
+        ModulePanel top = dock.topLeafAt(x, y);
+        if (top == null || stack == null) {
+            return false;
+        }
+        ItemStack item = wrapFilterAsItem(stack);
+        for (Slot slot : getMenu().slots) {
+            if (!slot.isActive() || !(slot instanceof FakeSlot fake) || !top.ownsSlot(slot)) {
+                continue;
+            }
+            if (slot.x <= -1000 || slot.y <= -1000) {
+                continue;
+            }
+            if (x < slot.x || x >= slot.x + 16 || y < slot.y || y >= slot.y + 16) {
+                continue;
+            }
+            if (fake.canSetFilterTo(item)) {
+                fake.setFilterTo(item);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Highlight z-order-correct ghost-slot drop targets while EMI is dragging an ingredient. */
+    public void renderRecipeViewerDropTargets(GuiGraphics graphics, Set<GenericStack> stacks) {
+        if (stacks == null || stacks.isEmpty()) {
+            return;
+        }
+        for (Slot slot : getMenu().slots) {
+            if (!slot.isActive() || !(slot instanceof FakeSlot fake)
+                    || slot.x <= -1000 || slot.y <= -1000) {
+                continue;
+            }
+            ModulePanel top = dock.topLeafAt(slot.x + 8, slot.y + 8);
+            if (top == null || !top.ownsSlot(slot)) {
+                continue;
+            }
+            boolean any = false;
+            for (GenericStack stack : stacks) {
+                if (stack != null && fake.canSetFilterTo(wrapFilterAsItem(stack))) {
+                    any = true;
+                    break;
+                }
+            }
+            if (any) {
+                graphics.fill(slot.x, slot.y, slot.x + 16, slot.y + 16, 0x8822FF55);
+            }
+        }
+    }
+
+    private static ItemStack wrapFilterAsItem(GenericStack stack) {
+        AEKey key = stack.what();
+        if (key instanceof AEItemKey itemKey) {
+            return itemKey.toStack((int) Math.max(1L, Math.min(Integer.MAX_VALUE, stack.amount())));
+        }
+        return GenericStack.wrapInItemStack(key, Math.max(1L, stack.amount()));
+    }
+
     @Override
     public List<Rect2i> getExclusionZones() {
         List<Rect2i> zones = new ArrayList<>();
@@ -1313,27 +1379,26 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     /**
-     * Delegate RepoSlot rendering to the ME list panel; everything else uses the base behaviour.
-     *
-     * <p>This is invoked in two places: (1) the per-panel {@code renderSlots} pass (via {@link #drawPanelSlot}),
-     * where {@link #suppressVanillaSlotDraw} is true and we want the icon drawn; and (2) the vanilla per-slot
-     * loop, where panel-owned slots have <em>already</em> been drawn in the panel pass — so we must no-op for
-     * any panel-owned slot to avoid drawing it twice (which would re-introduce cross-panel icon bleed, since
-     * the vanilla loop iterates in flat index order, not z-order).
+     * Panel and attached-column slots are drawn in the owning root's ordered background composite.
+     * The later vanilla/AE2 flat slot loop must skip them or it would redraw lower-window contents
+     * above raised windows. Slots not owned by terminal chrome retain the base rendering path.
      */
     @Override
     public void renderSlot(GuiGraphics g, Slot s) {
-        if (!drawingPanelSlots && (s instanceof RepoSlot || extraColumnOwns(s) || dock.ownsSlot(s))) {
-            // Vanilla per-slot loop: chrome pass already drew this slot. Skip.
+        if (s.x <= -1000 || s.y <= -1000) {
             return;
         }
+        if (!drawingRootSlots && (dock.ownsSlot(s) || extraColumnOwns(s))) {
+            return;
+        }
+        renderSlotContents(g, s);
+    }
+
+    private void renderSlotContents(GuiGraphics g, Slot s) {
         if (s instanceof RepoSlot repoSlot) {
             if (meListPanel != null) {
                 meListPanel.renderRepoSlot(g, this.font, repoSlot);
             }
-            return;
-        }
-        if (s.x <= -1000 || s.y <= -1000) {
             return;
         }
         if (s instanceof ArmorSlot armorSlot && armorSlot.getItem().isEmpty() && armorSlot.isSlotEnabled()) {
@@ -1371,7 +1436,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             }
         }
         if (hoverTop != null) {
-            return dock.panelForSlot(slot) == hoverTop && super.isHovering(slot, mx, my);
+            // Own-slot identity, not the projection cache: a floating panel can be visible and
+            // hit-tested before panelForSlot() has a fresh mapping, which made encoding/crafting
+            // ghost slots unclickable (no hover, no EMI/JEI drop, no place).
+            return hoverTop.ownsSlot(slot) && super.isHovering(slot, mx, my);
         }
         return super.isHovering(slot, mx, my);
     }

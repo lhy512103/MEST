@@ -20,6 +20,13 @@ if (!mestRunEmi) {
     configurations.clientLocalRuntime.exclude group: "dev.emi"
 }
 
+// Always-on EMI launch path used by runClientEmi. Keep JEI filters in sync with
+// the default client run, but never exclude EMI from this configuration.
+if (!mestRunJei) {
+    configurations.clientLocalRuntimeEmi.exclude group: "mezz.jei"
+    configurations.clientLocalRuntimeEmi.exclude group: "curse.maven", module: "ae2-jei-integration-1074338"
+}
+
 dependencies {
     // AE2 + AE2WTLib API (compile-time only)
     compileOnly "org.appliedenergistics:appliedenergistics2:${ae2_version}"
@@ -152,6 +159,22 @@ dependencies {
     clientLocalRuntime "curse.maven:searchables-858542:${searchables_file}"
     clientLocalRuntime "curse.maven:controlling-250398:${controlling_file}"
     clientLocalRuntime "curse.maven:imblocker-483760:${imblocker_file}"
+
+    // Mirror the default client-local runtime, then always add EMI for runClientEmi.
+    if (mestRunJei) {
+        clientLocalRuntimeEmi "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
+        clientLocalRuntimeEmi "curse.maven:ae2-jei-integration-1074338:${ae2jei_integration_file}"
+        clientLocalRuntimeEmi "curse.maven:just-enough-characters-250702:${jech_file}"
+    }
+    clientLocalRuntimeEmi "dev.emi:emi-neoforge:${emi_version}"
+    if (mestRunMui) {
+        clientLocalRuntimeEmi "curse.maven:modern-ui-352491:${modern_ui_file}"
+    }
+    clientLocalRuntimeEmi "curse.maven:mouse-tweaks-60089:${mouse_tweaks_file}"
+    clientLocalRuntimeEmi "curse.maven:configured-457570:${configured_file}"
+    clientLocalRuntimeEmi "curse.maven:searchables-858542:${searchables_file}"
+    clientLocalRuntimeEmi "curse.maven:controlling-250398:${controlling_file}"
+    clientLocalRuntimeEmi "curse.maven:imblocker-483760:${imblocker_file}"
 }
 
 // The clientRuntime source set is launch-only and has no sources of its own. Its
@@ -163,4 +186,10 @@ sourceSets.clientRuntime.runtimeClasspath = files(
         configurations.clientRuntimeRuntimeClasspath,
         sourceSets.main.runtimeClasspath,
         configurations.clientLocalRuntime
+)
+sourceSets.clientRuntimeEmi.runtimeClasspath = files(
+        sourceSets.clientRuntimeEmi.output,
+        configurations.clientRuntimeEmiRuntimeClasspath,
+        sourceSets.main.runtimeClasspath,
+        configurations.clientLocalRuntimeEmi
 )

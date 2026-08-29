@@ -43,6 +43,7 @@ repo/
 .agents/
 .uploads/
 .reasonix/
+.workbuddy/
 reasonix.toml
 .eclipse/
 .vscode/

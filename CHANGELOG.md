@@ -4,107 +4,84 @@
 
 ### Workspace
 
-- Rebuilt the layout editor as a full-canvas, AE2-styled authoring surface: the real floating
-  workspace renders on a dark grid canvas surrounded by AE2 chrome (toolbar, module palette,
-  property inspector), and every drag/splice/resize/detach gesture works directly on the canvas.
-- Added press-and-drag palette placement: dragging a sidebar module entry reveals and places the
-  module, detaching it from composite splits when needed, with the same undo/save semantics as
-  in-canvas gestures.
-- Added visual-programming splice affordances: while a root is dragged, the four edge zones of
-  the hovered leaf light up and the zone that would receive the drop is emphasized.
-- Replaced the flat snap-based panel layout with floating recursive split trees,
-  including edge drop zones, nested joining, divider resizing and branch detach.
-- Added z-order-aware rendering and input, effective leaf visibility, panel slot
-  ownership, click-through blocking and viewport clamping.
-- Added the v3 layout format with per-module visibility/movement/resize policies,
-  v1/v2 migration, strict validation, atomic replacement and dirty-revision saves.
-  Module policy is now the only visibility and interaction authority; legacy leaf
-  visibility is migration-only compatibility data.
-- Added a session-only layout lock, one-step undo, compact floating preset and
-  reset-to-default control.
-- Restyled the workspace with AE2-native panel backgrounds, search fields,
-  buttons, scrollbars, slots, toolbars and crafting artwork.
-- Removed repeated per-frame slot activation and geometry writes when the
-  projected layout has not changed.
-- Fixed floating panels keeping their item icons above other panels by moving slot rendering back to each root's own z layer.
-- Fixed revealing a hidden panel leaving it at the bottom of the stack; the terminal module toggle now raises the panel it shows.
+- Rebuilt the layout editor as a full-canvas AE2-styled surface with palette drag-place and splice-zone highlights.
+- Replaced snap-based panels with floating recursive split trees, including join, resize, detach, z-order, and viewport clamping.
+- Added the v3 layout format with per-module policies, v1/v2 migration, validation, and atomic dirty-revision saves.
+- Added a session-only layout lock, one-step undo, compact preset, and reset-to-default.
+- Restyled the workspace with AE2-native chrome and skipped unchanged per-frame slot/geometry writes.
+- Fixed panel item icons rendering above other panels, and raising a panel when its module is shown.
 
 ### Terminal Interaction
 
-- Restored AE2-style ME list actions for container fill/empty, space-click region
-  moves, shift-wheel insertion/extraction and pick-item autocrafting.
-- Added craftable-only behavior and craftable indicators for both stocked and
-  zero-stock entries while retaining view-cell filtering.
-- Added separate crafting-grid clear actions for ME storage and player inventory.
+- Restored AE2-style ME list actions for fill/empty, region moves, shift-wheel transfer, and pick-item autocrafting.
+- Added craftable-only filtering, craftable indicators, and separate crafting-grid clear actions for ME and player inventory.
 
 ### Pattern Workflows
 
-- Added crafting, processing, smithing-table and stonecutting encoding modes to
-  the floating pattern module.
-- Added scrollable processing inputs, a scrollable full stonecutting recipe
-  picker with native selection sound and an AE2-style processing amount editor.
-- Added item/fluid quantity hints, craftable indicators, fluid substitution and
-  fluid-container-aware interactions.
-- Kept the encoded output intact when clearing pattern inputs and corrected
-  processing and stonecutting scrolling.
-- Rebuilt pattern-provider synchronization around menu epochs, epoch-scoped
-  provider IDs, per-provider revisions, bounded chunks and client
-  resynchronization.
-- Added stale-action rejection, subscription cleanup, request/packet limits and
-  conserving exchange and quick-move transactions for provider slots.
-- Made provider request, action and packet budgets advance from server game time
-  so repeated menu broadcasts cannot reset the per-tick limits.
-- Cleared client provider-session state on terminal close, screen replacement
-  and disconnect, while preserving updates during the processing-amount
-  sub-screen.
-- Removed client UI linkage from common packet classes by routing S2C handling
-  through a client-installed bridge, keeping dedicated-server class loading safe.
-- Corrected menu-derived stonecutting selection and fluid-substitution state
-  refreshes, and reduced provider chunk preparation to one defensive copy.
+- Added crafting, processing, smithing, and stonecutting encoding modes with scrolling pickers and an AE2-style amount editor.
+- Added quantity hints, craftable indicators, fluid substitution, and keep-encoded-output-on-clear behavior.
+- Rebuilt provider sync around menu epochs, revisions, bounded chunks, stale-action rejection, and per-tick budgets on server game time.
+- Cleared client provider session state on close/disconnect and routed S2C handling through a client-only bridge.
 
 ### Integrations And Acquisition
 
-- Added JEI and EMI transfer bridges that target the last-focused crafting or
-  pattern-encoding module. Crafting uses AE2 transfer; encoding accepts crafting,
-  smithing, stonecutting and generic processing recipes.
-- Added independent `mestRunJei` and `mestRunEmi` Gradle development-runtime
-  switches, with both viewers enabled by default.
-- Isolated the launch-only client runtime from compile-only optional integrations
-  and kept JEI-specific AE2/character-search addons out of EMI-only and
-  viewer-disabled runs.
-- Added a survival smithing upgrade from the wireless universal terminal,
-  component preservation, recipe advancement, Curios tag and dedicated 16x16
-  item texture.
+- Added JEI and EMI transfer bridges that target the last-focused crafting or encoding module.
+- Added independent `mestRunJei` and `mestRunEmi` runtime switches and isolated optional viewer integrations from compile.
+- Added `runClientEmi` so the Gradle task tree can launch the client with EMI without `-P` flags.
+- Added a survival smithing upgrade from the wireless universal terminal, with component preservation, advancement, Curios tag, and item texture.
 
 ### Security And Hardening
 
-- Tightened the pattern-access remote-UI flow: menus open directly instead of simulating a right-click, and the keep-alive re-checks every second that the player still holds a linked terminal.
-- Aligned the cache, pick-block and picker packets with the provider-action protocol: safe decoding, trailing-data rejection, menu validation and per-player per-tick rate limits.
-- Raised the mixin require level so a failed injection fails fast instead of silently disabling the remote-menu keep-alive or restock overlay.
-- Gated the pin-button sprite behind ExtendedAE and declared ExtendedAE and ClientSort as optional dependencies.
+- Tightened remote pattern-access UI so menus open directly and keep-alive re-checks the linked terminal every second.
+- Aligned cache, pick-block, and picker packets with the provider-action protocol, including rate limits and trailing-data rejection.
+- Raised mixin require so failed injections fail fast, and gated the pin-button sprite behind optional ExtendedAE.
 - Made `-PmestRunEmi=true` actually install the EMI runtime; EMI stays off by default.
-- Extracted `WorkspaceUndoHistory` and `DropCandidate` from `DockManager` so the bounded undo ring is independently testable.
+- Extracted `WorkspaceUndoHistory` and `DropCandidate` from `DockManager` for independent testing.
 
 ### Verification
 
-- Added focused tests for recursive layout editing and persistence, v1 migration,
-  ME interaction policy, recipe-transfer targeting, provider protocol state,
-  provider chunk planning, resource consistency and lossless inventory transfer
-  behavior.
-- Corrected the recipe advancement resource path, removed unused client style and
-  configuration files, and pruned orphaned translations.
-- Added dependency locking, reproducible archive settings, bounded dependency
-  metadata and Java 21 CI wrapper validation with retained build artifacts.
-- Full in-game GUI, reconnect/provider-churn and JEI/EMI combination checks remain
-  part of the release verification matrix.
+- Added focused tests for layout, ME interaction, recipe transfer, provider protocol, and inventory transfer.
+- Corrected the recipe advancement path and pruned unused client files and translations.
+- Added dependency locking, reproducible archives, and Java 21 CI wrapper validation.
 
-### 中文
+### 工作区
 
-- 工作区：修复浮窗物品图标始终盖在其它面板之上，槽位渲染移回各自根的 z 层。
-- 工作区：修复显示隐藏面板后仍留在最底层，终端模块切换改为显示的同时置顶。
-- 安全：收紧样板访问远程开 UI，直接打开菜单而非模拟右键，保活每秒重检玩家仍持有已链接终端。
-- 安全：将缓存、取物、供应器选择三个包的校验对齐到样板供应器动作协议，含安全解码、拒绝尾部数据、校验菜单与每玩家每 tick 限流。
-- 安全：提高 mixin 的 require 级别，注入失败不再静默退化。
-- 依赖：钉住按钮贴图按 ExtendedAE 加载状态守卫，ExtendedAE 与 ClientSort 声明为可选依赖。
-- 依赖：`-PmestRunEmi=true` 现在真正安装 EMI runtime，默认仍关闭。
-- 重构：从 `DockManager` 抽出 `WorkspaceUndoHistory` 与 `DropCandidate`，撤销环独立可测。
+- 布局编辑器改为全画布 AE2 风格，支持从侧栏拖放放置模块，并在拖动时高亮拼接区域。
+- 用可递归拼接的浮窗树替换吸附式面板，支持拼接、分割条缩放、拆分、z 序与视口钳制。
+- 新增 v3 布局格式：按模块策略控制可见/移动/缩放，含 v1/v2 迁移、校验与脏修订原子保存。
+- 新增会话级布局锁定、一步撤销、紧凑预设与重置默认。
+- 工作区改用 AE2 原生控件风格，布局未变化时不再每帧重复写槽位与几何。
+- 修复浮窗物品图标盖住其它面板，以及显示隐藏面板后仍留在最底层的问题。
+
+### 终端交互
+
+- 恢复 AE2 风格的 ME 列表操作：容器填倒、空格区域移动、Shift 滚轮存取、取物自动合成。
+- 新增仅显示可合成、可合成标记，以及分别清空到 ME 或玩家背包的合成格清空操作。
+
+### 样板流程
+
+- 浮动样板模块支持合成、处理、锻造与切石编码，含滚动选择与 AE2 风格数量编辑。
+- 新增数量提示、可合成标记、流体替代，清空输入时保留已编码输出。
+- 按菜单 epoch、修订号、分块与每 tick 预算重建供应器同步，并拒绝过期操作。
+- 关闭/断线时清理客户端供应器会话，S2C 经客户端桥接处理以免污染服务端类加载。
+
+### 集成与获取
+
+- 新增 JEI/EMI 配方传输桥，目标为最近聚焦的合成或编码模块。
+- 新增独立的 `mestRunJei` / `mestRunEmi` 运行时开关，并将可选查看器与编译隔离。
+- 新增 `runClientEmi`，Gradle 任务树可直接带 EMI 启动客户端，不必再传 `-P`。
+- 新增由无线通用终端锻造升级的生存获取路径，保留组件、进度、Curios 标签与物品贴图。
+
+### 安全与加固
+
+- 收紧远程样板开 UI：直接打开菜单，保活每秒重检玩家仍持有已链接终端。
+- 将缓存、取物、选择包的校验对齐到供应器动作协议，含限流与拒绝尾部数据。
+- 提高 mixin require，注入失败立即报错；钉住按钮贴图按可选 ExtendedAE 守卫。
+- `-PmestRunEmi=true` 现在会真正安装 EMI runtime，默认仍关闭。
+- 从 `DockManager` 抽出 `WorkspaceUndoHistory` 与 `DropCandidate`，撤销环独立可测。
+
+### 验证
+
+- 补充布局、ME 交互、配方传输、供应器协议与物品转移相关测试。
+- 修正配方进度资源路径，并清理无用客户端文件与孤立翻译。
+- 增加依赖锁定、可复现归档与 Java 21 CI wrapper 校验。

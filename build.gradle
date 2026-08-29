@@ -128,6 +128,9 @@ configurations {
         exclude group: "curse.maven", module: "just-enough-characters-250702"
     }
     clientLocalRuntime
+    // Dedicated EMI-on client launch classpath. Do not inherit
+    // clientLocalRuntime: that configuration excludes EMI when mestRunEmi is off.
+    clientLocalRuntimeEmi
     runtimeClasspath.extendsFrom localRuntime
 }
 
@@ -135,6 +138,10 @@ sourceSets {
     clientRuntime {
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
         runtimeClasspath += output + compileClasspath + sourceSets.main.runtimeClasspath + configurations.clientLocalRuntime
+    }
+    clientRuntimeEmi {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath + sourceSets.main.runtimeClasspath + configurations.clientLocalRuntimeEmi
     }
 }
 
@@ -166,6 +173,15 @@ neoForge {
             gameDirectory = project.file('run/client')
 
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        // Same as client, but always includes EMI. Distinct sourceSet so the
+        // Gradle task tree can launch either classpath without -P flags.
+        clientEmi {
+            client()
+            sourceSet = sourceSets.clientRuntimeEmi
+            gameDirectory = project.file('run/client')
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
@@ -220,6 +236,7 @@ neoForge {
         "${mod_id}" {
             sourceSet(sourceSets.main)
             sourceSet(sourceSets.clientRuntime)
+            sourceSet(sourceSets.clientRuntimeEmi)
         }
     }
 }

@@ -80,14 +80,15 @@ workspace whose modules can be moved, resized, split and rejoined.
   recipes use AE2's normal crafting transfer path when crafting is focused;
   crafting, smithing, stonecutting and generic processing recipes populate the
   matching encoding mode when pattern encoding is focused.
-- Local development enables JEI by default and leaves EMI opt-in. Use
-  `-PmestRunJei=false` to drop JEI, or `-PmestRunEmi=true` to add EMI. EMI
-  runtime was parked while the ExtendedAE Plus encoding work landed and has
-  not been re-verified since, so it stays off by default to keep the default
-  dev loop clean. These properties are development switches, not player-facing
-  mod configuration. The launch-only client classpath is assembled from runtime
-  dependencies so compile-only JEI/EMI integrations cannot leak into disabled
-  combinations; JEI-only helpers are also omitted when JEI is disabled.
+- Local development enables JEI by default and leaves EMI opt-in. `runClient`
+  does not load EMI. Use `runClientEmi` from the Gradle task tree (or
+  `./gradlew runClientEmi`) to launch the same client directory with EMI on
+  the classpath. `-PmestRunJei=false` still drops JEI from both runs;
+  `-PmestRunEmi=true` still adds EMI to the default `runClient`. These are
+  development switches, not player-facing mod configuration. The launch-only
+  client classpath is assembled from runtime dependencies so compile-only
+  JEI/EMI integrations cannot leak into disabled combinations; JEI-only
+  helpers are also omitted when JEI is disabled.
 
 ## Development Notes
 

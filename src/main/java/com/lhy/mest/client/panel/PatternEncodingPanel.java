@@ -80,14 +80,6 @@ public class PatternEncodingPanel extends ModulePanel {
     private int stonecuttingScroll;
     private final Scrollbar scrollbar = new Scrollbar();
     private RecipeHolder<StonecutterRecipe> hoveredStonecuttingRecipe;
-    private EncodingMode lastLayoutMode;
-    private int lastLayoutX = Integer.MIN_VALUE;
-    private int lastLayoutY = Integer.MIN_VALUE;
-    private int lastLayoutWidth = Integer.MIN_VALUE;
-    private int lastLayoutHeight = Integer.MIN_VALUE;
-    private boolean lastLayoutVisible;
-    private boolean lastLayoutHosted;
-    private boolean lastLayoutTabsOutside;
 
     public PatternEncodingPanel(MESTMenu menu) {
         this.menu = menu;
@@ -219,9 +211,9 @@ public class PatternEncodingPanel extends ModulePanel {
     }
 
     public void tick() {
-        if (layoutStateChanged()) {
-            layoutSlots();
-        }
+        // Slot activity can change without x/y/mode changing (server sync of encoding mode,
+        // first client activation). Always re-place so ghost slots do not stay at -9999.
+        layoutSlots();
         updateWidgets();
     }
 
@@ -232,7 +224,6 @@ public class PatternEncodingPanel extends ModulePanel {
             for (AbstractWidget widget : widgets) {
                 widget.visible = false;
             }
-            rememberLayoutState();
             return;
         }
 
@@ -252,7 +243,6 @@ public class PatternEncodingPanel extends ModulePanel {
         } else if (mode == EncodingMode.STONECUTTING) {
             setSlot(menu.getStonecuttingInputSlot(), bgX + 7, bgY + 25);
         }
-        rememberLayoutState();
     }
 
     private void layoutCraftingSlots(int bgX, int bgY) {
@@ -288,28 +278,6 @@ public class PatternEncodingPanel extends ModulePanel {
         setSlot(menu.getSmithingTableTemplateSlot(), bgX + 7, bgY + 25);
         setSlot(menu.getSmithingTableBaseSlot(), bgX + 25, bgY + 25);
         setSlot(menu.getSmithingTableAdditionSlot(), bgX + 43, bgY + 25);
-    }
-
-    private boolean layoutStateChanged() {
-        return lastLayoutMode != menu.getPatternEncodingMode()
-                || lastLayoutX != x
-                || lastLayoutY != y
-                || lastLayoutWidth != width
-                || lastLayoutHeight != height
-                || lastLayoutVisible != visible
-                || lastLayoutHosted != hosted
-                || lastLayoutTabsOutside != tabsOutside();
-    }
-
-    private void rememberLayoutState() {
-        lastLayoutMode = menu.getPatternEncodingMode();
-        lastLayoutX = x;
-        lastLayoutY = y;
-        lastLayoutWidth = width;
-        lastLayoutHeight = height;
-        lastLayoutVisible = visible;
-        lastLayoutHosted = hosted;
-        lastLayoutTabsOutside = tabsOutside();
     }
 
     private void hideOwnedSlots() {
