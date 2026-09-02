@@ -54,7 +54,6 @@ public abstract class ModulePanel {
     public int contentRightInset;
     /** False when another visible leaf in the same window sits to the right. */
     public boolean rightmostInWindow = true;
-
     /** Reserved inner width on the right of this leaf (ME scroller when a sibling sits to the right). */
     public int preferredContentRightInset() {
         return 0;
@@ -177,6 +176,14 @@ public abstract class ModulePanel {
     }
 
     /**
+     * True for right-edge chrome whose {@code vertical_buttons_bg} well may be joined with an
+     * adjacent panel: ME/pattern-access scroll rails, and encoding mode tabs when they hang outside.
+     */
+    public boolean hasJoinableOutsideRail() {
+        return false;
+    }
+
+    /**
      * When several right-edge scroll rails stack in one window, only the top panel paints
      * the shared 9-slice background; others keep their own track/handle.
      */
@@ -185,7 +192,7 @@ public abstract class ModulePanel {
     public int joinedRailH;
 
     public void resetJoinedRail() {
-        drawOutsideRail = outsideHitWidth() > 0;
+        drawOutsideRail = hasJoinableOutsideRail();
         joinedRailY = y;
         joinedRailH = height;
     }

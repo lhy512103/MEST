@@ -949,6 +949,8 @@ public final class DockManager {
                     boolean skipRightShadow = false;
                     for (LeafNode leaf : leavesOf(root)) {
                         ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+                        // Any outside chrome needs the shared frame's right shadow suppressed;
+                        // rail joining itself is handled separately by hasJoinableOutsideRail().
                         if (panel != null && panel.outsideHitWidth() > 0) {
                             skipRightShadow = true;
                             break;
@@ -956,7 +958,7 @@ public final class DockManager {
                     }
                     ModulePanel.renderRootChrome(graphics, contentChromeBounds(root), skipRightShadow);
                 }
-                for (LeafNode leaf : leavesOf(root)) {
+                for (LeafNode leaf : paintLeaves(root)) {
                     var placement = projection.visibleLeaf(leaf.nodeId());
                     if (placement.isEmpty()) {
                         continue;
@@ -1852,10 +1854,14 @@ public final class DockManager {
     }
 
     private void joinOutsideRails() {
+        joinOutsideRails(panelsByModuleId.values());
+    }
+
+    static void joinOutsideRails(Iterable<ModulePanel> panels) {
         var clusters = new HashMap<String, List<ModulePanel>>();
-        for (ModulePanel panel : panelsByModuleId.values()) {
+        for (ModulePanel panel : panels) {
             panel.resetJoinedRail();
-            if (!panel.visible || panel.outsideHitWidth() <= 0) {
+            if (!panel.visible || !panel.hasJoinableOutsideRail()) {
                 continue;
             }
             int railX = panel.x + panel.width;
@@ -2296,6 +2302,23 @@ public final class DockManager {
             leavesCache.put(root.rootId(), cached);
         }
         return cached;
+    }
+
+    /**
+     * Top-to-bottom paint order so a joined right-edge well is committed before siblings draw
+     * tabs or scroller handles on top of it.
+     */
+    private List<LeafNode> paintLeaves(FloatingRoot root) {
+        List<LeafNode> leaves = leavesOf(root);
+        if (leaves.size() < 2) {
+            return leaves;
+        }
+        List<LeafNode> ordered = new ArrayList<>(leaves);
+        ordered.sort(Comparator.comparingInt(leaf -> {
+            ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+            return panel == null ? 0 : panel.y;
+        }));
+        return ordered;
     }
 
     private FloatingRoot topRootAt(double mouseX, double mouseY, String excludedRootId) {

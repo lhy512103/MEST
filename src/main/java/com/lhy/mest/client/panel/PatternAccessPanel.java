@@ -172,6 +172,11 @@ public class PatternAccessPanel extends ModulePanel {
     }
 
     @Override
+    public boolean hasJoinableOutsideRail() {
+        return scrollerOutside();
+    }
+
+    @Override
     public int preferredContentRightInset() {
         return visible && !scrollerOutside() ? INSIDE_GUTTER : 0;
     }

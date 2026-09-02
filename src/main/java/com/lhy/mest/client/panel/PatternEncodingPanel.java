@@ -11,6 +11,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
@@ -31,6 +32,7 @@ import appeng.core.localization.GuiText;
 import appeng.menu.slot.AppEngSlot;
 import appeng.parts.encoding.EncodingMode;
 
+import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.Scrollbar;
 import com.lhy.mest.terminal.MESTMenu;
@@ -41,8 +43,10 @@ import com.lhy.mest.terminal.MESTMenu;
  * picked up through {@link EncodingMode#values()} and the menu's slot arrays.
  *
  * <p>Mode tabs hang off the right of a standalone (or rightmost) window, matching the original
- * chrome. When another module sits to the right, they tuck inside the leaf so they do not paint
- * over the sibling; the blank/encoded column then shifts left just enough to stay clear.
+ * chrome. When stacked with an ME/pattern-access scroller well they share that
+ * {@code vertical_buttons_bg} strip. When another module sits to the right, they tuck inside
+ * the leaf so they do not paint over the sibling; the blank/encoded column then shifts left
+ * just enough to stay clear.
  */
 public class PatternEncodingPanel extends ModulePanel {
     private static final int MODE_W = 124;
@@ -51,6 +55,11 @@ public class PatternEncodingPanel extends ModulePanel {
     private static final int TAB_W = 22;
     private static final int TAB_H = 22;
     private static final int TAB_OUTSIDE_OVERLAP = 3;
+    private static final int RAIL_SPRITE_WIDTH = 21;
+    private static final int RAIL_OVERLAP = 2;
+    private static final int RAIL_SHIFT_X = 2;
+    private static final ResourceLocation RAIL_SPRITE = ResourceLocation.fromNamespaceAndPath(
+            MESplicedterminal.MODID, "vertical_buttons_bg");
     /** Vanilla gap between the encoded-pattern slot (ends at 165) and the tab column (173). */
     private static final int TAB_GAP = 8;
     private static final int PATTERN_SLOT_X = 139;
@@ -210,6 +219,11 @@ public class PatternEncodingPanel extends ModulePanel {
         return visible && !tabsOutside() ? TAB_W : 0;
     }
 
+    @Override
+    public boolean hasJoinableOutsideRail() {
+        return tabsOutside();
+    }
+
     public void tick() {
         // Slot activity can change without x/y/mode changing (server sync of encoding mode,
         // first client activation). Always re-place so ghost slots do not stay at -9999.
@@ -343,6 +357,7 @@ public class PatternEncodingPanel extends ModulePanel {
     @Override
     public void renderBackgroundContent(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
         updateWidgets();
+        drawTabRail(g);
         int bgX = contentLeft();
         int bgY = contentTop();
         modeBackground(menu.getPatternEncodingMode()).dest(bgX, bgY).blit(g);
@@ -646,7 +661,21 @@ public class PatternEncodingPanel extends ModulePanel {
     }
 
     private boolean tabsOutside() {
-        return visible && (splicedWindow == null || x + width >= splicedWindow.right());
+        return visible && rightmostInWindow;
+    }
+
+    /**
+     * Same 9-slice well as {@link MEListPanel}'s outside scroller. Drawn only when this leaf is
+     * the top of a joined rail cluster so the strip is one piece behind the tabs and any
+     * scroller stacked below.
+     */
+    private void drawTabRail(GuiGraphics g) {
+        if (!tabsOutside() || !drawOutsideRail || joinedRailH <= height) {
+            return;
+        }
+        int railLeft = x + width - RAIL_OVERLAP + RAIL_SHIFT_X;
+        g.blitSprite(RAIL_SPRITE, railLeft - 2, joinedRailY, RAIL_SPRITE_WIDTH, joinedRailH);
+        g.flush();
     }
 
     private int tabX() {
