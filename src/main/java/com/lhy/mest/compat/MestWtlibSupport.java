@@ -9,6 +9,7 @@ import org.jetbrains.annotations.Nullable;
 import com.google.common.collect.Maps;
 
 import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ClientboundSetCarriedItemPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -375,7 +376,7 @@ public final class MestWtlibSupport {
             items.put(stack.getItem(), key == null ? 0L : list.get(key));
         }
         HashMap<Holder<Item>, Long> map = Maps.newHashMapWithExpectedSize(items.size());
-        items.forEach((item, count) -> map.put(item.builtInRegistryHolder(), count));
+        items.forEach((item, count) -> map.put(BuiltInRegistries.ITEM.wrapAsHolder(item), count));
         PacketDistributor.sendToPlayer(player, new MestRestockAmountPacket(map));
     }
 }

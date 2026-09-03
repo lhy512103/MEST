@@ -69,7 +69,6 @@ public class PatternAccessPanel extends ModulePanel {
     private static final int SEARCH_WIDTH = 65;
     private static final int SEARCH_HEIGHT = 10;
     private static final int MODE_BUTTON = 12;
-    private static final int RAIL_WIDTH = 20;
     private static final int RAIL_SPRITE_WIDTH = 21;
     private static final int RAIL_OVERLAP = 2;
     private static final int RAIL_SHIFT_X = 2;

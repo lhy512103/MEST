@@ -36,8 +36,6 @@ public class TrashPanel extends ModulePanel {
     private static final int TRACK_BORDER = 0xFFF2F2F2;
     private static final int TRACK_FILL = 0xFF9A9FB4;
 
-    private final MESTMenu menu;
-    private final MESTScreen screen;
     private final List<Slot> trashSlots;
     private final Scrollbar scrollbar = new Scrollbar(Scrollbar.SMALL);
     private final TabButton backButton;
@@ -47,8 +45,6 @@ public class TrashPanel extends ModulePanel {
     private boolean scrollbarDragging;
 
     public TrashPanel(MESTMenu menu, MESTScreen screen) {
-        this.menu = menu;
-        this.screen = screen;
         this.trashSlots = menu.getTrashSlots();
         for (Slot slot : trashSlots) {
             registerSlot(slot);

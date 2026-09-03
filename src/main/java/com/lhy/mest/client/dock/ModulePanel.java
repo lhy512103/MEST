@@ -19,7 +19,9 @@ import net.neoforged.fml.ModList;
 
 import com.glodblock.github.extendedae.client.button.EPPIcon;
 
+import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockRect;
+import com.lhy.mest.client.dock.model.LayoutProjection;
 
 /**
  * Base class for a floating, draggable, resizable module panel.
@@ -366,6 +368,10 @@ public abstract class ModulePanel {
     public static final int COLOR_DARK = 0xFF777B8C;
     public static final int COLOR_MUTED = 0xFF878FA5;
     public static final int COLOR_TITLE_TEXT = 0xFF413F54;
+    /** Faint 1px rule separating sections inside a unified outer shell. */
+    public static final int SECTION_RULE_COLOR = 0x66777B8C;
+    /** The same rule while the pointer sits on its divider. */
+    public static final int SECTION_RULE_HOVER_COLOR = 0xCCACE9FF;
     private static final int TITLE_LEFT_INSET = 8;
 
     private static final Blitter TEXT_FIELD = Blitter.texture("guis/text_field.png", 128, 128);
@@ -468,6 +474,9 @@ public abstract class ModulePanel {
 
     /**
      * One generated AE2 window for a spliced root. Leaves then only draw section titles + content.
+     *
+     * <p>Shared by the unified and outer-shell splice modes: in both cases the whole composite is
+     * covered by a single background, which is what removes any possibility of a seam.
      */
     public static void renderRootChrome(GuiGraphics g, DockRect bounds, boolean skipRightShadow) {
         if (bounds == null || bounds.width() < 2 || bounds.height() < 2) {
@@ -482,6 +491,36 @@ public abstract class ModulePanel {
             g.fill(x + w, y + 2, x + w + 2, y + h + 2, 0x55000000);
         }
         BackgroundGenerator.draw(w, h, g, x, y);
+    }
+
+    /**
+     * Draws the 1px rules that separate sections inside a unified outer shell.
+     *
+     * <p>The shell mode covers the whole composite with one background, so these rules - not a
+     * per-leaf bevel - are what convey section boundaries. A rounding error can only shift a rule
+     * by a pixel; it can never expose a doubled border the way hidden-edge splicing can.
+     */
+    public static void drawSectionRules(
+            GuiGraphics g,
+            List<LayoutProjection.DividerPlacement> dividers,
+            String hoveredSplitNodeId) {
+        if (dividers == null || dividers.isEmpty()) {
+            return;
+        }
+        for (LayoutProjection.DividerPlacement divider : dividers) {
+            DockRect bounds = divider.bounds();
+            if (bounds == null) {
+                continue;
+            }
+            boolean hovered = hoveredSplitNodeId != null
+                    && hoveredSplitNodeId.equals(divider.splitNodeId());
+            int color = hovered ? SECTION_RULE_HOVER_COLOR : SECTION_RULE_COLOR;
+            if (divider.axis() == DockAxis.HORIZONTAL) {
+                g.fill(bounds.x(), bounds.y(), bounds.x() + 1, bounds.bottom(), color);
+            } else {
+                g.fill(bounds.x(), bounds.y(), bounds.right(), bounds.y() + 1, color);
+            }
+        }
     }
 
     private void renderTitleStrip(GuiGraphics g, Font font, int left, int top, int barWidth, int mouseX, int mouseY) {

@@ -49,7 +49,6 @@ import mezz.jei.api.runtime.IIngredientVisibility;
 
 import appeng.client.gui.Icon;
 import appeng.api.stacks.AEFluidKey;
-import appeng.api.stacks.AEItemKey;
 import appeng.api.stacks.AEKey;
 import appeng.api.stacks.GenericStack;
 import appeng.core.localization.ItemModText;

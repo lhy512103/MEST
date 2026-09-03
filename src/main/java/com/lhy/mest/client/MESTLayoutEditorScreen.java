@@ -30,6 +30,7 @@ import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.client.dock.DockManager;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
+import com.lhy.mest.client.dock.model.SpliceMode;
 
 /**
  * AE2-styled, full-canvas layout authoring screen.
@@ -512,7 +513,7 @@ public final class MESTLayoutEditorScreen extends Screen {
         if (mouseY < TOOLBAR_HEIGHT) {
             if (button == 0) {
                 if (toolbarIconRect(TOOLBAR_ICON_COMPACT).contains(mouseX, mouseY)) {
-                    dock.toggleCompactSplice();
+                    dock.cycleSpliceMode();
                     return true;
                 }
                 if (toolbarIconRect(TOOLBAR_ICON_UNDO).contains(mouseX, mouseY) && dock.canUndoLayout()) {
@@ -738,14 +739,11 @@ public final class MESTLayoutEditorScreen extends Screen {
 
     private void renderChromeTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
         if (toolbarIconRect(TOOLBAR_ICON_COMPACT).contains(mouseX, mouseY)) {
-            boolean compact = dock.isCompactSplice();
+            SpliceMode mode = dock.spliceMode();
             graphics.renderComponentTooltip(font, List.of(
-                    Component.translatable(compact
-                            ? "gui.mesplicedterminal.compact_layout"
-                            : "gui.mesplicedterminal.compact_layout.off"),
-                    Component.translatable(compact
-                            ? "gui.mesplicedterminal.compact_layout.hint.off"
-                            : "gui.mesplicedterminal.compact_layout.hint")), mouseX, mouseY);
+                    Component.translatable("gui.mesplicedterminal.splice_mode." + mode.id()),
+                    Component.translatable("gui.mesplicedterminal.splice_mode." + mode.id() + ".hint")),
+                    mouseX, mouseY);
             return;
         }
         if (toolbarIconRect(TOOLBAR_ICON_UNDO).contains(mouseX, mouseY)) {
@@ -1053,6 +1051,14 @@ public final class MESTLayoutEditorScreen extends Screen {
         blitIcon(graphics, icon, bx + (background.width - ICON_SIZE) / 2, by + (background.height - ICON_SIZE) / 2);
     }
 
+    private static Icon spliceModeIcon(SpliceMode mode) {
+        return switch (mode) {
+            case UNIFIED -> Icon.TERMINAL_STYLE_FULL;
+            case COMPACT -> Icon.TERMINAL_STYLE_SMALL;
+            case SHELL -> Icon.COG;
+        };
+    }
+
     private static void blitIcon(GuiGraphics graphics, Icon icon, int x, int y) {
         icon.getBlitter().dest(x + (ICON_SIZE - icon.width) / 2, y + (ICON_SIZE - icon.height) / 2).blit(graphics);
     }
@@ -1063,9 +1069,11 @@ public final class MESTLayoutEditorScreen extends Screen {
         graphics.fill(0, TOOLBAR_HEIGHT - 1, width, TOOLBAR_HEIGHT, ModulePanel.COLOR_LIGHT);
 
         boolean canUndo = dock.canUndoLayout();
+        SpliceMode spliceMode = dock.spliceMode();
         drawToolbarIconButton(graphics, toolbarIconRect(TOOLBAR_ICON_COMPACT),
-                dock.isCompactSplice() ? Icon.TERMINAL_STYLE_SMALL : Icon.TERMINAL_STYLE_FULL,
-                toolbarIconRect(TOOLBAR_ICON_COMPACT).contains(mouseX, mouseY), dock.isCompactSplice());
+                spliceModeIcon(spliceMode),
+                toolbarIconRect(TOOLBAR_ICON_COMPACT).contains(mouseX, mouseY),
+                spliceMode != SpliceMode.UNIFIED);
         drawToolbarIconButton(graphics, toolbarIconRect(TOOLBAR_ICON_UNDO),
                 Icon.BACK,
                 canUndo && toolbarIconRect(TOOLBAR_ICON_UNDO).contains(mouseX, mouseY), false);

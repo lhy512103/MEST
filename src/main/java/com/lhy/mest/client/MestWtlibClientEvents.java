@@ -81,7 +81,7 @@ public final class MestWtlibClientEvents {
         if (hit.getType() == HitResult.Type.BLOCK && hit instanceof BlockHitResult blockHit) {
             BlockPos pos = blockHit.getBlockPos();
             BlockState state = minecraft.level.getBlockState(pos);
-            return state.getBlock().getCloneItemStack(minecraft.level, pos, state);
+            return state.getCloneItemStack(blockHit, minecraft.level, pos, minecraft.player);
         }
         if (hit.getType() == HitResult.Type.ENTITY && hit instanceof EntityHitResult entityHit) {
             Entity entity = entityHit.getEntity();

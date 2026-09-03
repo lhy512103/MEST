@@ -7,6 +7,7 @@ import java.util.Map;
 import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.DockSize;
+import com.lhy.mest.client.dock.model.SpliceMode;
 
 /** Versioned persistence DTO, deliberately separate from the runtime tree. */
 public record DockLayoutDto(
@@ -14,15 +15,15 @@ public record DockLayoutDto(
         List<RootDto> roots,
         Map<String, PolicyDto> policies,
         Map<String, DockSize> restoreSizes,
-        boolean compactSplice) {
+        SpliceMode spliceMode) {
     public static final int CURRENT_VERSION = 3;
 
     public DockLayoutDto(int version, List<RootDto> roots) {
-        this(version, roots, Map.of(), Map.of(), false);
+        this(version, roots, Map.of(), Map.of(), SpliceMode.DEFAULT);
     }
 
     public DockLayoutDto(int version, List<RootDto> roots, Map<String, PolicyDto> policies) {
-        this(version, roots, policies, Map.of(), false);
+        this(version, roots, policies, Map.of(), SpliceMode.DEFAULT);
     }
 
     public DockLayoutDto(
@@ -30,13 +31,16 @@ public record DockLayoutDto(
             List<RootDto> roots,
             Map<String, PolicyDto> policies,
             Map<String, DockSize> restoreSizes) {
-        this(version, roots, policies, restoreSizes, false);
+        this(version, roots, policies, restoreSizes, SpliceMode.DEFAULT);
     }
 
     public DockLayoutDto {
         roots = roots == null ? null : List.copyOf(roots);
         policies = policies == null ? null : Map.copyOf(new LinkedHashMap<>(policies));
         restoreSizes = restoreSizes == null ? Map.of() : Map.copyOf(new LinkedHashMap<>(restoreSizes));
+        if (spliceMode == null) {
+            spliceMode = SpliceMode.DEFAULT;
+        }
     }
 
     public record RootDto(String rootId, DockRect bounds, NodeDto content) {

@@ -32,7 +32,6 @@ public class ScrollingUpgradeColumn implements ExtraChrome {
     private static final int SCROLLING_WIDTH = 29;
     /** AE2 {@code small_scroller} is 7×15; sit it on the 6px track that starts at x+23. */
     private static final int TRACK_X = 19;
-    private static final int HANDLE_WIDTH = 7;
     private static final int DEFAULT_MAX_ROWS = 2;
 
     private final List<Slot> slots;

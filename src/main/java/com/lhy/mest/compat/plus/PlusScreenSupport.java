@@ -1,9 +1,6 @@
 package com.lhy.mest.compat.plus;
 
-import java.util.List;
-
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.network.chat.Component;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.network.PacketDistributor;
 

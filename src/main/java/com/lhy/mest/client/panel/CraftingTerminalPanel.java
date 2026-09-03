@@ -51,7 +51,6 @@ public class CraftingTerminalPanel extends ModulePanel {
             .src(0, 0, TEX_W, TEX_H);
 
     private final MESTMenu menu;
-    private final MESTScreen screen;
     private final List<Slot> gridSlots;
     private final List<Slot> resultSlots;
     private final List<Slot> helmetSlots;
@@ -69,7 +68,6 @@ public class CraftingTerminalPanel extends ModulePanel {
 
     public CraftingTerminalPanel(MESTMenu menu, MESTScreen screen) {
         this.menu = menu;
-        this.screen = screen;
         this.gridSlots = menu.getSlots(SlotSemantics.CRAFTING_GRID);
         this.resultSlots = menu.getSlots(SlotSemantics.CRAFTING_RESULT);
         this.helmetSlots = menu.getSlots(AE2wtlibSlotSemantics.HELMET);

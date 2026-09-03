@@ -26,6 +26,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.connection.ConnectionType;
 
 import appeng.api.config.ShowPatternProviders;
 import appeng.api.crafting.PatternDetailsHelper;
@@ -598,7 +599,10 @@ public final class PatternAccessSession {
      * clientbound custom-payload limit even for patterns with multi-KiB NBT.
      */
     private int estimateEncodedSize(ItemStack stack) {
-        var buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), menu.getPlayer().registryAccess());
+        var buf = new RegistryFriendlyByteBuf(
+                Unpooled.buffer(),
+                menu.getPlayer().registryAccess(),
+                ConnectionType.NEOFORGE);
         try {
             ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, stack);
             return buf.readableBytes();

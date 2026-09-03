@@ -11,20 +11,20 @@ public record DockWorkspace(
         List<FloatingRoot> roots,
         Map<String, ModuleLayoutPolicy> policies,
         Map<String, DockSize> restoreSizes,
-        boolean compactSplice) {
+        SpliceMode spliceMode) {
     public DockWorkspace(List<FloatingRoot> roots) {
-        this(roots, defaultPolicies(roots), Map.of(), false);
+        this(roots, defaultPolicies(roots), Map.of(), SpliceMode.DEFAULT);
     }
 
     public DockWorkspace(List<FloatingRoot> roots, Map<String, ModuleLayoutPolicy> policies) {
-        this(roots, policies, Map.of(), false);
+        this(roots, policies, Map.of(), SpliceMode.DEFAULT);
     }
 
     public DockWorkspace(
             List<FloatingRoot> roots,
             Map<String, ModuleLayoutPolicy> policies,
             Map<String, DockSize> restoreSizes) {
-        this(roots, policies, restoreSizes, false);
+        this(roots, policies, restoreSizes, SpliceMode.DEFAULT);
     }
 
     private static Map<String, ModuleLayoutPolicy> defaultPolicies(List<FloatingRoot> roots) {
@@ -55,6 +55,9 @@ public record DockWorkspace(
         roots = List.copyOf(roots);
         policies = Map.copyOf(new LinkedHashMap<>(policies));
         restoreSizes = Map.copyOf(new LinkedHashMap<>(restoreSizes));
+        if (spliceMode == null) {
+            spliceMode = SpliceMode.DEFAULT;
+        }
     }
 
     public ModuleLayoutPolicy policyFor(String moduleId) {
@@ -62,23 +65,43 @@ public record DockWorkspace(
     }
 
     public DockWorkspace withRoots(List<FloatingRoot> newRoots) {
-        return new DockWorkspace(newRoots, policies, restoreSizes, compactSplice);
+        return new DockWorkspace(newRoots, policies, restoreSizes, spliceMode);
     }
 
     public DockWorkspace withPolicies(Map<String, ModuleLayoutPolicy> newPolicies) {
-        return new DockWorkspace(roots, newPolicies, restoreSizes, compactSplice);
+        return new DockWorkspace(roots, newPolicies, restoreSizes, spliceMode);
     }
 
     public DockWorkspace withRestoreSizes(Map<String, DockSize> newRestoreSizes) {
-        return new DockWorkspace(roots, policies, newRestoreSizes, compactSplice);
+        return new DockWorkspace(roots, policies, newRestoreSizes, spliceMode);
     }
 
-    public DockWorkspace withCompactSplice(boolean compactSplice) {
-        return new DockWorkspace(roots, policies, restoreSizes, compactSplice);
+    public DockWorkspace withSpliceMode(SpliceMode newSpliceMode) {
+        return new DockWorkspace(roots, policies, restoreSizes, newSpliceMode);
+    }
+
+    /** True when the root bounds follow the leaves instead of stretching them to a fixed frame. */
+    public boolean prefersCompactBounds() {
+        return spliceMode.prefersCompactBounds();
+    }
+
+    /** True for the only mode that lets a nested split tuck into an L-shaped hole. */
+    public boolean packsContour() {
+        return spliceMode.packsContour();
+    }
+
+    /** True for the only mode where each leaf paints its own 9-slice frame. */
+    public boolean drawsPerLeafFrames() {
+        return spliceMode.drawsPerLeafFrames();
+    }
+
+    /** True when one background is drawn over the whole shell plus 1px section rules. */
+    public boolean drawsOuterShell() {
+        return spliceMode.drawsOuterShell();
     }
 
     public DockWorkspace rebuilt(List<FloatingRoot> newRoots, Map<String, DockSize> newRestoreSizes) {
-        return new DockWorkspace(newRoots, policies, newRestoreSizes, compactSplice);
+        return new DockWorkspace(newRoots, policies, newRestoreSizes, spliceMode);
     }
 
     /**

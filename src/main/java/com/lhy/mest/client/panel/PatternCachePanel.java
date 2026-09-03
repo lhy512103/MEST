@@ -51,7 +51,6 @@ public class PatternCachePanel extends ModulePanel {
             MESplicedterminal.MODID, "textures/guis/pattern_cache_states.png");
     private static final ResourceLocation CHECKBOX = AppEng.makeId("textures/guis/checkbox.png");
 
-    private final MESTMenu menu;
     private final List<Slot> cacheSlots;
     private final Scrollbar scrollbar = new Scrollbar(Scrollbar.SMALL);
     private final MultiplierButton[] multipliers = new MultiplierButton[8];
@@ -64,7 +63,6 @@ public class PatternCachePanel extends ModulePanel {
     private boolean scrollbarDragging;
 
     public PatternCachePanel(MESTMenu menu) {
-        this.menu = menu;
         this.cacheSlots = menu.getPatternCacheSlots();
         for (Slot slot : cacheSlots) {
             registerSlot(slot);

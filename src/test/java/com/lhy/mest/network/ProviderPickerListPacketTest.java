@@ -13,6 +13,7 @@ import io.netty.buffer.Unpooled;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
+import net.neoforged.neoforge.network.connection.ConnectionType;
 
 import org.junit.jupiter.api.Test;
 
@@ -111,6 +112,7 @@ class ProviderPickerListPacketTest {
     }
 
     private static RegistryFriendlyByteBuf buf() {
-        return new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+        return new RegistryFriendlyByteBuf(
+                Unpooled.buffer(), RegistryAccess.EMPTY, ConnectionType.OTHER);
     }
 }

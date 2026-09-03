@@ -104,7 +104,7 @@ class LayoutEngineTest {
                 new LeafNode("leaf-flex", "flex", true));
         DockWorkspace workspace = new DockWorkspace(List.of(
                 new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)))
-                .withCompactSplice(true);
+                .withSpliceMode(SpliceMode.COMPACT);
 
         LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
                 .project(workspace);
@@ -132,7 +132,7 @@ class LayoutEngineTest {
                 List.of(new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)),
                 Map.of(),
                 restore,
-                true);
+                SpliceMode.COMPACT);
 
         LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
                 .project(workspace);
@@ -155,7 +155,7 @@ class LayoutEngineTest {
                 new LeafNode("leaf-b", "b", true));
         DockWorkspace workspace = new DockWorkspace(List.of(
                 new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)))
-                .withCompactSplice(true);
+                .withSpliceMode(SpliceMode.COMPACT);
 
         LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
                 .project(workspace);
@@ -185,7 +185,7 @@ class LayoutEngineTest {
                 bottom);
         DockWorkspace workspace = new DockWorkspace(List.of(
                 new FloatingRoot("root-main", new DockRect(0, 0, 300, 190), rootNode)))
-                .withCompactSplice(true);
+                .withSpliceMode(SpliceMode.COMPACT);
 
         LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
                 .project(workspace);
@@ -222,7 +222,7 @@ class LayoutEngineTest {
                 new LeafNode("leaf-encoding", "encoding", true));
         DockWorkspace workspace = new DockWorkspace(List.of(
                 new FloatingRoot("root-main", new DockRect(0, 0, 400, 200), rootNode)))
-                .withCompactSplice(true);
+                .withSpliceMode(SpliceMode.COMPACT);
 
         LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
                 .project(workspace);
@@ -235,5 +235,82 @@ class LayoutEngineTest {
                 projection.visibleLeaf("leaf-access").orElseThrow().bounds());
         assertEquals(new DockRect(200, 0, 120, 80),
                 projection.visibleLeaf("leaf-encoding").orElseThrow().bounds());
+    }
+
+    @Test
+    void shellSpliceFillsTheRootAsARectangleAndGivesLeftoverToTheExpandingLeaf() {
+        var metrics = new LinkedHashMap<String, ModuleMetrics>();
+        metrics.put("fixed", new ModuleMetrics(new DockSize(50, 40), new DockSize(80, 60)));
+        metrics.put("flex", new ModuleMetrics(new DockSize(40, 30), new DockSize(90, 80), true));
+        ModuleCatalog catalog = new ModuleCatalog(metrics);
+        LayoutNode split = new SplitNode(
+                "split-main",
+                DockAxis.VERTICAL,
+                0.5,
+                new LeafNode("leaf-fixed", "fixed", true),
+                new LeafNode("leaf-flex", "flex", true));
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)))
+                .withSpliceMode(SpliceMode.SHELL);
+
+        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
+                .project(workspace);
+
+        DockRect fixed = projection.visibleLeaf("leaf-fixed").orElseThrow().bounds();
+        DockRect flex = projection.visibleLeaf("leaf-flex").orElseThrow().bounds();
+        assertEquals(new DockRect(0, 0, 200, 60), fixed);
+        assertEquals(new DockRect(0, 60, 200, 140), flex);
+        assertEquals(fixed.right(), flex.right());
+        assertEquals(fixed.bottom(), flex.y());
+        assertEquals(200, flex.bottom());
+        assertEquals(1, projection.dividers().size());
+    }
+
+    @Test
+    void shellSpliceKeepsANestedRowRectangularInsteadOfLShaped() {
+        var metrics = new LinkedHashMap<String, ModuleMetrics>();
+        metrics.put("crafting", new ModuleMetrics(new DockSize(100, 60), new DockSize(200, 80)));
+        metrics.put("inventory", new ModuleMetrics(new DockSize(80, 60), new DockSize(100, 100)));
+        metrics.put("access", new ModuleMetrics(new DockSize(60, 60), new DockSize(150, 100)));
+        metrics.put("encoding", new ModuleMetrics(new DockSize(80, 60), new DockSize(120, 80)));
+        ModuleCatalog catalog = new ModuleCatalog(metrics);
+        LayoutNode left = new SplitNode(
+                "split-left",
+                DockAxis.VERTICAL,
+                0.5,
+                new LeafNode("leaf-crafting", "crafting", true),
+                new SplitNode(
+                        "split-lower",
+                        DockAxis.HORIZONTAL,
+                        0.5,
+                        new LeafNode("leaf-inventory", "inventory", true),
+                        new LeafNode("leaf-access", "access", true)));
+        LayoutNode rootNode = new SplitNode(
+                "split-root",
+                DockAxis.HORIZONTAL,
+                0.5,
+                left,
+                new LeafNode("leaf-encoding", "encoding", true));
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-main", new DockRect(0, 0, 450, 180), rootNode)))
+                .withSpliceMode(SpliceMode.SHELL);
+
+        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
+                .project(workspace);
+
+        DockRect crafting = projection.visibleLeaf("leaf-crafting").orElseThrow().bounds();
+        DockRect inventory = projection.visibleLeaf("leaf-inventory").orElseThrow().bounds();
+        DockRect access = projection.visibleLeaf("leaf-access").orElseThrow().bounds();
+        DockRect encoding = projection.visibleLeaf("leaf-encoding").orElseThrow().bounds();
+        assertEquals(crafting.right(), encoding.x());
+        assertEquals(inventory.right(), access.x());
+        assertEquals(crafting.bottom(), inventory.y());
+        assertEquals(inventory.y(), access.y());
+        assertEquals(inventory.bottom(), access.bottom());
+        assertEquals(encoding.bottom(), inventory.bottom());
+        assertEquals(0, crafting.x());
+        assertEquals(0, crafting.y());
+        assertEquals(450, encoding.right());
+        assertEquals(180, encoding.bottom());
     }
 }

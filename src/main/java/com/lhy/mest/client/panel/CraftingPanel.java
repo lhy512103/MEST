@@ -33,7 +33,6 @@ public class CraftingPanel extends ModulePanel {
     private static final Blitter CRAFTING_BG = Blitter.texture("guis/crafting.png", 256, 256)
             .src(8, 86, BG_W, BG_H);
 
-    private final MESTMenu menu;
     private final List<Slot> gridSlots;
     private final List<Slot> resultSlots;
     private final ActionButton clearToNetwork;
@@ -41,7 +40,6 @@ public class CraftingPanel extends ModulePanel {
     private final List<AbstractWidget> widgets = new ArrayList<>();
 
     public CraftingPanel(MESTMenu menu) {
-        this.menu = menu;
         this.gridSlots = menu.getSlots(SlotSemantics.CRAFTING_GRID);
         this.resultSlots = menu.getSlots(SlotSemantics.CRAFTING_RESULT);
         for (Slot slot : gridSlots) {

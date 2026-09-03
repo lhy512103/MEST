@@ -60,16 +60,65 @@ class DockLayoutCodecTest {
     }
 
     @Test
-    void roundTripsCompactSplice() throws Exception {
-        var original = WorkspacePersistenceFixtures.workspace().withCompactSplice(true);
+    void roundTripsCompactSpliceMode() throws Exception {
+        var original = WorkspacePersistenceFixtures.workspace().withSpliceMode(
+                com.lhy.mest.client.dock.model.SpliceMode.COMPACT);
 
         String encoded = codec().encode(original);
         var decoded = codec().decode(encoded).workspace();
 
-        assertTrue(decoded.compactSplice());
-        assertTrue(encoded.contains("compactSplice"));
+        assertEquals(com.lhy.mest.client.dock.model.SpliceMode.COMPACT, decoded.spliceMode());
+        assertTrue(encoded.contains("\"spliceMode\": \"compact\""));
+        assertFalse(encoded.contains("compactSplice"));
         assertEquals(original, decoded);
         assertFalse(codec().decode(encoded).needsRewrite());
+    }
+
+    @Test
+    void roundTripsShellSpliceMode() throws Exception {
+        var original = WorkspacePersistenceFixtures.workspace().withSpliceMode(
+                com.lhy.mest.client.dock.model.SpliceMode.SHELL);
+
+        String encoded = codec().encode(original);
+        var decoded = codec().decode(encoded).workspace();
+
+        assertEquals(com.lhy.mest.client.dock.model.SpliceMode.SHELL, decoded.spliceMode());
+        assertTrue(encoded.contains("\"spliceMode\": \"shell\""));
+        assertEquals(original, decoded);
+    }
+
+    @Test
+    void mapsLegacyCompactSpliceBooleanOntoCompactMode() throws Exception {
+        String persisted = """
+                {
+                  "version": 3,
+                  "roots": [{
+                    "rootId": "root-a",
+                    "bounds": {"x": 0, "y": 0, "width": 100, "height": 80},
+                    "content": {
+                      "type": "leaf", "nodeId": "leaf-a", "moduleId": "a", "visible": true
+                    }
+                  }, {
+                    "rootId": "root-bc",
+                    "bounds": {"x": 160, "y": 40, "width": 220, "height": 140},
+                    "content": {
+                      "type": "split", "nodeId": "split-bc", "axis": "VERTICAL", "ratio": 0.35,
+                      "first": {"type": "leaf", "nodeId": "leaf-b", "moduleId": "b", "visible": true},
+                      "second": {"type": "leaf", "nodeId": "leaf-c", "moduleId": "c", "visible": true}
+                    }
+                  }],
+                  "policies": {
+                    "a": {"visible": false, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true},
+                    "b": {"visible": true, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true},
+                    "c": {"visible": true, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true}
+                  },
+                  "compactSplice": true
+                }
+                """;
+
+        var decoded = codec().decode(persisted).workspace();
+
+        assertEquals(com.lhy.mest.client.dock.model.SpliceMode.COMPACT, decoded.spliceMode());
     }
 
     @Test

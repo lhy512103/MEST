@@ -47,6 +47,7 @@ import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
 import com.lhy.mest.client.dock.model.ModuleMetrics;
 import com.lhy.mest.client.dock.model.WorkspaceValidator;
 import com.lhy.mest.client.dock.model.NodeIds;
+import com.lhy.mest.client.dock.model.SpliceMode;
 import com.lhy.mest.client.dock.model.SplitNode;
 import com.lhy.mest.client.dock.workspace.AtomicFileDockLayoutStore;
 import com.lhy.mest.client.dock.workspace.DockLayoutCodec;
@@ -73,7 +74,6 @@ public final class DockManager {
     private static final int SNAP_DISTANCE = 8;
     private static final int LEAF_DRAG_THRESHOLD = 4;
 
-    private static final int DIVIDER_COLOR = 0xFF777B8C;
     private static final int DIVIDER_HOVER_COLOR = 0xFFACE9FF;
     private static final int DROP_FILL_COLOR = 0x66ACE9FF;
     private static final int DROP_BORDER_COLOR = 0xDDACE9FF;
@@ -858,17 +858,48 @@ public final class DockManager {
         savePreferences();
     }
 
-    public boolean isCompactSplice() {
-        return workspace != null && workspace.compactSplice();
+    /**
+     * Active splice mode: {@link SpliceMode#UNIFIED} stretch, {@link SpliceMode#COMPACT} per-leaf
+     * frames, or {@link SpliceMode#SHELL} one outer shell with 1px section rules.
+     */
+    public SpliceMode spliceMode() {
+        return workspace == null ? SpliceMode.DEFAULT : workspace.spliceMode();
     }
 
-    public void toggleCompactSplice() {
+    /**
+     * Advances the toolbar cycle: unified -&gt; compact -&gt; shell -&gt; unified. Entering the shell
+     * mode also shrinks every root to its content, because that mode draws the shell at the root's
+     * own rectangle rather than recomputing one from the leaves.
+     */
+    public void cycleSpliceMode() {
         if (workspace == null) {
             return;
         }
+        SpliceMode next = spliceMode().next();
         rememberUndoPoint(workspace);
-        replaceWorkspace(workspace.withCompactSplice(!workspace.compactSplice()), true);
+        DockWorkspace changed = workspace.withSpliceMode(next);
+        if (next.drawsOuterShell()) {
+            changed = fitRootsToContent(changed);
+        }
+        replaceWorkspace(changed, true);
         save();
+    }
+
+    /** Sets every root rectangle to the size its subtree actually wants. */
+    private DockWorkspace fitRootsToContent(DockWorkspace source) {
+        DockWorkspace next = source;
+        for (FloatingRoot root : source.roots()) {
+            DockSize fitted = layoutEngine.preferredSize(next, root.content());
+            if (fitted.isEmpty()) {
+                continue;
+            }
+            next = editor.setRootBounds(next, root.rootId(), new DockRect(
+                    root.bounds().x(),
+                    root.bounds().y(),
+                    Math.max(1, fitted.width()),
+                    Math.max(1, fitted.height())));
+        }
+        return next;
     }
 
     public boolean canUndoLayout() {
@@ -952,7 +983,11 @@ public final class DockManager {
             }
             withRootLayer(graphics, rootLayer, 0.0F, () -> {
                 boolean composite = visibleLeafCount(root) > 1;
-                boolean compactSplice = composite && workspace != null && workspace.compactSplice();
+                // The unified and shell modes both cover the whole composite with one background;
+                // only the per-leaf-frame mode paints a frame per leaf and hides shared edges.
+                boolean shellSplice = composite && workspace != null && workspace.drawsOuterShell();
+                boolean compactSplice = composite && !shellSplice
+                        && workspace != null && workspace.drawsPerLeafFrames();
                 if (composite && !compactSplice) {
                     for (LeafNode leaf : leavesOf(root)) {
                         var placement = projection.visibleLeaf(leaf.nodeId());
@@ -1032,7 +1067,11 @@ public final class DockManager {
                         graphics.pose().popPose();
                     }
                 }
-                renderDividers(graphics, root, hoveredDivider);
+                if (shellSplice) {
+                    renderShellRules(graphics, root, hoveredDivider);
+                } else {
+                    renderDividers(graphics, root, hoveredDivider);
+                }
                 if (compactSplice) {
                     for (ModulePanel panel : visiblePanels(root)) {
                         ModulePanel.renderResizeGrip(graphics, occupiedRect(panel));
@@ -1368,7 +1407,7 @@ public final class DockManager {
             return true;
         }
 
-        boolean compact = workspace != null && workspace.compactSplice();
+        boolean compact = workspace != null && workspace.drawsPerLeafFrames();
         boolean ctrlResize = compact && Screen.hasControlDown();
         DockRect resizeBounds = resizeHandleBounds(root);
         if (ctrlResize
@@ -1875,7 +1914,7 @@ public final class DockManager {
             }
             boolean composite = visibleLeaves > 1;
             DockRect window = composite
-                    ? (workspace.compactSplice() ? occupiedUnion(root, next) : root.bounds())
+                    ? (workspace.drawsPerLeafFrames() ? occupiedUnion(root, next) : root.bounds())
                     : null;
             boolean anchored = false;
             for (LeafNode sibling : LayoutTrees.leaves(root.content())) {
@@ -2083,7 +2122,7 @@ public final class DockManager {
         if (!(node instanceof SplitNode split)) {
             return;
         }
-        if (workspace != null && workspace.compactSplice()) {
+        if (workspace != null && workspace.prefersCompactBounds()) {
             resizeCompactDivider(split, mouseX, mouseY);
             return;
         }
@@ -2394,7 +2433,7 @@ public final class DockManager {
         int targetExtent = candidate.edge().axis().extent(targetBounds);
         double draggedFraction = (double) draggedExtent / Math.max(1, draggedExtent + targetExtent);
         double ratio = candidate.edge().draggedFirst() ? draggedFraction : 1.0 - draggedFraction;
-        if (workspace == null || !workspace.compactSplice()) {
+        if (workspace == null || !workspace.prefersCompactBounds()) {
             ratio = Math.max(0.2, Math.min(0.8, ratio));
         }
 
@@ -2418,7 +2457,7 @@ public final class DockManager {
         String joinedRootId = rootContainingNode(joined, splitNodeId).rootId();
         DockRect expandedBounds = expandedDockBounds(
                 targetViewportRoot.bounds(), draggedRoot.bounds(), candidate.edge());
-        if (joined.compactSplice()) {
+        if (joined.prefersCompactBounds()) {
             LayoutNode joinedContent = rootContainingNode(joined, splitNodeId).content();
             DockSize fitted = layoutEngine.preferredSize(joined, joinedContent);
             expandedBounds = clampRectToViewport(new DockRect(
@@ -2714,7 +2753,7 @@ public final class DockManager {
             return CursorHelper.Shape.ARROW;
         }
         boolean lockedAnchored = layoutLocked && !editingLayout && isAnchoredRoot(root);
-        boolean compact = workspace != null && workspace.compactSplice();
+        boolean compact = workspace != null && workspace.drawsPerLeafFrames();
         if (!lockedAnchored && compact && Screen.hasControlDown()
                 && inRootResizeHandle(resizeHandleBounds(root), mouseX, mouseY)
                 && (editingLayout || canResizeNode(root.content()))) {
@@ -2929,7 +2968,7 @@ public final class DockManager {
     }
 
     private DockRect resizeHandleBounds(FloatingRoot root) {
-        if (workspace != null && workspace.compactSplice() && visibleLeafCount(root) > 1) {
+        if (workspace != null && workspace.drawsPerLeafFrames() && visibleLeafCount(root) > 1) {
             DockRect union = contentChromeBounds(root);
             if (union != null && union.width() > 0 && union.height() > 0) {
                 return union;
@@ -2971,6 +3010,19 @@ public final class DockManager {
             union = union == null ? bounds : union.union(bounds);
         }
         return union;
+    }
+
+    private void renderShellRules(GuiGraphics graphics, FloatingRoot root, DividerHit hoveredDivider) {
+        var rules = new ArrayList<LayoutProjection.DividerPlacement>();
+        for (LayoutProjection.DividerPlacement divider : projection.dividers()) {
+            if (LayoutTrees.contains(root.content(), divider.splitNodeId())) {
+                rules.add(divider);
+            }
+        }
+        ModulePanel.drawSectionRules(
+                graphics,
+                rules,
+                hoveredDivider == null ? null : hoveredDivider.splitNodeId());
     }
 
     private void renderDividers(GuiGraphics graphics, FloatingRoot root, DividerHit hoveredDivider) {
