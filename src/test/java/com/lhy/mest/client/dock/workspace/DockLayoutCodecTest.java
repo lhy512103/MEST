@@ -60,6 +60,19 @@ class DockLayoutCodecTest {
     }
 
     @Test
+    void roundTripsCompactSplice() throws Exception {
+        var original = WorkspacePersistenceFixtures.workspace().withCompactSplice(true);
+
+        String encoded = codec().encode(original);
+        var decoded = codec().decode(encoded).workspace();
+
+        assertTrue(decoded.compactSplice());
+        assertTrue(encoded.contains("compactSplice"));
+        assertEquals(original, decoded);
+        assertFalse(codec().decode(encoded).needsRewrite());
+    }
+
+    @Test
     void migratesV2LeafVisibilityIntoV3ModulePolicy() throws Exception {
         String persisted = """
                 {

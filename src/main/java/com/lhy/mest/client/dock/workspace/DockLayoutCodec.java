@@ -41,7 +41,7 @@ public final class DockLayoutCodec {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Set<String> V2_FIELDS = Set.of("version", "roots");
     private static final Set<String> V3_FIELDS =
-            Set.of("version", "roots", "policies", "restoreSizes", "name");
+            Set.of("version", "roots", "policies", "restoreSizes", "name", "compactSplice");
     private static final Set<String> POLICY_FIELDS =
             Set.of("visible", "movable", "resizable", "floating", "pinned", "showTerminalButton");
     private static final Set<String> ROOT_FIELDS = Set.of("rootId", "bounds", "content");
@@ -111,7 +111,12 @@ public final class DockLayoutCodec {
                     policy.pinned(),
                     policy.showTerminalButton()));
         }
-        return new DockLayoutDto(DockLayoutDto.CURRENT_VERSION, roots, policies, workspace.restoreSizes());
+        return new DockLayoutDto(
+                DockLayoutDto.CURRENT_VERSION,
+                roots,
+                policies,
+                workspace.restoreSizes(),
+                workspace.compactSplice());
     }
 
     public DockWorkspace fromDto(DockLayoutDto dto) throws DockLayoutFormatException {
@@ -163,7 +168,8 @@ public final class DockLayoutCodec {
             DockWorkspace workspace = new DockWorkspace(
                     roots,
                     policies,
-                    DockWorkspace.retainRestoreSizes(dto.restoreSizes(), roots));
+                    DockWorkspace.retainRestoreSizes(dto.restoreSizes(), roots),
+                    dto.compactSplice());
             WorkspaceValidator.validateStructure(workspace);
             return workspace;
         } catch (IllegalArgumentException | NullPointerException e) {
@@ -206,7 +212,8 @@ public final class DockLayoutCodec {
         var result = new DockWorkspace(
                 retainedRoots,
                 retainedPolicies,
-                DockWorkspace.retainRestoreSizes(source.restoreSizes(), retainedRoots));
+                DockWorkspace.retainRestoreSizes(source.restoreSizes(), retainedRoots),
+                source.compactSplice());
         var usedModules = WorkspaceValidator.validateStructure(result);
         var usedIdentifiers = collectIdentifiers(result);
         int defaultIndex = retainedRoots.size();
@@ -234,7 +241,8 @@ public final class DockLayoutCodec {
         result = new DockWorkspace(
                 retainedRoots,
                 retainedPolicies,
-                DockWorkspace.retainRestoreSizes(source.restoreSizes(), retainedRoots));
+                DockWorkspace.retainRestoreSizes(source.restoreSizes(), retainedRoots),
+                source.compactSplice());
         try {
             WorkspaceValidator.validateStrict(result, catalog);
         } catch (RuntimeException e) {
@@ -348,6 +356,9 @@ public final class DockLayoutCodec {
             }
             object.add("restoreSizes", restoreSizes);
         }
+        if (dto.compactSplice()) {
+            object.addProperty("compactSplice", true);
+        }
         return object;
     }
 
@@ -423,7 +434,12 @@ public final class DockLayoutCodec {
                             ? bool(policy, "showTerminalButton", path)
                             : DockWorkspaceDefaults.defaultShowTerminalButton(entry.getKey())));
         }
-        return new DockLayoutDto(version, roots, policies, readRestoreSizes(object));
+        return new DockLayoutDto(
+                version,
+                roots,
+                policies,
+                readRestoreSizes(object),
+                optionalBoolean(object, "compactSplice", false, "document"));
     }
 
     private DockRect readBounds(JsonObject object, String path) throws DockLayoutFormatException {

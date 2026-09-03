@@ -13,15 +13,24 @@ public record DockLayoutDto(
         int version,
         List<RootDto> roots,
         Map<String, PolicyDto> policies,
-        Map<String, DockSize> restoreSizes) {
+        Map<String, DockSize> restoreSizes,
+        boolean compactSplice) {
     public static final int CURRENT_VERSION = 3;
 
     public DockLayoutDto(int version, List<RootDto> roots) {
-        this(version, roots, Map.of(), Map.of());
+        this(version, roots, Map.of(), Map.of(), false);
     }
 
     public DockLayoutDto(int version, List<RootDto> roots, Map<String, PolicyDto> policies) {
-        this(version, roots, policies, Map.of());
+        this(version, roots, policies, Map.of(), false);
+    }
+
+    public DockLayoutDto(
+            int version,
+            List<RootDto> roots,
+            Map<String, PolicyDto> policies,
+            Map<String, DockSize> restoreSizes) {
+        this(version, roots, policies, restoreSizes, false);
     }
 
     public DockLayoutDto {

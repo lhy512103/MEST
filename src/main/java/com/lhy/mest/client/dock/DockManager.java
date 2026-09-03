@@ -169,7 +169,8 @@ public final class DockManager {
         PENDING_LEAF_DRAG,
         DRAG_ROOT,
         RESIZE_ROOT,
-        RESIZE_DIVIDER
+        RESIZE_DIVIDER,
+        RESIZE_LEAF
     }
 
     private Mode mode = Mode.NONE;
@@ -854,6 +855,19 @@ public final class DockManager {
         savePreferences();
     }
 
+    public boolean isCompactSplice() {
+        return workspace != null && workspace.compactSplice();
+    }
+
+    public void toggleCompactSplice() {
+        if (workspace == null) {
+            return;
+        }
+        rememberUndoPoint(workspace);
+        replaceWorkspace(workspace.withCompactSplice(!workspace.compactSplice()), true);
+        save();
+    }
+
     public boolean canUndoLayout() {
         return !undoHistory.isEmpty();
     }
@@ -935,7 +949,8 @@ public final class DockManager {
             }
             withRootLayer(graphics, rootLayer, 0.0F, () -> {
                 boolean composite = visibleLeafCount(root) > 1;
-                if (composite) {
+                boolean compactSplice = composite && workspace != null && workspace.compactSplice();
+                if (composite && !compactSplice) {
                     for (LeafNode leaf : leavesOf(root)) {
                         var placement = projection.visibleLeaf(leaf.nodeId());
                         if (placement.isEmpty()) {
@@ -958,6 +973,26 @@ public final class DockManager {
                     }
                     ModulePanel.renderRootChrome(graphics, contentChromeBounds(root), skipRightShadow);
                 }
+                if (compactSplice) {
+                    for (LeafNode leaf : leavesOf(root)) {
+                        var placement = projection.visibleLeaf(leaf.nodeId());
+                        if (placement.isEmpty()) {
+                            continue;
+                        }
+                        ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+                        int routedMouseX = panel == hoveredLeaf ? mouseX : Integer.MIN_VALUE;
+                        int routedMouseY = panel == hoveredLeaf ? mouseY : Integer.MIN_VALUE;
+                        panel.renderUnderlay(graphics, font, routedMouseX, routedMouseY, partialTicks);
+                    }
+                    List<ModulePanel> occupied = visiblePanels(root);
+                    for (ModulePanel panel : occupied) {
+                        int routedMouseX = panel == hoveredLeaf ? mouseX : Integer.MIN_VALUE;
+                        int routedMouseY = panel == hoveredLeaf ? mouseY : Integer.MIN_VALUE;
+                        panel.renderFrame(
+                                graphics, font, routedMouseX, routedMouseY, partialTicks,
+                                sharedEdges(panel, occupied));
+                    }
+                }
                 for (LeafNode leaf : paintLeaves(root)) {
                     var placement = projection.visibleLeaf(leaf.nodeId());
                     if (placement.isEmpty()) {
@@ -969,7 +1004,7 @@ public final class DockManager {
                     if (!composite) {
                         panel.renderUnderlay(graphics, font, routedMouseX, routedMouseY, partialTicks);
                         panel.renderFrame(graphics, font, routedMouseX, routedMouseY, partialTicks);
-                    } else if (!panel.isOutsideChrome()) {
+                    } else if (!compactSplice && !panel.isOutsideChrome()) {
                         panel.renderSectionHeader(graphics, font, routedMouseX, routedMouseY);
                     }
                     panel.renderBackgroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
@@ -995,7 +1030,13 @@ public final class DockManager {
                     }
                 }
                 renderDividers(graphics, root, hoveredDivider);
-                ModulePanel.renderResizeGrip(graphics, root.bounds());
+                if (compactSplice) {
+                    for (ModulePanel panel : visiblePanels(root)) {
+                        ModulePanel.renderResizeGrip(graphics, occupiedRect(panel));
+                    }
+                } else {
+                    ModulePanel.renderResizeGrip(graphics, root.bounds());
+                }
             });
         }
         if (!chromeDrawn) {
@@ -1321,14 +1362,29 @@ public final class DockManager {
             return true;
         }
 
-        if (inRootResizeHandle(root.bounds(), mouseX, mouseY)
+        DockRect resizeBounds = resizeHandleBounds(root);
+        if (inRootResizeHandle(resizeBounds, mouseX, mouseY)
                 && (editingLayout || canResizeNode(root.content()))) {
             mode = Mode.RESIZE_ROOT;
             activeRootId = root.rootId();
-            grabOffsetX = mouseX - root.bounds().right();
-            grabOffsetY = mouseY - root.bounds().bottom();
+            grabOffsetX = mouseX - resizeBounds.right();
+            grabOffsetY = mouseY - resizeBounds.bottom();
             gestureStartWorkspace = beforeInteraction;
             return true;
+        }
+        if (workspace != null && workspace.compactSplice()) {
+            ModulePanel compactLeaf = leafAt(root, mouseX, mouseY);
+            LeafNode compactLeafNode = leafNodeAt(root, mouseX, mouseY);
+            if (compactLeaf != null && compactLeafNode != null && compactLeaf.inResizeHandle(mouseX, mouseY)
+                    && (editingLayout || canResizeNode(root.content()))) {
+                mode = Mode.RESIZE_LEAF;
+                activeRootId = root.rootId();
+                activeLeafNodeId = compactLeafNode.nodeId();
+                grabOffsetX = mouseX - (compactLeaf.x + compactLeaf.width);
+                grabOffsetY = mouseY - (compactLeaf.y + compactLeaf.height);
+                gestureStartWorkspace = beforeInteraction;
+                return true;
+            }
         }
 
         ModulePanel leaf = leafAt(root, mouseX, mouseY);
@@ -1456,6 +1512,10 @@ public final class DockManager {
         }
         if (mode == Mode.RESIZE_DIVIDER) {
             resizeDivider(mouseX, mouseY);
+            return true;
+        }
+        if (mode == Mode.RESIZE_LEAF) {
+            resizeCompactLeaf(mouseX, mouseY);
             return true;
         }
         return false;
@@ -1788,7 +1848,9 @@ public final class DockManager {
                 }
             }
             boolean composite = visibleLeaves > 1;
-            DockRect window = composite ? root.bounds() : null;
+            DockRect window = composite
+                    ? (workspace.compactSplice() ? occupiedUnion(root, next) : root.bounds())
+                    : null;
             boolean anchored = false;
             for (LeafNode sibling : LayoutTrees.leaves(root.content())) {
                 if (next.visibleLeaf(sibling.nodeId()).isEmpty()) {
@@ -1995,14 +2057,133 @@ public final class DockManager {
         if (!(node instanceof SplitNode split)) {
             return;
         }
+        DockWorkspace next = withSplitRatioAt(workspace, split, mouseX, mouseY);
+        if (next != workspace) {
+            replaceWorkspace(next, false);
+        }
+    }
+
+    /**
+     * Compact-mode per-module grip: this leaf keeps the new size, siblings keep theirs,
+     * and the window grows or shrinks to fit. The split divider remains the tool for
+     * redistributing space between siblings.
+     */
+    private void resizeCompactLeaf(double mouseX, double mouseY) {
+        if (activeLeafNodeId == null || activeRootId == null) {
+            return;
+        }
+        int targetRight = (int) Math.round(mouseX - grabOffsetX);
+        int targetBottom = (int) Math.round(mouseY - grabOffsetY);
+        DockRect leafBounds = projection.boundsFor(activeLeafNodeId).orElse(null);
+        if (leafBounds == null) {
+            return;
+        }
+        String moduleId = projection.visibleLeaf(activeLeafNodeId)
+                .map(LayoutProjection.LeafPlacement::moduleId)
+                .orElse(null);
+        ModulePanel panel = moduleId == null ? null : panelsByModuleId.get(moduleId);
+        int minW = panel == null ? 1 : panel.minWidth();
+        int minH = panel == null ? 1 : panel.minHeight();
+        int newW = Math.max(minW, targetRight - leafBounds.x());
+        int newH = Math.max(minH, targetBottom - leafBounds.y());
+
+        var restore = new java.util.LinkedHashMap<>(workspace.restoreSizes());
+        restore.put(activeLeafNodeId, new DockSize(newW, newH));
+        DockWorkspace next = workspace.withRestoreSizes(restore);
+
+        FloatingRoot root = rootById(activeRootId);
+        int rootX = root.bounds().x();
+        int rootY = root.bounds().y();
+        int rootW = root.bounds().width();
+        int rootH = root.bounds().height();
+
+        SplitNode vertical = innermostSplit(activeLeafNodeId, DockAxis.VERTICAL);
+        if (vertical != null) {
+            boolean first = LayoutTrees.contains(vertical.first(), activeLeafNodeId);
+            LayoutNode sibling = first ? vertical.second() : vertical.first();
+            DockRect siblingBounds = projection.boundsFor(sibling.nodeId()).orElse(null);
+            DockRect splitBounds = projection.boundsFor(vertical.nodeId()).orElse(root.bounds());
+            int siblingH = siblingBounds == null ? 0 : siblingBounds.height();
+            int newSplitH = Math.max(1, newH + siblingH);
+            double ratio = first ? (double) newH / newSplitH : (double) siblingH / newSplitH;
+            next = editor.setSplitRatio(next, vertical.nodeId(), clampStoredRatio(vertical, newSplitH, ratio));
+            rootH = rootH - splitBounds.height() + newSplitH;
+        }
+
+        SplitNode horizontal = innermostSplit(activeLeafNodeId, DockAxis.HORIZONTAL);
+        if (horizontal != null) {
+            boolean first = LayoutTrees.contains(horizontal.first(), activeLeafNodeId);
+            LayoutNode sibling = first ? horizontal.second() : horizontal.first();
+            DockRect siblingBounds = projection.boundsFor(sibling.nodeId()).orElse(null);
+            DockRect splitBounds = projection.boundsFor(horizontal.nodeId()).orElse(root.bounds());
+            int siblingW = siblingBounds == null ? 0 : siblingBounds.width();
+            int newSplitW = Math.max(1, newW + siblingW);
+            double ratio = first ? (double) newW / newSplitW : (double) siblingW / newSplitW;
+            next = editor.setSplitRatio(next, horizontal.nodeId(), clampStoredRatio(horizontal, newSplitW, ratio));
+            rootW = rootW - splitBounds.width() + newSplitW;
+        }
+
+        rootW = Math.max(rootW, leafBounds.x() - rootX + newW);
+        rootH = Math.max(rootH, leafBounds.y() - rootY + newH);
+        for (LayoutProjection.LeafPlacement other : projection.visibleLeavesInPaintOrder()) {
+            if (other.nodeId().equals(activeLeafNodeId)) {
+                continue;
+            }
+            rootW = Math.max(rootW, other.bounds().right() - rootX);
+            rootH = Math.max(rootH, other.bounds().bottom() - rootY);
+        }
+
+        next = editor.setRootBounds(next, root.rootId(), clampRectToViewport(
+                new DockRect(rootX, rootY, Math.max(1, rootW), Math.max(1, rootH)),
+                rootMinimum(root.rootId())));
+        if (!next.equals(workspace)) {
+            replaceWorkspace(next, false);
+        }
+    }
+
+    private SplitNode innermostSplit(String leafNodeId, DockAxis axis) {
+        SplitNode best = null;
+        int bestArea = Integer.MAX_VALUE;
+        for (LayoutProjection.DividerPlacement divider : projection.dividers()) {
+            if (divider.axis() != axis) {
+                continue;
+            }
+            LayoutNode node = findNode(divider.splitNodeId());
+            if (!(node instanceof SplitNode split) || !LayoutTrees.contains(split, leafNodeId)) {
+                continue;
+            }
+            DockRect splitBounds = projection.boundsFor(split.nodeId()).orElse(divider.bounds());
+            int area = Math.max(1, splitBounds.width()) * Math.max(1, splitBounds.height());
+            if (area < bestArea) {
+                best = split;
+                bestArea = area;
+            }
+        }
+        return best;
+    }
+
+    private double clampStoredRatio(SplitNode split, int available, double ratio) {
+        DockSize firstMinimum = projection.minimumSizes().getOrDefault(split.first().nodeId(), DockSize.ZERO);
+        DockSize secondMinimum = projection.minimumSizes().getOrDefault(split.second().nodeId(), DockSize.ZERO);
+        int firstExtent = split.axis().extent(firstMinimum);
+        int secondExtent = split.axis().extent(secondMinimum);
+        double minimumRatio = 0.05;
+        double maximumRatio = 0.95;
+        if ((long) firstExtent + secondExtent <= available) {
+            minimumRatio = Math.max(minimumRatio, (double) firstExtent / available);
+            maximumRatio = Math.min(maximumRatio, 1.0 - (double) secondExtent / available);
+        }
+        return Math.max(minimumRatio, Math.min(maximumRatio, ratio));
+    }
+
+    private DockWorkspace withSplitRatioAt(DockWorkspace current, SplitNode split, double mouseX, double mouseY) {
         DockRect bounds = projection.boundsFor(split.nodeId()).orElse(null);
         if (bounds == null) {
-            return;
+            return current;
         }
         int available = Math.max(1, split.axis().extent(bounds) - DIVIDER_THICKNESS);
         double coordinate = split.axis() == DockAxis.HORIZONTAL ? mouseX - bounds.x() : mouseY - bounds.y();
         double ratio = coordinate / available;
-
         DockSize firstMinimum = projection.minimumSizes().getOrDefault(split.first().nodeId(), DockSize.ZERO);
         DockSize secondMinimum = projection.minimumSizes().getOrDefault(split.second().nodeId(), DockSize.ZERO);
         int firstExtent = split.axis().extent(firstMinimum);
@@ -2014,7 +2195,7 @@ public final class DockManager {
             maximumRatio = Math.min(maximumRatio, 1.0 - (double) secondExtent / available);
         }
         ratio = Math.max(minimumRatio, Math.min(maximumRatio, ratio));
-        replaceWorkspace(editor.setSplitRatio(workspace, split.nodeId(), ratio), false);
+        return editor.setSplitRatio(current, split.nodeId(), ratio);
     }
 
     private void updateDropCandidate(double mouseX, double mouseY) {
@@ -2070,7 +2251,9 @@ public final class DockManager {
         int targetExtent = candidate.edge().axis().extent(targetBounds);
         double draggedFraction = (double) draggedExtent / Math.max(1, draggedExtent + targetExtent);
         double ratio = candidate.edge().draggedFirst() ? draggedFraction : 1.0 - draggedFraction;
-        ratio = Math.max(0.2, Math.min(0.8, ratio));
+        if (workspace == null || !workspace.compactSplice()) {
+            ratio = Math.max(0.2, Math.min(0.8, ratio));
+        }
 
         String splitNodeId = "split:" + NodeIds.random();
         DockWorkspace joined = editor.insertSplit(
@@ -2358,7 +2541,7 @@ public final class DockManager {
 
     public CursorHelper.Shape pointerCursor(double mouseX, double mouseY) {
         ensureProjection();
-        if (mode == Mode.RESIZE_ROOT) {
+        if (mode == Mode.RESIZE_ROOT || mode == Mode.RESIZE_LEAF) {
             return CursorHelper.Shape.NWSE;
         }
         if (mode == Mode.RESIZE_DIVIDER) {
@@ -2373,9 +2556,16 @@ public final class DockManager {
         }
         boolean lockedAnchored = layoutLocked && !editingLayout && isAnchoredRoot(root);
         if (!lockedAnchored
-                && inRootResizeHandle(root.bounds(), mouseX, mouseY)
+                && inRootResizeHandle(resizeHandleBounds(root), mouseX, mouseY)
                 && (editingLayout || canResizeNode(root.content()))) {
             return CursorHelper.Shape.NWSE;
+        }
+        if (!lockedAnchored && workspace != null && workspace.compactSplice()) {
+            ModulePanel compactLeaf = leafAt(root, mouseX, mouseY);
+            if (compactLeaf != null && compactLeaf.inResizeHandle(mouseX, mouseY)
+                    && (editingLayout || canResizeNode(root.content()))) {
+                return CursorHelper.Shape.NWSE;
+            }
         }
         if (!lockedAnchored) {
             DividerHit divider = dividerAt(root, mouseX, mouseY);
@@ -2524,6 +2714,76 @@ public final class DockManager {
             }
         }
         return count;
+    }
+
+    private List<ModulePanel> visiblePanels(FloatingRoot root) {
+        var visible = new ArrayList<ModulePanel>();
+        for (LeafNode leaf : leavesOf(root)) {
+            if (projection.visibleLeaf(leaf.nodeId()).isEmpty()) {
+                continue;
+            }
+            ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+            if (panel != null && panel.visible && !panel.isOutsideChrome()) {
+                visible.add(panel);
+            }
+        }
+        return visible;
+    }
+
+    private static DockRect occupiedRect(ModulePanel panel) {
+        return new DockRect(panel.x, panel.y, panel.width, panel.height);
+    }
+
+    private static int sharedEdges(ModulePanel panel, List<ModulePanel> siblings) {
+        int edges = 0;
+        DockRect self = occupiedRect(panel);
+        for (ModulePanel other : siblings) {
+            if (other == panel) {
+                continue;
+            }
+            DockRect peer = occupiedRect(other);
+            boolean overlapX = self.x() < peer.right() && self.right() > peer.x();
+            boolean overlapY = self.y() < peer.bottom() && self.bottom() > peer.y();
+            if (overlapX && self.bottom() == peer.y()) {
+                edges |= ModulePanel.EDGE_BOTTOM;
+            }
+            if (overlapX && self.y() == peer.bottom()) {
+                edges |= ModulePanel.EDGE_TOP;
+            }
+            if (overlapY && self.right() == peer.x()) {
+                edges |= ModulePanel.EDGE_RIGHT;
+            }
+            if (overlapY && self.x() == peer.right()) {
+                edges |= ModulePanel.EDGE_LEFT;
+            }
+        }
+        return edges;
+    }
+
+    private DockRect resizeHandleBounds(FloatingRoot root) {
+        if (workspace != null && workspace.compactSplice() && visibleLeafCount(root) > 1) {
+            DockRect union = contentChromeBounds(root);
+            if (union != null && union.width() > 0 && union.height() > 0) {
+                return union;
+            }
+        }
+        return root.bounds();
+    }
+
+    private DockRect occupiedUnion(FloatingRoot root, LayoutProjection source) {
+        DockRect union = null;
+        for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+            var placement = source.visibleLeaf(leaf.nodeId());
+            if (placement.isEmpty()) {
+                continue;
+            }
+            ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
+            if (panel != null && panel.isOutsideChrome()) {
+                continue;
+            }
+            union = union == null ? placement.get().bounds() : union.union(placement.get().bounds());
+        }
+        return union;
     }
 
     private DockRect contentChromeBounds(FloatingRoot root) {

@@ -372,18 +372,88 @@ public abstract class ModulePanel {
     private static final Blitter CRAFTING_ARROW = Blitter.texture("guis/crafting.png", 256, 256)
             .src(83, 109, 43, 10);
 
+    public static final int EDGE_TOP = 1;
+    public static final int EDGE_BOTTOM = 2;
+    public static final int EDGE_LEFT = 4;
+    public static final int EDGE_RIGHT = 8;
+    private static final int BG_BORDER = 4;
+    private static final int BG_TILE = 248;
+    private static final Blitter BG = Blitter.texture("guis/background.png", 256, 256);
+
     public void renderFrame(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
+        renderFrame(g, font, mouseX, mouseY, partialTicks, 0);
+    }
+
+    public void renderFrame(
+            GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks, int sharedEdges) {
         if (hosted || !drawsTitleBar()) {
             return;
         }
         // Drop-shadow. Skip the right edge when a panel parks outside chrome (encoding tabs)
         // there — otherwise the 2px shade paints over those widgets.
-        g.fill(x + 2, y + height, x + width + 2, y + height + 2, 0x55000000);
-        if (outsideHitWidth() <= 0) {
+        if ((sharedEdges & EDGE_BOTTOM) == 0) {
+            g.fill(x + 2, y + height, x + width + 2, y + height + 2, 0x55000000);
+        }
+        if ((sharedEdges & EDGE_RIGHT) == 0 && outsideHitWidth() <= 0) {
             g.fill(x + width, y + 2, x + width + 2, y + height + 2, 0x55000000);
         }
-        BackgroundGenerator.draw(width, height, g, x, y);
+        drawGeneratedBackground(g, x, y, width, height, sharedEdges);
         renderTitleStrip(g, font, x, y, width, mouseX, mouseY);
+    }
+
+    /**
+     * AE2 {@code BackgroundGenerator} with optional hidden edges so spliced leaves share one
+     * interior instead of painting a second 4px bevel over the join.
+     */
+    public static void drawGeneratedBackground(
+            GuiGraphics g, int x, int y, int width, int height, int hiddenEdges) {
+        if (width < 8 || height < 8) {
+            return;
+        }
+        boolean hideTop = (hiddenEdges & EDGE_TOP) != 0;
+        boolean hideBottom = (hiddenEdges & EDGE_BOTTOM) != 0;
+        boolean hideLeft = (hiddenEdges & EDGE_LEFT) != 0;
+        boolean hideRight = (hiddenEdges & EDGE_RIGHT) != 0;
+        int innerX = hideLeft ? x : x + BG_BORDER;
+        int innerY = hideTop ? y : y + BG_BORDER;
+        int innerW = width - (hideLeft ? 0 : BG_BORDER) - (hideRight ? 0 : BG_BORDER);
+        int innerH = height - (hideTop ? 0 : BG_BORDER) - (hideBottom ? 0 : BG_BORDER);
+        int right = x + width;
+        int bottom = y + height;
+        if (!hideTop && !hideLeft) {
+            BG.copy().src(0, 0, BG_BORDER, BG_BORDER).dest(x, y).blit(g);
+        }
+        if (!hideTop && !hideRight) {
+            BG.copy().src(252, 0, BG_BORDER, BG_BORDER).dest(right - BG_BORDER, y).blit(g);
+        }
+        if (!hideBottom && !hideLeft) {
+            BG.copy().src(0, 252, BG_BORDER, BG_BORDER).dest(x, bottom - BG_BORDER).blit(g);
+        }
+        if (!hideBottom && !hideRight) {
+            BG.copy().src(252, 252, BG_BORDER, BG_BORDER).dest(right - BG_BORDER, bottom - BG_BORDER).blit(g);
+        }
+        for (int cx = 0; cx < innerW; cx += BG_TILE) {
+            int tileW = Math.min(BG_TILE, innerW - cx);
+            if (!hideTop) {
+                BG.copy().src(BG_BORDER, 0, tileW, BG_BORDER).dest(innerX + cx, y).blit(g);
+            }
+            if (!hideBottom) {
+                BG.copy().src(BG_BORDER, 252, tileW, BG_BORDER).dest(innerX + cx, bottom - BG_BORDER).blit(g);
+            }
+            for (int cy = 0; cy < innerH; cy += BG_TILE) {
+                int tileH = Math.min(BG_TILE, innerH - cy);
+                BG.copy().src(BG_BORDER, BG_BORDER, tileW, tileH).dest(innerX + cx, innerY + cy).blit(g);
+            }
+        }
+        for (int cy = 0; cy < innerH; cy += BG_TILE) {
+            int tileH = Math.min(BG_TILE, innerH - cy);
+            if (!hideLeft) {
+                BG.copy().src(0, BG_BORDER, BG_BORDER, tileH).dest(x, innerY + cy).blit(g);
+            }
+            if (!hideRight) {
+                BG.copy().src(252, BG_BORDER, BG_BORDER, tileH).dest(right - BG_BORDER, innerY + cy).blit(g);
+            }
+        }
     }
 
     /**

@@ -37,7 +37,7 @@ public final class LayoutEngine {
             builder.roots.add(new LayoutProjection.RootPlacement(
                     root.rootId(), root.bounds(), contentBounds, rootMinimum, effectivelyVisible));
             if (effectivelyVisible) {
-                arrange(root.content(), contentBounds, builder);
+                arrange(root.content(), contentBounds, builder, workspace, null);
             }
         }
 
@@ -75,32 +75,40 @@ public final class LayoutEngine {
         return result;
     }
 
-    private void arrange(LayoutNode node, DockRect bounds, ProjectionBuilder builder) {
+    private void arrange(
+            LayoutNode node,
+            DockRect bounds,
+            ProjectionBuilder builder,
+            DockWorkspace workspace,
+            DockAxis parentAxis) {
+        boolean compactSplice = workspace.compactSplice();
         DockSize minimum = builder.minimumSizes.get(node.nodeId());
         if (minimum == null || minimum.isEmpty()) {
             return;
         }
-        builder.visibleNodeBounds.put(node.nodeId(), bounds);
         builder.effectivelyVisibleNodeIds.add(node.nodeId());
 
         if (node instanceof LeafNode leaf) {
-            var placement = new LayoutProjection.LeafPlacement(leaf.nodeId(), leaf.moduleId(), bounds);
+            DockRect occupied = compactSplice ? occupyPreferred(leaf, bounds, parentAxis, workspace) : bounds;
+            builder.visibleNodeBounds.put(node.nodeId(), occupied);
+            var placement = new LayoutProjection.LeafPlacement(leaf.nodeId(), leaf.moduleId(), occupied);
             builder.visibleLeavesByNodeId.put(leaf.nodeId(), placement);
             builder.visibleLeavesInPaintOrder.add(placement);
             return;
         }
 
         var split = (SplitNode) node;
+        builder.visibleNodeBounds.put(node.nodeId(), bounds);
         DockSize firstMinimum = builder.minimumSizes.get(split.first().nodeId());
         DockSize secondMinimum = builder.minimumSizes.get(split.second().nodeId());
         boolean firstVisible = !firstMinimum.isEmpty();
         boolean secondVisible = !secondMinimum.isEmpty();
         if (!firstVisible) {
-            arrange(split.second(), bounds, builder);
+            arrange(split.second(), bounds, builder, workspace, parentAxis);
             return;
         }
         if (!secondVisible) {
-            arrange(split.first(), bounds, builder);
+            arrange(split.first(), bounds, builder, workspace, parentAxis);
             return;
         }
 
@@ -113,7 +121,7 @@ public final class LayoutEngine {
                 split.axis().extent(firstMinimum),
                 split.axis().extent(secondMinimum));
         int secondExtent = available - firstExtent;
-        if (split.axis() == DockAxis.VERTICAL) {
+        if (!compactSplice && split.axis() == DockAxis.VERTICAL) {
             int packed = packFixedVerticalExtent(
                     split,
                     available,
@@ -142,8 +150,34 @@ public final class LayoutEngine {
         }
         builder.dividers.add(new LayoutProjection.DividerPlacement(
                 split.nodeId(), split.axis(), dividerBounds));
-        arrange(split.first(), firstBounds, builder);
-        arrange(split.second(), secondBounds, builder);
+        arrange(split.first(), firstBounds, builder, workspace, split.axis());
+        arrange(split.second(), secondBounds, builder, workspace, split.axis());
+    }
+
+    private DockRect occupyPreferred(
+            LeafNode leaf, DockRect cell, DockAxis parentAxis, DockWorkspace workspace) {
+        if (parentAxis == null || cell.width() <= 0 || cell.height() <= 0) {
+            return cell;
+        }
+        ModuleMetrics metrics = catalog.metrics(leaf.moduleId());
+        DockSize desired = desiredSize(leaf, workspace);
+        int width = cell.width();
+        int height = cell.height();
+        if (parentAxis == DockAxis.VERTICAL) {
+            width = Math.min(cell.width(), Math.max(metrics.minimumSize().width(), desired.width()));
+        }
+        if (parentAxis == DockAxis.HORIZONTAL) {
+            height = Math.min(cell.height(), Math.max(metrics.minimumSize().height(), desired.height()));
+        }
+        return new DockRect(cell.x(), cell.y(), width, height);
+    }
+
+    private DockSize desiredSize(LeafNode leaf, DockWorkspace workspace) {
+        DockSize restore = workspace.restoreSizes().get(leaf.nodeId());
+        if (restore != null && !restore.isEmpty()) {
+            return restore;
+        }
+        return catalog.metrics(leaf.moduleId()).defaultSize();
     }
 
     /**
@@ -177,11 +211,15 @@ public final class LayoutEngine {
     }
 
     private boolean expandsVertically(LayoutNode node) {
+        return expandsOn(node, DockAxis.VERTICAL);
+    }
+
+    private boolean expandsOn(LayoutNode node, DockAxis axis) {
         if (node instanceof LeafNode leaf) {
             return catalog.metrics(leaf.moduleId()).expandVertically();
         }
         SplitNode split = (SplitNode) node;
-        return expandsVertically(split.first()) || expandsVertically(split.second());
+        return expandsOn(split.first(), axis) || expandsOn(split.second(), axis);
     }
 
     private int preferredHeight(LayoutNode node, boolean bottomSection) {

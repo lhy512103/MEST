@@ -72,10 +72,8 @@ public final class DockWorkspaceEditor {
             restoreSizes.put(draggedNodeId, draggedRoot.bounds().size());
         }
         restoreSizes.put(hostContentId, hostRestore);
-        return validated(new DockWorkspace(
-                roots,
-                workspace.policies(),
-                DockWorkspace.retainRestoreSizes(restoreSizes, roots)));
+        return validated(workspace.rebuilt(
+                roots, DockWorkspace.retainRestoreSizes(restoreSizes, roots)));
     }
 
     public DockWorkspace detach(
@@ -292,7 +290,7 @@ public final class DockWorkspaceEditor {
         }
         var roots = new ArrayList<>(workspace.roots());
         roots.set(rootIndex, host.withBounds(remainingBounds));
-        return new DockWorkspace(roots, workspace.policies(), restoreSizes);
+        return workspace.rebuilt(roots, restoreSizes);
     }
 
     private DockWorkspace revealHiddenLeaf(
@@ -407,10 +405,8 @@ public final class DockWorkspaceEditor {
     }
 
     private DockWorkspace copyWithRoots(DockWorkspace workspace, ArrayList<FloatingRoot> roots) {
-        return validated(new DockWorkspace(
-                roots,
-                workspace.policies(),
-                DockWorkspace.retainRestoreSizes(workspace.restoreSizes(), roots)));
+        return validated(workspace.rebuilt(
+                roots, DockWorkspace.retainRestoreSizes(workspace.restoreSizes(), roots)));
     }
 
     private static LayoutNode findRequired(DockWorkspace workspace, String nodeId) {

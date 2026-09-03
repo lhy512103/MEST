@@ -10,13 +10,21 @@ import java.util.Set;
 public record DockWorkspace(
         List<FloatingRoot> roots,
         Map<String, ModuleLayoutPolicy> policies,
-        Map<String, DockSize> restoreSizes) {
+        Map<String, DockSize> restoreSizes,
+        boolean compactSplice) {
     public DockWorkspace(List<FloatingRoot> roots) {
-        this(roots, defaultPolicies(roots), Map.of());
+        this(roots, defaultPolicies(roots), Map.of(), false);
     }
 
     public DockWorkspace(List<FloatingRoot> roots, Map<String, ModuleLayoutPolicy> policies) {
-        this(roots, policies, Map.of());
+        this(roots, policies, Map.of(), false);
+    }
+
+    public DockWorkspace(
+            List<FloatingRoot> roots,
+            Map<String, ModuleLayoutPolicy> policies,
+            Map<String, DockSize> restoreSizes) {
+        this(roots, policies, restoreSizes, false);
     }
 
     private static Map<String, ModuleLayoutPolicy> defaultPolicies(List<FloatingRoot> roots) {
@@ -54,15 +62,23 @@ public record DockWorkspace(
     }
 
     public DockWorkspace withRoots(List<FloatingRoot> newRoots) {
-        return new DockWorkspace(newRoots, policies, restoreSizes);
+        return new DockWorkspace(newRoots, policies, restoreSizes, compactSplice);
     }
 
     public DockWorkspace withPolicies(Map<String, ModuleLayoutPolicy> newPolicies) {
-        return new DockWorkspace(roots, newPolicies, restoreSizes);
+        return new DockWorkspace(roots, newPolicies, restoreSizes, compactSplice);
     }
 
     public DockWorkspace withRestoreSizes(Map<String, DockSize> newRestoreSizes) {
-        return new DockWorkspace(roots, policies, newRestoreSizes);
+        return new DockWorkspace(roots, policies, newRestoreSizes, compactSplice);
+    }
+
+    public DockWorkspace withCompactSplice(boolean compactSplice) {
+        return new DockWorkspace(roots, policies, restoreSizes, compactSplice);
+    }
+
+    public DockWorkspace rebuilt(List<FloatingRoot> newRoots, Map<String, DockSize> newRestoreSizes) {
+        return new DockWorkspace(newRoots, policies, newRestoreSizes, compactSplice);
     }
 
     /**

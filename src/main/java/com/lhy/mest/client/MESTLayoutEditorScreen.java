@@ -66,7 +66,7 @@ public final class MESTLayoutEditorScreen extends Screen {
     private static final int NAME_FIELD_WIDTH = 80;
     private static final int NAME_FIELD_HEIGHT = 16;
     private static final int TOOLBAR_ICON_COUNT = 5;
-    private static final int TOOLBAR_ICON_LOCK = 0;
+    private static final int TOOLBAR_ICON_COMPACT = 0;
     private static final int TOOLBAR_ICON_UNDO = 1;
     private static final int TOOLBAR_ICON_RESET = 2;
     private static final int TOOLBAR_ICON_IMPORT = 3;
@@ -511,8 +511,8 @@ public final class MESTLayoutEditorScreen extends Screen {
         }
         if (mouseY < TOOLBAR_HEIGHT) {
             if (button == 0) {
-                if (toolbarIconRect(TOOLBAR_ICON_LOCK).contains(mouseX, mouseY)) {
-                    dock.toggleLayoutLocked();
+                if (toolbarIconRect(TOOLBAR_ICON_COMPACT).contains(mouseX, mouseY)) {
+                    dock.toggleCompactSplice();
                     return true;
                 }
                 if (toolbarIconRect(TOOLBAR_ICON_UNDO).contains(mouseX, mouseY) && dock.canUndoLayout()) {
@@ -737,10 +737,15 @@ public final class MESTLayoutEditorScreen extends Screen {
     }
 
     private void renderChromeTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
-        if (toolbarIconRect(TOOLBAR_ICON_LOCK).contains(mouseX, mouseY)) {
-            graphics.renderComponentTooltip(font, List.of(Component.translatable(dock.isLayoutLocked()
-                    ? "gui.mesplicedterminal.unlock_layout"
-                    : "gui.mesplicedterminal.lock_layout")), mouseX, mouseY);
+        if (toolbarIconRect(TOOLBAR_ICON_COMPACT).contains(mouseX, mouseY)) {
+            boolean compact = dock.isCompactSplice();
+            graphics.renderComponentTooltip(font, List.of(
+                    Component.translatable(compact
+                            ? "gui.mesplicedterminal.compact_layout"
+                            : "gui.mesplicedterminal.compact_layout.off"),
+                    Component.translatable(compact
+                            ? "gui.mesplicedterminal.compact_layout.hint.off"
+                            : "gui.mesplicedterminal.compact_layout.hint")), mouseX, mouseY);
             return;
         }
         if (toolbarIconRect(TOOLBAR_ICON_UNDO).contains(mouseX, mouseY)) {
@@ -1058,9 +1063,9 @@ public final class MESTLayoutEditorScreen extends Screen {
         graphics.fill(0, TOOLBAR_HEIGHT - 1, width, TOOLBAR_HEIGHT, ModulePanel.COLOR_LIGHT);
 
         boolean canUndo = dock.canUndoLayout();
-        drawToolbarIconButton(graphics, toolbarIconRect(TOOLBAR_ICON_LOCK),
-                dock.isLayoutLocked() ? Icon.LOCKED : Icon.UNLOCKED,
-                toolbarIconRect(TOOLBAR_ICON_LOCK).contains(mouseX, mouseY), false);
+        drawToolbarIconButton(graphics, toolbarIconRect(TOOLBAR_ICON_COMPACT),
+                dock.isCompactSplice() ? Icon.TERMINAL_STYLE_SMALL : Icon.TERMINAL_STYLE_FULL,
+                toolbarIconRect(TOOLBAR_ICON_COMPACT).contains(mouseX, mouseY), dock.isCompactSplice());
         drawToolbarIconButton(graphics, toolbarIconRect(TOOLBAR_ICON_UNDO),
                 Icon.BACK,
                 canUndo && toolbarIconRect(TOOLBAR_ICON_UNDO).contains(mouseX, mouseY), false);

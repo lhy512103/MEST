@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -87,5 +88,79 @@ class LayoutEngineTest {
                 projection.visibleLeavesInPaintOrder().stream()
                         .map(LayoutProjection.LeafPlacement::moduleId)
                         .toList());
+    }
+
+    @Test
+    void compactSpliceKeepsFixedLeavesAtPreferredCrossSize() {
+        var metrics = new LinkedHashMap<String, ModuleMetrics>();
+        metrics.put("fixed", new ModuleMetrics(new DockSize(50, 40), new DockSize(80, 60)));
+        metrics.put("flex", new ModuleMetrics(new DockSize(40, 30), new DockSize(90, 80), true));
+        ModuleCatalog catalog = new ModuleCatalog(metrics);
+        LayoutNode split = new SplitNode(
+                "split-main",
+                DockAxis.VERTICAL,
+                0.5,
+                new LeafNode("leaf-fixed", "fixed", true),
+                new LeafNode("leaf-flex", "flex", true));
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)))
+                .withCompactSplice(true);
+
+        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
+                .project(workspace);
+
+        assertEquals(new DockRect(0, 0, 80, 100), projection.visibleLeaf("leaf-fixed").orElseThrow().bounds());
+        assertEquals(new DockRect(0, 100, 90, 100), projection.visibleLeaf("leaf-flex").orElseThrow().bounds());
+    }
+
+    @Test
+    void compactSpliceUsesRestoredStandaloneSizeInsteadOfDefault() {
+        var metrics = new LinkedHashMap<String, ModuleMetrics>();
+        metrics.put("a", new ModuleMetrics(new DockSize(50, 40), new DockSize(80, 60)));
+        metrics.put("b", new ModuleMetrics(new DockSize(40, 30), new DockSize(90, 80), true));
+        ModuleCatalog catalog = new ModuleCatalog(metrics);
+        LayoutNode split = new SplitNode(
+                "split-main",
+                DockAxis.VERTICAL,
+                0.4,
+                new LeafNode("leaf-a", "a", true),
+                new LeafNode("leaf-b", "b", true));
+        var restore = new LinkedHashMap<String, DockSize>();
+        restore.put("leaf-a", new DockSize(160, 70));
+        restore.put("leaf-b", new DockSize(110, 90));
+        DockWorkspace workspace = new DockWorkspace(
+                List.of(new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)),
+                Map.of(),
+                restore,
+                true);
+
+        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
+                .project(workspace);
+
+        assertEquals(new DockRect(0, 0, 160, 80), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
+        assertEquals(new DockRect(0, 80, 110, 120), projection.visibleLeaf("leaf-b").orElseThrow().bounds());
+    }
+
+    @Test
+    void compactSplicePacksTwoFixedLeavesWithoutStretchingTheGap() {
+        var metrics = new LinkedHashMap<String, ModuleMetrics>();
+        metrics.put("a", new ModuleMetrics(new DockSize(50, 40), new DockSize(80, 60)));
+        metrics.put("b", new ModuleMetrics(new DockSize(50, 40), new DockSize(70, 50)));
+        ModuleCatalog catalog = new ModuleCatalog(metrics);
+        LayoutNode split = new SplitNode(
+                "split-main",
+                DockAxis.VERTICAL,
+                0.5,
+                new LeafNode("leaf-a", "a", true),
+                new LeafNode("leaf-b", "b", true));
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)))
+                .withCompactSplice(true);
+
+        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
+                .project(workspace);
+
+        assertEquals(new DockRect(0, 0, 80, 100), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
+        assertEquals(new DockRect(0, 100, 70, 100), projection.visibleLeaf("leaf-b").orElseThrow().bounds());
     }
 }
