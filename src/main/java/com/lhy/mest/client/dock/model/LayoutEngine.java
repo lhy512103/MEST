@@ -3,6 +3,7 @@ package com.lhy.mest.client.dock.model;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 
 /** Pure recursive measure/arrange engine. It performs no rendering or file IO. */
@@ -32,12 +33,26 @@ public final class LayoutEngine {
                     : new DockSize(
                             add(contentMinimum.width(), style.rootInsets().horizontal()),
                             add(contentMinimum.height(), style.rootInsets().vertical()));
-            DockRect contentBounds = root.bounds().inset(style.rootInsets());
             boolean effectivelyVisible = !contentMinimum.isEmpty();
-            builder.roots.add(new LayoutProjection.RootPlacement(
-                    root.rootId(), root.bounds(), contentBounds, rootMinimum, effectivelyVisible));
-            if (effectivelyVisible) {
-                arrange(root.content(), contentBounds, builder, workspace, null);
+            if (effectivelyVisible && workspace.compactSplice()) {
+                CompactShape shape = compactShape(workspace, root.content());
+                int contentX = root.bounds().x() + style.rootInsets().left();
+                int contentY = root.bounds().y() + style.rootInsets().top();
+                DockRect contentBounds = new DockRect(contentX, contentY, shape.width(), shape.height());
+                DockRect rootBounds = new DockRect(
+                        root.bounds().x(), root.bounds().y(),
+                        add(shape.width(), style.rootInsets().horizontal()),
+                        add(shape.height(), style.rootInsets().vertical()));
+                builder.roots.add(new LayoutProjection.RootPlacement(
+                        root.rootId(), rootBounds, contentBounds, rootMinimum, true));
+                emitCompact(shape, contentX, contentY, builder);
+            } else {
+                DockRect contentBounds = root.bounds().inset(style.rootInsets());
+                builder.roots.add(new LayoutProjection.RootPlacement(
+                        root.rootId(), root.bounds(), contentBounds, rootMinimum, effectivelyVisible));
+                if (effectivelyVisible) {
+                    arrange(root.content(), contentBounds, builder);
+                }
             }
         }
 
@@ -78,10 +93,7 @@ public final class LayoutEngine {
     private void arrange(
             LayoutNode node,
             DockRect bounds,
-            ProjectionBuilder builder,
-            DockWorkspace workspace,
-            DockAxis parentAxis) {
-        boolean compactSplice = workspace.compactSplice();
+            ProjectionBuilder builder) {
         DockSize minimum = builder.minimumSizes.get(node.nodeId());
         if (minimum == null || minimum.isEmpty()) {
             return;
@@ -89,9 +101,8 @@ public final class LayoutEngine {
         builder.effectivelyVisibleNodeIds.add(node.nodeId());
 
         if (node instanceof LeafNode leaf) {
-            DockRect occupied = compactSplice ? occupyPreferred(leaf, bounds, parentAxis, workspace) : bounds;
-            builder.visibleNodeBounds.put(node.nodeId(), occupied);
-            var placement = new LayoutProjection.LeafPlacement(leaf.nodeId(), leaf.moduleId(), occupied);
+            builder.visibleNodeBounds.put(node.nodeId(), bounds);
+            var placement = new LayoutProjection.LeafPlacement(leaf.nodeId(), leaf.moduleId(), bounds);
             builder.visibleLeavesByNodeId.put(leaf.nodeId(), placement);
             builder.visibleLeavesInPaintOrder.add(placement);
             return;
@@ -104,11 +115,11 @@ public final class LayoutEngine {
         boolean firstVisible = !firstMinimum.isEmpty();
         boolean secondVisible = !secondMinimum.isEmpty();
         if (!firstVisible) {
-            arrange(split.second(), bounds, builder, workspace, parentAxis);
+            arrange(split.second(), bounds, builder);
             return;
         }
         if (!secondVisible) {
-            arrange(split.first(), bounds, builder, workspace, parentAxis);
+            arrange(split.first(), bounds, builder);
             return;
         }
 
@@ -121,7 +132,7 @@ public final class LayoutEngine {
                 split.axis().extent(firstMinimum),
                 split.axis().extent(secondMinimum));
         int secondExtent = available - firstExtent;
-        if (!compactSplice && split.axis() == DockAxis.VERTICAL) {
+        if (split.axis() == DockAxis.VERTICAL) {
             int packed = packFixedVerticalExtent(
                     split,
                     available,
@@ -150,26 +161,110 @@ public final class LayoutEngine {
         }
         builder.dividers.add(new LayoutProjection.DividerPlacement(
                 split.nodeId(), split.axis(), dividerBounds));
-        arrange(split.first(), firstBounds, builder, workspace, split.axis());
-        arrange(split.second(), secondBounds, builder, workspace, split.axis());
+        arrange(split.first(), firstBounds, builder);
+        arrange(split.second(), secondBounds, builder);
     }
 
-    private DockRect occupyPreferred(
-            LeafNode leaf, DockRect cell, DockAxis parentAxis, DockWorkspace workspace) {
-        if (parentAxis == null || cell.width() <= 0 || cell.height() <= 0) {
-            return cell;
+    /** Preferred occupied size used only by the compact projection. */
+    public DockSize preferredSize(DockWorkspace workspace, LayoutNode node) {
+        CompactShape shape = compactShape(workspace, node);
+        return new DockSize(shape.width(), shape.height());
+    }
+
+    /**
+     * Packs recursive split subtrees by their visible rectangle contour. This lets a child occupy
+     * an existing L-shaped hole instead of reserving its subtree's entire bounding box as a column.
+     */
+    private CompactShape compactShape(DockWorkspace workspace, LayoutNode node) {
+        if (node instanceof LeafNode leaf) {
+            if (!workspace.policyFor(leaf.moduleId()).visible()) {
+                return CompactShape.empty();
+            }
+            ModuleMetrics metrics = catalog.metrics(leaf.moduleId());
+            DockSize desired = desiredSize(leaf, workspace);
+            int width = Math.max(metrics.minimumSize().width(), desired.width());
+            int height = Math.max(metrics.minimumSize().height(), desired.height());
+            DockRect bounds = new DockRect(0, 0, width, height);
+            return CompactShape.leaf(leaf, bounds);
         }
-        ModuleMetrics metrics = catalog.metrics(leaf.moduleId());
-        DockSize desired = desiredSize(leaf, workspace);
-        int width = cell.width();
-        int height = cell.height();
-        if (parentAxis == DockAxis.VERTICAL) {
-            width = Math.min(cell.width(), Math.max(metrics.minimumSize().width(), desired.width()));
+
+        SplitNode split = (SplitNode) node;
+        CompactShape first = compactShape(workspace, split.first());
+        CompactShape second = compactShape(workspace, split.second());
+        if (first.isEmpty()) {
+            return second.withNodeBounds(split.nodeId());
         }
-        if (parentAxis == DockAxis.HORIZONTAL) {
-            height = Math.min(cell.height(), Math.max(metrics.minimumSize().height(), desired.height()));
+        if (second.isEmpty()) {
+            return first.withNodeBounds(split.nodeId());
         }
-        return new DockRect(cell.x(), cell.y(), width, height);
+
+        int shiftX = 0;
+        int shiftY = 0;
+        if (split.axis() == DockAxis.HORIZONTAL) {
+            shiftX = horizontalContourShift(first.leaves, second.leaves);
+            shiftX += style.dividerThickness();
+        } else {
+            shiftY = verticalContourShift(first.leaves, second.leaves);
+            shiftY += style.dividerThickness();
+        }
+        CompactShape shiftedSecond = second.translate(shiftX, shiftY);
+        return CompactShape.combine(split, first, shiftedSecond, style.dividerThickness());
+    }
+
+    private static int horizontalContourShift(List<CompactLeaf> first, List<CompactLeaf> second) {
+        int shift = 0;
+        boolean overlaps = false;
+        for (CompactLeaf left : first) {
+            for (CompactLeaf right : second) {
+                if (!overlaps(left.bounds.y(), left.bounds.bottom(), right.bounds.y(), right.bounds.bottom())) {
+                    continue;
+                }
+                overlaps = true;
+                shift = Math.max(shift, left.bounds.right() - right.bounds.x());
+            }
+        }
+        return overlaps ? shift : first.stream().mapToInt(leaf -> leaf.bounds.right()).max().orElse(0);
+    }
+
+    private static int verticalContourShift(List<CompactLeaf> first, List<CompactLeaf> second) {
+        int shift = 0;
+        boolean overlaps = false;
+        for (CompactLeaf top : first) {
+            for (CompactLeaf bottom : second) {
+                if (!overlaps(top.bounds.x(), top.bounds.right(), bottom.bounds.x(), bottom.bounds.right())) {
+                    continue;
+                }
+                overlaps = true;
+                shift = Math.max(shift, top.bounds.bottom() - bottom.bounds.y());
+            }
+        }
+        return overlaps ? shift : first.stream().mapToInt(leaf -> leaf.bounds.bottom()).max().orElse(0);
+    }
+
+    private static boolean overlaps(int firstStart, int firstEnd, int secondStart, int secondEnd) {
+        return firstStart < secondEnd && firstEnd > secondStart;
+    }
+
+    private static void emitCompact(CompactShape shape, int x, int y, ProjectionBuilder builder) {
+        for (var entry : shape.nodeBounds.entrySet()) {
+            DockRect bounds = entry.getValue();
+            builder.visibleNodeBounds.put(entry.getKey(), translate(bounds, x, y));
+            builder.effectivelyVisibleNodeIds.add(entry.getKey());
+        }
+        for (CompactLeaf leaf : shape.leaves) {
+            DockRect bounds = translate(leaf.bounds, x, y);
+            var placement = new LayoutProjection.LeafPlacement(leaf.nodeId, leaf.moduleId, bounds);
+            builder.visibleLeavesByNodeId.put(leaf.nodeId, placement);
+            builder.visibleLeavesInPaintOrder.add(placement);
+        }
+        for (CompactDivider divider : shape.dividers) {
+            builder.dividers.add(new LayoutProjection.DividerPlacement(
+                    divider.splitNodeId, divider.axis, translate(divider.bounds, x, y)));
+        }
+    }
+
+    private static DockRect translate(DockRect bounds, int x, int y) {
+        return new DockRect(bounds.x() + x, bounds.y() + y, bounds.width(), bounds.height());
     }
 
     private DockSize desiredSize(LeafNode leaf, DockWorkspace workspace) {
@@ -215,6 +310,9 @@ public final class LayoutEngine {
     }
 
     private boolean expandsOn(LayoutNode node, DockAxis axis) {
+        if (axis != DockAxis.VERTICAL) {
+            return false;
+        }
         if (node instanceof LeafNode leaf) {
             return catalog.metrics(leaf.moduleId()).expandVertically();
         }
@@ -260,6 +358,134 @@ public final class LayoutEngine {
             return Math.addExact(first, second);
         } catch (ArithmeticException e) {
             throw new WorkspaceValidationException("layout size overflow");
+        }
+    }
+
+    private record CompactLeaf(String nodeId, String moduleId, DockRect bounds) {
+    }
+
+    private record CompactDivider(String splitNodeId, DockAxis axis, DockRect bounds) {
+    }
+
+    private static final class CompactShape {
+        private final List<CompactLeaf> leaves;
+        private final List<CompactDivider> dividers;
+        private final Map<String, DockRect> nodeBounds;
+        private final int width;
+        private final int height;
+
+        private CompactShape(
+                List<CompactLeaf> leaves,
+                List<CompactDivider> dividers,
+                Map<String, DockRect> nodeBounds) {
+            this.leaves = List.copyOf(leaves);
+            this.dividers = List.copyOf(dividers);
+            this.nodeBounds = Map.copyOf(new LinkedHashMap<>(nodeBounds));
+            int maxRight = 0;
+            int maxBottom = 0;
+            for (CompactLeaf leaf : leaves) {
+                maxRight = Math.max(maxRight, leaf.bounds.right());
+                maxBottom = Math.max(maxBottom, leaf.bounds.bottom());
+            }
+            this.width = maxRight;
+            this.height = maxBottom;
+        }
+
+        static CompactShape empty() {
+            return new CompactShape(List.of(), List.of(), Map.of());
+        }
+
+        static CompactShape leaf(LeafNode leaf, DockRect bounds) {
+            return new CompactShape(
+                    List.of(new CompactLeaf(leaf.nodeId(), leaf.moduleId(), bounds)),
+                    List.of(),
+                    Map.of(leaf.nodeId(), bounds));
+        }
+
+        boolean isEmpty() {
+            return leaves.isEmpty();
+        }
+
+        int width() {
+            return width;
+        }
+
+        int height() {
+            return height;
+        }
+
+        CompactShape translate(int x, int y) {
+            var shiftedLeaves = new ArrayList<CompactLeaf>(leaves.size());
+            for (CompactLeaf leaf : leaves) {
+                shiftedLeaves.add(new CompactLeaf(
+                        leaf.nodeId, leaf.moduleId, LayoutEngine.translate(leaf.bounds, x, y)));
+            }
+            var shiftedDividers = new ArrayList<CompactDivider>(dividers.size());
+            for (CompactDivider divider : dividers) {
+                shiftedDividers.add(new CompactDivider(
+                        divider.splitNodeId, divider.axis, LayoutEngine.translate(divider.bounds, x, y)));
+            }
+            var shiftedNodes = new LinkedHashMap<String, DockRect>();
+            nodeBounds.forEach((id, bounds) -> shiftedNodes.put(id, LayoutEngine.translate(bounds, x, y)));
+            return new CompactShape(shiftedLeaves, shiftedDividers, shiftedNodes);
+        }
+
+        CompactShape withNodeBounds(String nodeId) {
+            var nodes = new LinkedHashMap<>(nodeBounds);
+            nodes.put(nodeId, new DockRect(0, 0, width, height));
+            return new CompactShape(leaves, dividers, nodes);
+        }
+
+        static CompactShape combine(
+                SplitNode split,
+                CompactShape first,
+                CompactShape second,
+                int dividerThickness) {
+            var leaves = new ArrayList<CompactLeaf>(first.leaves.size() + second.leaves.size());
+            leaves.addAll(first.leaves);
+            leaves.addAll(second.leaves);
+            var dividers = new ArrayList<CompactDivider>(first.dividers.size() + second.dividers.size() + 1);
+            dividers.addAll(first.dividers);
+            dividers.addAll(second.dividers);
+            addContactDividers(dividers, split, first.leaves, second.leaves, dividerThickness);
+
+            var nodes = new LinkedHashMap<String, DockRect>();
+            nodes.putAll(first.nodeBounds);
+            nodes.putAll(second.nodeBounds);
+            CompactShape combined = new CompactShape(leaves, dividers, nodes);
+            nodes.put(split.nodeId(), new DockRect(0, 0, combined.width, combined.height));
+            return new CompactShape(leaves, dividers, nodes);
+        }
+
+        private static void addContactDividers(
+                List<CompactDivider> output,
+                SplitNode split,
+                List<CompactLeaf> first,
+                List<CompactLeaf> second,
+                int thickness) {
+            for (CompactLeaf firstLeaf : first) {
+                for (CompactLeaf secondLeaf : second) {
+                    DockRect a = firstLeaf.bounds;
+                    DockRect b = secondLeaf.bounds;
+                    if (split.axis() == DockAxis.HORIZONTAL) {
+                        int top = Math.max(a.y(), b.y());
+                        int bottom = Math.min(a.bottom(), b.bottom());
+                        if (bottom > top && b.x() - a.right() == thickness) {
+                            output.add(new CompactDivider(
+                                    split.nodeId(), split.axis(),
+                                    new DockRect(a.right(), top, thickness, bottom - top)));
+                        }
+                    } else {
+                        int left = Math.max(a.x(), b.x());
+                        int right = Math.min(a.right(), b.right());
+                        if (right > left && b.y() - a.bottom() == thickness) {
+                            output.add(new CompactDivider(
+                                    split.nodeId(), split.axis(),
+                                    new DockRect(left, a.bottom(), right - left, thickness)));
+                        }
+                    }
+                }
+            }
         }
     }
 

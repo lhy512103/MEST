@@ -109,8 +109,8 @@ class LayoutEngineTest {
         LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
                 .project(workspace);
 
-        assertEquals(new DockRect(0, 0, 80, 100), projection.visibleLeaf("leaf-fixed").orElseThrow().bounds());
-        assertEquals(new DockRect(0, 100, 90, 100), projection.visibleLeaf("leaf-flex").orElseThrow().bounds());
+        assertEquals(new DockRect(0, 0, 80, 60), projection.visibleLeaf("leaf-fixed").orElseThrow().bounds());
+        assertEquals(new DockRect(0, 60, 90, 80), projection.visibleLeaf("leaf-flex").orElseThrow().bounds());
     }
 
     @Test
@@ -137,8 +137,8 @@ class LayoutEngineTest {
         LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
                 .project(workspace);
 
-        assertEquals(new DockRect(0, 0, 160, 80), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
-        assertEquals(new DockRect(0, 80, 110, 120), projection.visibleLeaf("leaf-b").orElseThrow().bounds());
+        assertEquals(new DockRect(0, 0, 160, 70), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
+        assertEquals(new DockRect(0, 70, 110, 90), projection.visibleLeaf("leaf-b").orElseThrow().bounds());
     }
 
     @Test
@@ -160,7 +160,80 @@ class LayoutEngineTest {
         LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
                 .project(workspace);
 
-        assertEquals(new DockRect(0, 0, 80, 100), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
-        assertEquals(new DockRect(0, 100, 70, 100), projection.visibleLeaf("leaf-b").orElseThrow().bounds());
+        assertEquals(new DockRect(0, 0, 80, 60), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
+        assertEquals(new DockRect(0, 60, 70, 50), projection.visibleLeaf("leaf-b").orElseThrow().bounds());
+    }
+
+    @Test
+    void compactNestedSplitsKeepEverySiblingAdjacent() {
+        var metrics = new LinkedHashMap<String, ModuleMetrics>();
+        metrics.put("top", new ModuleMetrics(new DockSize(80, 40), new DockSize(300, 100), true));
+        metrics.put("left", new ModuleMetrics(new DockSize(60, 40), new DockSize(200, 80)));
+        metrics.put("right", new ModuleMetrics(new DockSize(60, 40), new DockSize(100, 90)));
+        ModuleCatalog catalog = new ModuleCatalog(metrics);
+        LayoutNode bottom = new SplitNode(
+                "split-bottom",
+                DockAxis.HORIZONTAL,
+                0.5,
+                new LeafNode("leaf-left", "left", true),
+                new LeafNode("leaf-right", "right", true));
+        LayoutNode rootNode = new SplitNode(
+                "split-root",
+                DockAxis.VERTICAL,
+                0.5,
+                new LeafNode("leaf-top", "top", true),
+                bottom);
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-main", new DockRect(0, 0, 300, 190), rootNode)))
+                .withCompactSplice(true);
+
+        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
+                .project(workspace);
+
+        assertEquals(new DockRect(0, 0, 300, 100), projection.visibleLeaf("leaf-top").orElseThrow().bounds());
+        assertEquals(new DockRect(0, 100, 200, 80), projection.visibleLeaf("leaf-left").orElseThrow().bounds());
+        assertEquals(new DockRect(200, 100, 100, 90), projection.visibleLeaf("leaf-right").orElseThrow().bounds());
+    }
+
+    @Test
+    void compactContourLetsNestedRowOccupySpaceBelowAShortSibling() {
+        var metrics = new LinkedHashMap<String, ModuleMetrics>();
+        metrics.put("crafting", new ModuleMetrics(new DockSize(100, 60), new DockSize(200, 80)));
+        metrics.put("inventory", new ModuleMetrics(new DockSize(80, 60), new DockSize(100, 100)));
+        metrics.put("access", new ModuleMetrics(new DockSize(60, 60), new DockSize(150, 100)));
+        metrics.put("encoding", new ModuleMetrics(new DockSize(80, 60), new DockSize(120, 80)));
+        ModuleCatalog catalog = new ModuleCatalog(metrics);
+        LayoutNode left = new SplitNode(
+                "split-left",
+                DockAxis.VERTICAL,
+                0.5,
+                new LeafNode("leaf-crafting", "crafting", true),
+                new SplitNode(
+                        "split-lower",
+                        DockAxis.HORIZONTAL,
+                        0.5,
+                        new LeafNode("leaf-inventory", "inventory", true),
+                        new LeafNode("leaf-access", "access", true)));
+        LayoutNode rootNode = new SplitNode(
+                "split-root",
+                DockAxis.HORIZONTAL,
+                0.5,
+                left,
+                new LeafNode("leaf-encoding", "encoding", true));
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-main", new DockRect(0, 0, 400, 200), rootNode)))
+                .withCompactSplice(true);
+
+        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
+                .project(workspace);
+
+        assertEquals(new DockRect(0, 0, 200, 80),
+                projection.visibleLeaf("leaf-crafting").orElseThrow().bounds());
+        assertEquals(new DockRect(0, 80, 100, 100),
+                projection.visibleLeaf("leaf-inventory").orElseThrow().bounds());
+        assertEquals(new DockRect(100, 80, 150, 100),
+                projection.visibleLeaf("leaf-access").orElseThrow().bounds());
+        assertEquals(new DockRect(200, 0, 120, 80),
+                projection.visibleLeaf("leaf-encoding").orElseThrow().bounds());
     }
 }
