@@ -90,7 +90,8 @@ public final class MESTLayoutEditorScreen extends Screen {
             "gui.mesplicedterminal.layout_hint_splice",
             "gui.mesplicedterminal.layout_hint_detach",
             "gui.mesplicedterminal.layout_hint_resize",
-            "gui.mesplicedterminal.layout_hint_palette");
+            "gui.mesplicedterminal.layout_hint_palette",
+            "gui.mesplicedterminal.layout_hint_content");
 
     private final Screen parent;
     private final DockManager dock;
@@ -661,6 +662,14 @@ public final class MESTLayoutEditorScreen extends Screen {
             }
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (dock.keyPressed(keyCode)) {
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     // --- Rendering ---------------------------------------------------------

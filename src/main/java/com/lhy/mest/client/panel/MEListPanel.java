@@ -161,8 +161,14 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     }
 
     @Override
+    public boolean fillsContentArea() {
+        return true;
+    }
+
+    @Override
     protected int titleRightInset() {
-        return SEARCH_WIDTH + 8 + (pinVisible() ? 16 : 0) + utilityBarWidth();
+        return SEARCH_WIDTH + 8 + (pinVisible() ? 16 : 0)
+                + (contentChromeVisible() ? 28 : 0) + utilityBarWidth();
     }
 
     @Override
@@ -350,7 +356,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     }
 
     public boolean inTitleBarControls(double mx, double my) {
-        return inSearchField(mx, my) || inPinButton(mx, my) || hoveredUtility(mx, my) != null;
+        return super.inTitleBarControls(mx, my) || inSearchField(mx, my) || hoveredUtility(mx, my) != null;
     }
 
     public boolean inSearchField(double mx, double my) {

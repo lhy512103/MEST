@@ -102,13 +102,18 @@ public class TrashPanel extends ModulePanel {
     }
 
     @Override
+    public boolean fillsContentArea() {
+        return true;
+    }
+
+    @Override
     public int preferredContentRightInset() {
         return visible ? INSIDE_GUTTER : 0;
     }
 
     @Override
     protected int titleRightInset() {
-        return 24;
+        return 24 + (contentChromeVisible() ? 28 : 0);
     }
 
     @Override

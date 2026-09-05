@@ -163,6 +163,11 @@ public class PatternAccessPanel extends ModulePanel {
     }
 
     @Override
+    public boolean fillsContentArea() {
+        return true;
+    }
+
+    @Override
     public int outsideHitWidth() {
         if (!scrollerOutside()) {
             return 0;
@@ -522,7 +527,7 @@ public class PatternAccessPanel extends ModulePanel {
 
     @Override
     public boolean inTitleBarControls(double mx, double my) {
-        return inPinButton(mx, my)
+        return super.inTitleBarControls(mx, my)
                 || (searchField != null && searchField.visible && searchField.isMouseOver(mx, my))
                 || (searchModeButton.visible && searchModeButton.isMouseOver(mx, my))
                 || (showModeButton.visible && showModeButton.isMouseOver(mx, my))

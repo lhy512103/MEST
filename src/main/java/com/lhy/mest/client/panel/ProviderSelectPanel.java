@@ -147,6 +147,11 @@ public class ProviderSelectPanel extends ModulePanel {
         return true;
     }
 
+    @Override
+    public boolean fillsContentArea() {
+        return true;
+    }
+
     public boolean applyList(ProviderPickerListPacket packet) {
         raw.clear();
         int size = Math.min(packet.ids().size(), Math.min(packet.names().size(), packet.emptySlots().size()));
@@ -186,13 +191,13 @@ public class ProviderSelectPanel extends ModulePanel {
 
     @Override
     public boolean inTitleBarControls(double mx, double my) {
-        return inPinButton(mx, my)
+        return super.inTitleBarControls(mx, my)
                 || (searchField != null && searchField.visible && searchField.isMouseOver(mx, my));
     }
 
     @Override
     protected int titleRightInset() {
-        return (pinVisible() ? 16 : 4) + SEARCH_WIDTH + 4;
+        return (pinVisible() ? 16 : 4) + SEARCH_WIDTH + 4 + (contentChromeVisible() ? 28 : 0);
     }
 
     @Override

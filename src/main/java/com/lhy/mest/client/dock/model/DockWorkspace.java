@@ -11,20 +11,29 @@ public record DockWorkspace(
         List<FloatingRoot> roots,
         Map<String, ModuleLayoutPolicy> policies,
         Map<String, DockSize> restoreSizes,
-        SpliceMode spliceMode) {
+        SpliceMode spliceMode,
+        Map<String, ContentOffset> contentOffsets) {
     public DockWorkspace(List<FloatingRoot> roots) {
-        this(roots, defaultPolicies(roots), Map.of(), SpliceMode.DEFAULT);
+        this(roots, defaultPolicies(roots), Map.of(), SpliceMode.DEFAULT, Map.of());
     }
 
     public DockWorkspace(List<FloatingRoot> roots, Map<String, ModuleLayoutPolicy> policies) {
-        this(roots, policies, Map.of(), SpliceMode.DEFAULT);
+        this(roots, policies, Map.of(), SpliceMode.DEFAULT, Map.of());
     }
 
     public DockWorkspace(
             List<FloatingRoot> roots,
             Map<String, ModuleLayoutPolicy> policies,
             Map<String, DockSize> restoreSizes) {
-        this(roots, policies, restoreSizes, SpliceMode.DEFAULT);
+        this(roots, policies, restoreSizes, SpliceMode.DEFAULT, Map.of());
+    }
+
+    public DockWorkspace(
+            List<FloatingRoot> roots,
+            Map<String, ModuleLayoutPolicy> policies,
+            Map<String, DockSize> restoreSizes,
+            SpliceMode spliceMode) {
+        this(roots, policies, restoreSizes, spliceMode, Map.of());
     }
 
     private static Map<String, ModuleLayoutPolicy> defaultPolicies(List<FloatingRoot> roots) {
@@ -49,12 +58,13 @@ public record DockWorkspace(
     }
 
     public DockWorkspace {
-        if (roots == null || policies == null || restoreSizes == null) {
-            throw new NullPointerException("roots, policies and restoreSizes");
+        if (roots == null || policies == null || restoreSizes == null || contentOffsets == null) {
+            throw new NullPointerException("roots, policies, restoreSizes and contentOffsets");
         }
         roots = List.copyOf(roots);
         policies = Map.copyOf(new LinkedHashMap<>(policies));
         restoreSizes = Map.copyOf(new LinkedHashMap<>(restoreSizes));
+        contentOffsets = Map.copyOf(new LinkedHashMap<>(contentOffsets));
         if (spliceMode == null) {
             spliceMode = SpliceMode.DEFAULT;
         }
@@ -65,19 +75,27 @@ public record DockWorkspace(
     }
 
     public DockWorkspace withRoots(List<FloatingRoot> newRoots) {
-        return new DockWorkspace(newRoots, policies, restoreSizes, spliceMode);
+        return new DockWorkspace(newRoots, policies, restoreSizes, spliceMode, contentOffsets);
     }
 
     public DockWorkspace withPolicies(Map<String, ModuleLayoutPolicy> newPolicies) {
-        return new DockWorkspace(roots, newPolicies, restoreSizes, spliceMode);
+        return new DockWorkspace(roots, newPolicies, restoreSizes, spliceMode, contentOffsets);
     }
 
     public DockWorkspace withRestoreSizes(Map<String, DockSize> newRestoreSizes) {
-        return new DockWorkspace(roots, policies, newRestoreSizes, spliceMode);
+        return new DockWorkspace(roots, policies, newRestoreSizes, spliceMode, contentOffsets);
     }
 
     public DockWorkspace withSpliceMode(SpliceMode newSpliceMode) {
-        return new DockWorkspace(roots, policies, restoreSizes, newSpliceMode);
+        return new DockWorkspace(roots, policies, restoreSizes, newSpliceMode, contentOffsets);
+    }
+
+    public DockWorkspace withContentOffsets(Map<String, ContentOffset> newContentOffsets) {
+        return new DockWorkspace(roots, policies, restoreSizes, spliceMode, newContentOffsets);
+    }
+
+    public ContentOffset contentOffset(String moduleId) {
+        return contentOffsets.getOrDefault(moduleId, ContentOffset.ZERO);
     }
 
     /** True when the root bounds follow the leaves instead of stretching them to a fixed frame. */
@@ -101,7 +119,7 @@ public record DockWorkspace(
     }
 
     public DockWorkspace rebuilt(List<FloatingRoot> newRoots, Map<String, DockSize> newRestoreSizes) {
-        return new DockWorkspace(newRoots, policies, newRestoreSizes, spliceMode);
+        return new DockWorkspace(newRoots, policies, newRestoreSizes, spliceMode, contentOffsets);
     }
 
     /**

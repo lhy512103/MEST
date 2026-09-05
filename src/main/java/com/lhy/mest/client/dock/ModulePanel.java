@@ -54,6 +54,11 @@ public abstract class ModulePanel {
     public DockRect splicedWindow;
     /** Extra right padding so a sibling does not draw into the ME scroller gutter. */
     public int contentRightInset;
+    /** Non-negative nudge of the content block inside this leaf. */
+    public int contentOffsetX;
+    public int contentOffsetY;
+    /** True while the layout editor is nudging this leaf inside a shell section. */
+    public boolean contentEditing;
     /** False when another visible leaf in the same window sits to the right. */
     public boolean rightmostInWindow = true;
     /** Reserved inner width on the right of this leaf (ME scroller when a sibling sits to the right). */
@@ -114,11 +119,11 @@ public abstract class ModulePanel {
     // --- Geometry helpers -------------------------------------------------
 
     public int contentLeft() {
-        return x + CONTENT_PADDING;
+        return x + CONTENT_PADDING + contentOffsetX;
     }
 
     public int contentTop() {
-        return y + (drawsTitleBar() ? TITLE_BAR_HEIGHT : CONTENT_PADDING);
+        return y + (drawsTitleBar() ? TITLE_BAR_HEIGHT : CONTENT_PADDING) + contentOffsetY;
     }
 
     public int contentWidth() {
@@ -128,6 +133,38 @@ public abstract class ModulePanel {
     public int contentHeight() {
         int top = drawsTitleBar() ? TITLE_BAR_HEIGHT : CONTENT_PADDING;
         return height - top - contentBottomPad();
+    }
+
+    /**
+     * Intrinsic content size used when nudging inside a stretched shell section. Expanding
+     * modules report the current content size, so they have no leftover slack to drag through.
+     */
+    public int preferredContentWidth() {
+        if (fillsContentArea()) {
+            return contentWidth();
+        }
+        return Math.max(0, defaultWidth() - 2 * CONTENT_PADDING - preferredContentRightInset());
+    }
+
+    public int preferredContentHeight() {
+        if (fillsContentArea()) {
+            return contentHeight();
+        }
+        int top = drawsTitleBar() ? TITLE_BAR_HEIGHT : CONTENT_PADDING;
+        return Math.max(0, defaultHeight() - top - CONTENT_PADDING);
+    }
+
+    public int contentSlackX() {
+        return Math.max(0, contentWidth() - preferredContentWidth());
+    }
+
+    public int contentSlackY() {
+        return Math.max(0, contentHeight() - preferredContentHeight());
+    }
+
+    /** True when this panel grows its widgets to fill the section, leaving no nudge slack. */
+    public boolean fillsContentArea() {
+        return false;
     }
 
     /**
@@ -210,6 +247,7 @@ public abstract class ModulePanel {
     }
 
     private static final int PIN_SIZE = 12;
+    private static final int CHROME_BUTTON_GAP = 2;
     private boolean pinVisible;
     private boolean pinned;
 
@@ -219,7 +257,11 @@ public abstract class ModulePanel {
     }
 
     public boolean pinVisible() {
-        return pinVisible && drawsTitleBar();
+        return pinVisible && drawsTitleBar() && !contentEditing;
+    }
+
+    public boolean contentChromeVisible() {
+        return contentEditing && drawsTitleBar();
     }
 
     public boolean pinned() {
@@ -234,12 +276,35 @@ public abstract class ModulePanel {
         return y + 3;
     }
 
+    public int closeButtonX() {
+        return pinButtonX();
+    }
+
+    public int closeButtonY() {
+        return pinButtonY();
+    }
+
+    public int resetButtonX() {
+        return closeButtonX() - PIN_SIZE - CHROME_BUTTON_GAP;
+    }
+
+    public int resetButtonY() {
+        return pinButtonY();
+    }
+
     public boolean inPinButton(double mx, double my) {
-        if (!pinVisible()) {
-            return false;
-        }
-        int px = pinButtonX();
-        int py = pinButtonY();
+        return pinVisible() && inChromeButton(mx, my, pinButtonX(), pinButtonY());
+    }
+
+    public boolean inCloseButton(double mx, double my) {
+        return contentChromeVisible() && inChromeButton(mx, my, closeButtonX(), closeButtonY());
+    }
+
+    public boolean inResetButton(double mx, double my) {
+        return contentChromeVisible() && inChromeButton(mx, my, resetButtonX(), resetButtonY());
+    }
+
+    private static boolean inChromeButton(double mx, double my, int px, int py) {
         return mx >= px && mx < px + PIN_SIZE && my >= py && my < py + PIN_SIZE;
     }
 
@@ -261,7 +326,7 @@ public abstract class ModulePanel {
      * Title-bar widgets (search field, etc.) that must not start a window drag.
      */
     public boolean inTitleBarControls(double mx, double my) {
-        return inPinButton(mx, my);
+        return inPinButton(mx, my) || inCloseButton(mx, my) || inResetButton(mx, my);
     }
 
     public boolean inResizeHandle(double mx, double my) {
@@ -277,6 +342,9 @@ public abstract class ModulePanel {
      * they place controls over the title bar.
      */
     protected int titleRightInset() {
+        if (contentChromeVisible()) {
+            return 8 + 2 * PIN_SIZE + CHROME_BUTTON_GAP;
+        }
         return pinVisible() ? 28 + PIN_SIZE : 28;
     }
 
@@ -527,7 +595,10 @@ public abstract class ModulePanel {
         String clippedTitle = font.plainSubstrByWidth(
                 title().getString(), Math.max(0, barWidth - TITLE_LEFT_INSET - titleRightInset()));
         g.drawString(font, clippedTitle, left + TITLE_LEFT_INSET + titleTextOffsetX(), top + 6, COLOR_TITLE_TEXT, false);
-        if (pinVisible()) {
+        if (contentChromeVisible()) {
+            drawChromeButton(g, resetButtonX(), resetButtonY(), inResetButton(mouseX, mouseY), ChromeGlyph.RESET);
+            drawChromeButton(g, closeButtonX(), closeButtonY(), inCloseButton(mouseX, mouseY), ChromeGlyph.CLOSE);
+        } else if (pinVisible()) {
             int px = pinButtonX();
             int py = pinButtonY();
             boolean hovered = inPinButton(mouseX, mouseY);
@@ -544,6 +615,91 @@ public abstract class ModulePanel {
                 g.fill(px, py + yOffset, px + PIN_SIZE, py + yOffset + PIN_SIZE, bg);
             }
             com.lhy.mest.client.MestGuiIcons.blit(g, 12, 1, px, py + yOffset, PIN_SIZE, PIN_SIZE);
+        }
+    }
+
+    private void drawChromeButton(GuiGraphics g, int px, int py, boolean hovered, ChromeGlyph glyph) {
+        int yOffset = hovered ? 1 : 0;
+        if (ModList.get().isLoaded("extendedae")) {
+            Blitter background = hovered
+                    ? EPPIcon.TERMINAL_BUTTON_HOVER
+                    : EPPIcon.TERMINAL_BUTTON;
+            background.dest(px, py + yOffset, PIN_SIZE, PIN_SIZE).zOffset(2).blit(g);
+        } else {
+            int bg = hovered ? 0xFF4A4A4A : 0xFF2E2E2E;
+            g.fill(px, py + yOffset, px + PIN_SIZE, py + yOffset + PIN_SIZE, bg);
+        }
+        int gx = px + 3;
+        int gy = py + yOffset + 3;
+        int color = 0xFFF2F2F2;
+        if (glyph == ChromeGlyph.CLOSE) {
+            g.fill(gx, gy, gx + 1, gy + 1, color);
+            g.fill(gx + 5, gy, gx + 6, gy + 1, color);
+            g.fill(gx + 1, gy + 1, gx + 2, gy + 2, color);
+            g.fill(gx + 4, gy + 1, gx + 5, gy + 2, color);
+            g.fill(gx + 2, gy + 2, gx + 4, gy + 4, color);
+            g.fill(gx + 1, gy + 4, gx + 2, gy + 5, color);
+            g.fill(gx + 4, gy + 4, gx + 5, gy + 5, color);
+            g.fill(gx, gy + 5, gx + 1, gy + 6, color);
+            g.fill(gx + 5, gy + 5, gx + 6, gy + 6, color);
+        } else {
+            g.fill(gx + 1, gy, gx + 5, gy + 1, color);
+            g.fill(gx + 4, gy + 1, gx + 5, gy + 2, color);
+            g.fill(gx + 5, gy + 1, gx + 6, gy + 5, color);
+            g.fill(gx + 1, gy + 5, gx + 6, gy + 6, color);
+            g.fill(gx, gy + 2, gx + 1, gy + 5, color);
+            g.fill(gx + 1, gy + 1, gx + 2, gy + 2, color);
+        }
+    }
+
+    private enum ChromeGlyph {
+        CLOSE,
+        RESET
+    }
+
+    /**
+     * Dashed centre guides used while nudging a content block inside a shell section.
+     * Section midlines stay faint; the content-block midlines light up when they snap together.
+     */
+    public void renderContentGuides(GuiGraphics g, boolean snapX, boolean snapY) {
+        int sectionLeft = x;
+        int sectionTop = y + (drawsTitleBar() ? TITLE_BAR_HEIGHT : 0);
+        int sectionRight = x + width;
+        int sectionBottom = y + height;
+        int sectionMidX = sectionLeft + width / 2;
+        int sectionMidY = sectionTop + (sectionBottom - sectionTop) / 2;
+        int contentW = Math.min(preferredContentWidth(), contentWidth());
+        int contentH = Math.min(preferredContentHeight(), contentHeight());
+        int contentMidX = contentLeft() + contentW / 2;
+        int contentMidY = contentTop() + contentH / 2;
+        int sectionColor = 0x66ACE9FF;
+        int contentColor = 0xBBACE9FF;
+        int snapColor = 0xFFE8F7FF;
+        drawDashedVLine(g, sectionMidX, sectionTop, sectionBottom, snapX ? snapColor : sectionColor);
+        drawDashedHLine(g, sectionMidY, sectionLeft, sectionRight, snapY ? snapColor : sectionColor);
+        if (!snapX) {
+            drawDashedVLine(g, contentMidX, sectionTop, sectionBottom, contentColor);
+        }
+        if (!snapY) {
+            drawDashedHLine(g, contentMidY, sectionLeft, sectionRight, contentColor);
+        }
+    }
+
+    private static void drawDashedHLine(GuiGraphics g, int y, int x0, int x1, int color) {
+        if (x1 <= x0) {
+            return;
+        }
+        for (int x = x0; x < x1; x += 4) {
+            g.fill(x, y, Math.min(x + 2, x1), y + 1, color);
+        }
+    }
+
+    private static void drawDashedVLine(GuiGraphics g, int x, int y0, int y1, int color) {
+        if (y1 <= y0) {
+            return;
+        }
+        for (int y = y0; y < y1; y += 4) {
+            g.fill(x, y, x + 1, Math.min(y + 2, y1), color);
         }
     }
 

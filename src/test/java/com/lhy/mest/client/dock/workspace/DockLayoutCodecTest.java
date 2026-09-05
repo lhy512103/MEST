@@ -88,6 +88,29 @@ class DockLayoutCodecTest {
     }
 
     @Test
+    void roundTripsContentOffsets() throws Exception {
+        var original = WorkspacePersistenceFixtures.workspace().withContentOffsets(java.util.Map.of(
+                "a", new com.lhy.mest.client.dock.model.ContentOffset(6, 2)));
+
+        String encoded = codec().encode(original);
+        var decoded = codec().decode(encoded).workspace();
+
+        assertEquals(original.contentOffsets(), decoded.contentOffsets());
+        assertTrue(encoded.contains("contentOffsets"));
+        assertEquals(6, decoded.contentOffset("a").x());
+        assertEquals(2, decoded.contentOffset("a").y());
+        assertEquals(com.lhy.mest.client.dock.model.ContentOffset.ZERO, decoded.contentOffset("b"));
+    }
+
+    @Test
+    void missingContentOffsetsDecodeAsEmpty() throws Exception {
+        var original = WorkspacePersistenceFixtures.workspace();
+        String encoded = codec().encode(original);
+        assertFalse(encoded.contains("contentOffsets"));
+        assertTrue(codec().decode(encoded).workspace().contentOffsets().isEmpty());
+    }
+
+    @Test
     void mapsLegacyCompactSpliceBooleanOntoCompactMode() throws Exception {
         String persisted = """
                 {

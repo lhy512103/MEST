@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.lhy.mest.client.dock.model.ContentOffset;
 import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.DockSize;
@@ -15,15 +16,16 @@ public record DockLayoutDto(
         List<RootDto> roots,
         Map<String, PolicyDto> policies,
         Map<String, DockSize> restoreSizes,
-        SpliceMode spliceMode) {
+        SpliceMode spliceMode,
+        Map<String, ContentOffset> contentOffsets) {
     public static final int CURRENT_VERSION = 3;
 
     public DockLayoutDto(int version, List<RootDto> roots) {
-        this(version, roots, Map.of(), Map.of(), SpliceMode.DEFAULT);
+        this(version, roots, Map.of(), Map.of(), SpliceMode.DEFAULT, Map.of());
     }
 
     public DockLayoutDto(int version, List<RootDto> roots, Map<String, PolicyDto> policies) {
-        this(version, roots, policies, Map.of(), SpliceMode.DEFAULT);
+        this(version, roots, policies, Map.of(), SpliceMode.DEFAULT, Map.of());
     }
 
     public DockLayoutDto(
@@ -31,13 +33,23 @@ public record DockLayoutDto(
             List<RootDto> roots,
             Map<String, PolicyDto> policies,
             Map<String, DockSize> restoreSizes) {
-        this(version, roots, policies, restoreSizes, SpliceMode.DEFAULT);
+        this(version, roots, policies, restoreSizes, SpliceMode.DEFAULT, Map.of());
+    }
+
+    public DockLayoutDto(
+            int version,
+            List<RootDto> roots,
+            Map<String, PolicyDto> policies,
+            Map<String, DockSize> restoreSizes,
+            SpliceMode spliceMode) {
+        this(version, roots, policies, restoreSizes, spliceMode, Map.of());
     }
 
     public DockLayoutDto {
         roots = roots == null ? null : List.copyOf(roots);
         policies = policies == null ? null : Map.copyOf(new LinkedHashMap<>(policies));
         restoreSizes = restoreSizes == null ? Map.of() : Map.copyOf(new LinkedHashMap<>(restoreSizes));
+        contentOffsets = contentOffsets == null ? Map.of() : Map.copyOf(new LinkedHashMap<>(contentOffsets));
         if (spliceMode == null) {
             spliceMode = SpliceMode.DEFAULT;
         }

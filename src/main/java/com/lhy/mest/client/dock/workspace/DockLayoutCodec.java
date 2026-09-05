@@ -15,6 +15,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 
+import com.lhy.mest.client.dock.model.ContentOffset;
 import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.DockSize;
@@ -44,7 +45,9 @@ public final class DockLayoutCodec {
      * {@link #V3_FIELDS} so documents written before the third mode still decode.
      */
     private static final Set<String> V3_FIELDS =
-            Set.of("version", "roots", "policies", "restoreSizes", "name", "spliceMode", "compactSplice");
+            Set.of("version", "roots", "policies", "restoreSizes", "name", "spliceMode", "compactSplice",
+                    "contentOffsets");
+    private static final Set<String> OFFSET_FIELDS = Set.of("x", "y");
     private static final Set<String> POLICY_FIELDS =
             Set.of("visible", "movable", "resizable", "floating", "pinned", "showTerminalButton");
     private static final Set<String> ROOT_FIELDS = Set.of("rootId", "bounds", "content");
@@ -119,7 +122,8 @@ public final class DockLayoutCodec {
                 roots,
                 policies,
                 workspace.restoreSizes(),
-                workspace.spliceMode());
+                workspace.spliceMode(),
+                workspace.contentOffsets());
     }
 
     public DockWorkspace fromDto(DockLayoutDto dto) throws DockLayoutFormatException {
@@ -172,7 +176,8 @@ public final class DockLayoutCodec {
                     roots,
                     policies,
                     DockWorkspace.retainRestoreSizes(dto.restoreSizes(), roots),
-                    dto.spliceMode());
+                    dto.spliceMode(),
+                    dto.contentOffsets());
             WorkspaceValidator.validateStructure(workspace);
             return workspace;
         } catch (IllegalArgumentException | NullPointerException e) {
@@ -216,7 +221,8 @@ public final class DockLayoutCodec {
                 retainedRoots,
                 retainedPolicies,
                 DockWorkspace.retainRestoreSizes(source.restoreSizes(), retainedRoots),
-                source.spliceMode());
+                source.spliceMode(),
+                source.contentOffsets());
         var usedModules = WorkspaceValidator.validateStructure(result);
         var usedIdentifiers = collectIdentifiers(result);
         int defaultIndex = retainedRoots.size();
@@ -245,7 +251,8 @@ public final class DockLayoutCodec {
                 retainedRoots,
                 retainedPolicies,
                 DockWorkspace.retainRestoreSizes(source.restoreSizes(), retainedRoots),
-                source.spliceMode());
+                source.spliceMode(),
+                source.contentOffsets());
         try {
             WorkspaceValidator.validateStrict(result, catalog);
         } catch (RuntimeException e) {
@@ -362,6 +369,17 @@ public final class DockLayoutCodec {
         if (dto.spliceMode() != SpliceMode.DEFAULT) {
             object.addProperty("spliceMode", dto.spliceMode().id());
         }
+        if (dto.contentOffsets() != null && !dto.contentOffsets().isEmpty()) {
+            var offsets = new JsonObject();
+            for (var entry : dto.contentOffsets().entrySet()) {
+                if (entry.getValue() != null && !entry.getValue().isZero()) {
+                    offsets.add(entry.getKey(), writeOffset(entry.getValue()));
+                }
+            }
+            if (!offsets.entrySet().isEmpty()) {
+                object.add("contentOffsets", offsets);
+            }
+        }
         return object;
     }
 
@@ -378,6 +396,13 @@ public final class DockLayoutCodec {
         var object = new JsonObject();
         object.addProperty("width", size.width());
         object.addProperty("height", size.height());
+        return object;
+    }
+
+    private JsonObject writeOffset(ContentOffset offset) {
+        var object = new JsonObject();
+        object.addProperty("x", offset.x());
+        object.addProperty("y", offset.y());
         return object;
     }
 
@@ -442,7 +467,8 @@ public final class DockLayoutCodec {
                 roots,
                 policies,
                 readRestoreSizes(object),
-                readSpliceMode(object));
+                readSpliceMode(object),
+                readContentOffsets(object));
     }
 
     /**
@@ -472,6 +498,28 @@ public final class DockLayoutCodec {
             throw new DockLayoutFormatException(path + " width and height must be positive");
         }
         return new DockRect(x, y, width, height);
+    }
+
+    private Map<String, ContentOffset> readContentOffsets(JsonObject document) throws DockLayoutFormatException {
+        if (!document.has("contentOffsets")) {
+            return Map.of();
+        }
+        JsonObject object = objectField(document, "contentOffsets", "document");
+        var offsets = new java.util.LinkedHashMap<String, ContentOffset>();
+        for (var entry : object.entrySet()) {
+            String path = "contentOffsets." + entry.getKey();
+            JsonObject offset = object(entry.getValue(), path);
+            requireOnlyFields(offset, OFFSET_FIELDS, path);
+            int x = integer(offset, "x", path);
+            int y = integer(offset, "y", path);
+            if (x < 0 || y < 0) {
+                throw new DockLayoutFormatException(path + " x and y must be non-negative");
+            }
+            if (x != 0 || y != 0) {
+                offsets.put(entry.getKey(), new ContentOffset(x, y));
+            }
+        }
+        return offsets;
     }
 
     private Map<String, DockSize> readRestoreSizes(JsonObject document) throws DockLayoutFormatException {

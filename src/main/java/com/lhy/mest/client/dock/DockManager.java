@@ -13,6 +13,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+import org.lwjgl.glfw.GLFW;
+
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -28,6 +31,8 @@ import com.google.gson.JsonParser;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.client.CursorHelper;
+import com.lhy.mest.client.dock.model.ContentNudge;
+import com.lhy.mest.client.dock.model.ContentOffset;
 import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockEdge;
 import com.lhy.mest.client.dock.model.DockInsets;
@@ -73,6 +78,7 @@ public final class DockManager {
     private static final int DROP_ZONE_MAX = 16;
     private static final int SNAP_DISTANCE = 8;
     private static final int LEAF_DRAG_THRESHOLD = 4;
+    private static final int CONTENT_DOUBLE_CLICK_MS = 300;
 
     private static final int DIVIDER_HOVER_COLOR = 0xFFACE9FF;
     private static final int DROP_FILL_COLOR = 0x66ACE9FF;
@@ -170,7 +176,8 @@ public final class DockManager {
         DRAG_ROOT,
         RESIZE_ROOT,
         RESIZE_DIVIDER,
-        RESIZE_LEAF
+        RESIZE_LEAF,
+        NUDGE_CONTENT
     }
 
     private Mode mode = Mode.NONE;
@@ -185,6 +192,12 @@ public final class DockManager {
     private double pressX;
     private double pressY;
     private boolean moveAllRoots;
+    private String contentEditModuleId;
+    private boolean contentSnapX;
+    private boolean contentSnapY;
+    private String lastContentClickModuleId;
+    private long lastContentClickTime;
+    private boolean lastContentClickWasDrag;
     private DropCandidate dropCandidate;
     /** Bounds of the leaf under the pointer while dragging a root; drives the splice-zone affordances. */
     private DockRect dragHoverBounds;
@@ -340,6 +353,7 @@ public final class DockManager {
 
     public DockWorkspace beginLayoutEditing() {
         editingLayout = true;
+        exitContentEdit();
         editingOriginal = workspace;
         captureActivePreset();
         editingPresets = presets == null ? null : presets.copy();
@@ -357,6 +371,7 @@ public final class DockManager {
         editingLayout = false;
         editingOriginal = null;
         editingPresets = null;
+        exitContentEdit();
         // The editor can be closed (Esc) in the middle of a gesture; dropping the gesture state
         // here prevents a later mouse event from acting on a root that no longer exists.
         resetGestureState();
@@ -866,6 +881,133 @@ public final class DockManager {
         return workspace == null ? SpliceMode.DEFAULT : workspace.spliceMode();
     }
 
+    public boolean isContentEditing() {
+        return contentEditModuleId != null;
+    }
+
+    public String contentEditModuleId() {
+        return contentEditModuleId;
+    }
+
+    public boolean keyPressed(int keyCode) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && contentEditModuleId != null) {
+            exitContentEdit();
+            return true;
+        }
+        return false;
+    }
+
+    private boolean handleContentEditClick(double mouseX, double mouseY, int button) {
+        if (contentEditModuleId != null) {
+            if (button != 0) {
+                return true;
+            }
+            ModulePanel editing = panelsByModuleId.get(contentEditModuleId);
+            if (editing == null || !editing.visible) {
+                exitContentEdit();
+                return false;
+            }
+            if (editing.inCloseButton(mouseX, mouseY)) {
+                exitContentEdit();
+                return true;
+            }
+            if (editing.inResetButton(mouseX, mouseY)) {
+                resetContentOffset(editing.id());
+                return true;
+            }
+            if (editing.contains(mouseX, mouseY) && !editing.inTitleBarControls(mouseX, mouseY)) {
+                beginContentNudge(editing, mouseX, mouseY);
+                return true;
+            }
+            return true;
+        }
+        if (!editingLayout || workspace == null || !workspace.drawsOuterShell() || button != 0) {
+            return false;
+        }
+        ModulePanel leaf = topLeafAt(mouseX, mouseY);
+        if (leaf == null || leaf.inTitleBarControls(mouseX, mouseY) || leaf.inResizeHandle(mouseX, mouseY)) {
+            return false;
+        }
+        long now = Util.getMillis();
+        boolean sameLeaf = leaf.id().equals(lastContentClickModuleId);
+        boolean quick = now - lastContentClickTime <= CONTENT_DOUBLE_CLICK_MS;
+        lastContentClickModuleId = leaf.id();
+        lastContentClickTime = now;
+        if (sameLeaf && quick && !lastContentClickWasDrag) {
+            enterContentEdit(leaf.id());
+            lastContentClickWasDrag = false;
+            return true;
+        }
+        lastContentClickWasDrag = false;
+        return false;
+    }
+
+    private void enterContentEdit(String moduleId) {
+        contentEditModuleId = moduleId;
+        contentSnapX = false;
+        contentSnapY = false;
+        projectionDirty = true;
+        ensureProjection();
+    }
+
+    private void exitContentEdit() {
+        if (contentEditModuleId == null && !contentSnapX && !contentSnapY) {
+            return;
+        }
+        contentEditModuleId = null;
+        contentSnapX = false;
+        contentSnapY = false;
+        if (mode == Mode.NUDGE_CONTENT) {
+            resetGestureState();
+        }
+        projectionDirty = true;
+        ensureProjection();
+    }
+
+    private void beginContentNudge(ModulePanel panel, double mouseX, double mouseY) {
+        mode = Mode.NUDGE_CONTENT;
+        activeRootId = null;
+        grabOffsetX = mouseX - panel.contentOffsetX;
+        grabOffsetY = mouseY - panel.contentOffsetY;
+        gestureStartWorkspace = takeInteractionStartWorkspace();
+        lastContentClickWasDrag = false;
+    }
+
+    private void nudgeContent(double mouseX, double mouseY) {
+        ModulePanel panel = contentEditModuleId == null ? null : panelsByModuleId.get(contentEditModuleId);
+        if (panel == null) {
+            return;
+        }
+        ContentNudge.Snap snap = ContentNudge.snap(
+                (int) Math.round(mouseX - grabOffsetX),
+                (int) Math.round(mouseY - grabOffsetY),
+                panel.contentSlackX(),
+                panel.contentSlackY());
+        contentSnapX = snap.snapX();
+        contentSnapY = snap.snapY();
+        applyContentOffset(panel.id(), snap.offset(), false);
+    }
+
+    private void resetContentOffset(String moduleId) {
+        rememberUndoPoint(workspace);
+        applyContentOffset(moduleId, ContentOffset.ZERO, true);
+        contentSnapX = false;
+        contentSnapY = false;
+    }
+
+    private void applyContentOffset(String moduleId, ContentOffset offset, boolean persistZero) {
+        var next = new LinkedHashMap<>(workspace.contentOffsets());
+        if (offset == null || offset.isZero()) {
+            next.remove(moduleId);
+            if (!persistZero && workspace.contentOffset(moduleId).isZero()) {
+                return;
+            }
+        } else {
+            next.put(moduleId, offset);
+        }
+        replaceWorkspace(workspace.withContentOffsets(next), false);
+    }
+
     /**
      * Advances the toolbar cycle: unified -&gt; compact -&gt; shell -&gt; unified. Entering the shell
      * mode also shrinks every root to its content, because that mode draws the shell at the root's
@@ -876,6 +1018,9 @@ public final class DockManager {
             return;
         }
         SpliceMode next = spliceMode().next();
+        if (!next.drawsOuterShell()) {
+            exitContentEdit();
+        }
         rememberUndoPoint(workspace);
         DockWorkspace changed = workspace.withSpliceMode(next);
         if (next.drawsOuterShell()) {
@@ -1076,8 +1221,14 @@ public final class DockManager {
                     for (ModulePanel panel : visiblePanels(root)) {
                         ModulePanel.renderResizeGrip(graphics, occupiedRect(panel));
                     }
-                } else {
+                } else if (contentEditModuleId == null) {
                     ModulePanel.renderResizeGrip(graphics, root.bounds());
+                }
+                if (contentEditModuleId != null) {
+                    ModulePanel editing = panelsByModuleId.get(contentEditModuleId);
+                    if (editing != null && editing.visible && visiblePanels(root).contains(editing)) {
+                        editing.renderContentGuides(graphics, contentSnapX, contentSnapY);
+                    }
                 }
             });
         }
@@ -1364,6 +1515,9 @@ public final class DockManager {
 
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         ensureProjection();
+        if (handleContentEditClick(mouseX, mouseY, button)) {
+            return true;
+        }
         FloatingRoot root = topRootAt(mouseX, mouseY, null);
         if (root == null) {
             return false;
@@ -1528,6 +1682,11 @@ public final class DockManager {
             return false;
         }
         ensureProjection();
+        if (mode == Mode.NUDGE_CONTENT) {
+            lastContentClickWasDrag = true;
+            nudgeContent(mouseX, mouseY);
+            return true;
+        }
         if (mode == Mode.PENDING_LEAF_DRAG) {
             double dx = mouseX - pressX;
             double dy = mouseY - pressY;
@@ -1542,8 +1701,10 @@ public final class DockManager {
                 return true;
             }
             mode = Mode.DRAG_ROOT;
+            lastContentClickWasDrag = true;
         }
         if (mode == Mode.DRAG_ROOT) {
+            lastContentClickWasDrag = true;
             if (moveAllRoots) {
                 translateAllRoots(mouseX, mouseY);
                 dropCandidate = null;
@@ -1679,6 +1840,8 @@ public final class DockManager {
         dragHoverBounds = null;
         gestureStartWorkspace = null;
         pendingFocusWorkspace = null;
+        contentSnapX = false;
+        contentSnapY = false;
     }
 
     /** Persists only a dirty workspace revision; repeated close/store hooks perform no file IO. */
@@ -1941,6 +2104,7 @@ public final class DockManager {
                 panel.hosted = false;
                 panel.spliced = composite;
                 panel.splicedWindow = window;
+                panel.contentEditing = leaf.moduleId().equals(contentEditModuleId);
                 ModuleLayoutPolicy policy = workspace.policyFor(leaf.moduleId());
                 panel.setPinControl(visible && !anchored && policy.floating(), policy.pinned());
             }
@@ -1948,6 +2112,13 @@ public final class DockManager {
             for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
                 ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
                 panel.contentRightInset = panel.preferredContentRightInset();
+                ContentOffset offset = ContentNudge.clamp(
+                        workspace.contentOffset(leaf.moduleId()).x(),
+                        workspace.contentOffset(leaf.moduleId()).y(),
+                        panel.contentSlackX(),
+                        panel.contentSlackY());
+                panel.contentOffsetX = offset.x();
+                panel.contentOffsetY = offset.y();
                 panel.layoutSlots();
             }
         }

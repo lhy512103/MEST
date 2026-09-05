@@ -10,6 +10,7 @@
 - Added a session-only layout lock, one-step undo, compact preset, and reset-to-default.
 - Restyled the workspace with AE2-native chrome and skipped unchanged per-frame slot/geometry writes.
 - Added a third splice mode that draws one outer shell with 1px section rules, while keeping stretch and compact splice.
+- In shell layout editing, double-click a panel to nudge its content inside the fixed section, with centre-guide snap, reset, and close.
 - Fixed panel item icons rendering above other panels, and raising a panel when its module is shown.
 
 ### Terminal Interaction
@@ -53,6 +54,7 @@
 - 新增会话级布局锁定、一步撤销、紧凑预设与重置默认。
 - 工作区改用 AE2 原生控件风格，布局未变化时不再每帧重复写槽位与几何。
 - 新增第三种拼接模式：整窗外框一次成型、内部 1px 分隔线，保留拉伸与紧凑两种原有模式。
+- 外壳布局编辑中可双击面板微调内容位置，带中线吸附、重置与叉号退出。
 - 修复浮窗物品图标盖住其它面板，以及显示隐藏面板后仍留在最底层的问题。
 
 ### 终端交互
