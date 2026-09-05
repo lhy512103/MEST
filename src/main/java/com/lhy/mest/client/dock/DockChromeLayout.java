@@ -32,17 +32,28 @@ final class DockChromeLayout {
                 visible.add(panel);
             }
         }
+        int maxX = Integer.MIN_VALUE;
+        int secondMaxX = Integer.MIN_VALUE;
+        int maxCount = 0;
         for (ModulePanel panel : visible) {
-            boolean rightmost = true;
-            int panelRight = panel.x + panel.width;
-            for (ModulePanel other : visible) {
-                if (other != panel && other.x >= panelRight - 1) {
-                    rightmost = false;
-                    break;
-                }
+            if (panel.x > maxX) {
+                secondMaxX = maxX;
+                maxX = panel.x;
+                maxCount = 1;
+            } else if (panel.x == maxX) {
+                maxCount++;
+            } else if (panel.x > secondMaxX) {
+                secondMaxX = panel.x;
             }
-            panel.rightmostInWindow = rightmost;
         }
+        for (ModulePanel panel : visible) {
+            panel.rightmostInWindow = isRightmost(panel.x, panel.width, maxX, secondMaxX, maxCount);
+        }
+    }
+
+    static boolean isRightmost(int panelX, int panelWidth, int maxX, int secondMaxX, int maxCount) {
+        int maximumOtherX = maxCount == 1 && panelX == maxX ? secondMaxX : maxX;
+        return maximumOtherX < panelX + panelWidth - 1;
     }
 
     static void joinOutsideRails(Iterable<ModulePanel> panels) {

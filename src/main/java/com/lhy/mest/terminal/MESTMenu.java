@@ -458,23 +458,27 @@ public class MESTMenu extends CraftingTermMenu {
             return;
         }
         if (code == 0) {
-            long gcd = sharedGcd(copyInv(encodedInputsInv), copyInv(encodedOutputsInv));
+            long gcd = PatternEncodingAmounts.sharedGcd(
+                    PatternEncodingAmounts.copyInv(encodedInputsInv), PatternEncodingAmounts.copyInv(encodedOutputsInv));
             if (gcd > 1L) {
-                writeInv(encodedInputsInv, PatternEncodingAmounts.divideStacks(copyInv(encodedInputsInv), gcd));
-                writeInv(encodedOutputsInv, PatternEncodingAmounts.divideStacks(copyInv(encodedOutputsInv), gcd));
+                writeInv(encodedInputsInv, PatternEncodingAmounts.divideStacks(
+                        PatternEncodingAmounts.copyInv(encodedInputsInv), gcd));
+                writeInv(encodedOutputsInv, PatternEncodingAmounts.divideStacks(
+                        PatternEncodingAmounts.copyInv(encodedOutputsInv), gcd));
             }
             broadcastChanges();
             return;
         }
         boolean divide = code < 0;
         int scale = Math.abs(code);
-        var input = copyInvArray(encodedInputsInv);
-        var output = copyInvArray(encodedOutputsInv);
-        if (!canScale(input, scale, divide) || !canScale(output, scale, divide)) {
+        var input = PatternEncodingAmounts.copyInvArray(encodedInputsInv);
+        var output = PatternEncodingAmounts.copyInvArray(encodedOutputsInv);
+        if (!PatternEncodingAmounts.canScale(input, scale, divide)
+                || !PatternEncodingAmounts.canScale(output, scale, divide)) {
             return;
         }
-        writeInv(encodedInputsInv, Arrays.asList(scaleStacks(input, scale, divide)));
-        writeInv(encodedOutputsInv, Arrays.asList(scaleStacks(output, scale, divide)));
+        writeInv(encodedInputsInv, Arrays.asList(PatternEncodingAmounts.scaleStacks(input, scale, divide)));
+        writeInv(encodedOutputsInv, Arrays.asList(PatternEncodingAmounts.scaleStacks(output, scale, divide)));
         broadcastChanges();
     }
 
@@ -552,18 +556,6 @@ public class MESTMenu extends CraftingTermMenu {
                     power, storage, blankKey, leftover, getActionSource());
         }
         blankPatternFilled = true;
-    }
-
-    private static List<GenericStack> copyInv(ConfigInventory inventory) {
-        var result = new ArrayList<GenericStack>(inventory.size());
-        for (int i = 0; i < inventory.size(); i++) {
-            result.add(inventory.getStack(i));
-        }
-        return result;
-    }
-
-    private static GenericStack[] copyInvArray(ConfigInventory inventory) {
-        return copyInv(inventory).toArray(GenericStack[]::new);
     }
 
     private static void writeInv(ConfigInventory inventory, List<GenericStack> stacks) {
@@ -1218,12 +1210,13 @@ public class MESTMenu extends CraftingTermMenu {
             }
             var input = process.getSparseInputs().toArray(GenericStack[]::new);
             var output = process.getSparseOutputs().toArray(GenericStack[]::new);
-            if (!canScale(input, scale, divide) || !canScale(output, scale, divide)) {
+            if (!PatternEncodingAmounts.canScale(input, scale, divide)
+                    || !PatternEncodingAmounts.canScale(output, scale, divide)) {
                 continue;
             }
             slot.set(PatternDetailsHelper.encodeProcessingPattern(
-                    Arrays.asList(scaleStacks(input, scale, divide)),
-                    Arrays.asList(scaleStacks(output, scale, divide))));
+                    Arrays.asList(PatternEncodingAmounts.scaleStacks(input, scale, divide)),
+                    Arrays.asList(PatternEncodingAmounts.scaleStacks(output, scale, divide))));
         }
         broadcastChanges();
     }
@@ -1235,7 +1228,7 @@ public class MESTMenu extends CraftingTermMenu {
             if (!(details instanceof AEProcessingPattern process)) {
                 continue;
             }
-            long gcd = sharedGcd(process.getSparseInputs(), process.getSparseOutputs());
+            long gcd = PatternEncodingAmounts.sharedGcd(process.getSparseInputs(), process.getSparseOutputs());
             if (gcd <= 1L) {
                 continue;
             }
@@ -1255,7 +1248,8 @@ public class MESTMenu extends CraftingTermMenu {
             }
             slot.set(PatternDetailsHelper.encodeProcessingPattern(
                     process.getSparseInputs(),
-                    Arrays.asList(rotateOutputs(process.getSparseOutputs().toArray(GenericStack[]::new)))));
+                    Arrays.asList(PatternEncodingAmounts.rotateOutputs(
+                            process.getSparseOutputs().toArray(GenericStack[]::new)))));
         }
         broadcastChanges();
     }
@@ -1293,80 +1287,6 @@ public class MESTMenu extends CraftingTermMenu {
         return getPlayer().level().getRecipeManager()
                 .getRecipeFor(RecipeType.CRAFTING, CraftingInput.of(3, 3, Arrays.asList(items)), getPlayer().level())
                 .orElse(null);
-    }
-
-    private static boolean canScale(GenericStack[] stacks, int scale, boolean divide) {
-        for (GenericStack stack : stacks) {
-            if (stack == null) {
-                continue;
-            }
-            if (divide) {
-                if (stack.amount() % scale != 0) {
-                    return false;
-                }
-            } else if (stack.amount() * (long) scale > 999999L * stack.what().getAmountPerUnit()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static GenericStack[] scaleStacks(GenericStack[] source, int scale, boolean divide) {
-        var result = new GenericStack[source.length];
-        for (int i = 0; i < source.length; i++) {
-            if (source[i] != null) {
-                long amount = PatternEncodingAmounts.scaledAmount(source[i].amount(), scale, divide);
-                result[i] = new GenericStack(source[i].what(), amount);
-            }
-        }
-        return result;
-    }
-
-    private static long sharedGcd(List<GenericStack> inputs, List<GenericStack> outputs) {
-        long gcd = 0L;
-        gcd = updateGcd(gcd, inputs);
-        gcd = updateGcd(gcd, outputs);
-        return gcd;
-    }
-
-    private static long updateGcd(long current, List<GenericStack> stacks) {
-        long gcd = current;
-        for (GenericStack stack : stacks) {
-            if (stack == null || stack.amount() <= 0L) {
-                continue;
-            }
-            gcd = gcd == 0L ? stack.amount() : PatternEncodingAmounts.gcd(gcd, stack.amount());
-            if (gcd == 1L) {
-                return 1L;
-            }
-        }
-        return gcd;
-    }
-
-    private static GenericStack[] rotateOutputs(GenericStack[] outputs) {
-        int filled = 0;
-        for (GenericStack output : outputs) {
-            if (output != null) {
-                filled++;
-            }
-        }
-        if (filled < 2) {
-            return outputs;
-        }
-        var rotated = Arrays.copyOf(outputs, outputs.length);
-        for (int i = 0; i < outputs.length; i++) {
-            if (outputs[i] == null) {
-                continue;
-            }
-            for (int offset = 1; offset < outputs.length; offset++) {
-                GenericStack next = outputs[(i + offset) % outputs.length];
-                if (next != null) {
-                    rotated[i] = new GenericStack(next.what(), next.amount());
-                    break;
-                }
-            }
-        }
-        return rotated;
     }
 
     private static ItemStack[] itemize(List<GenericStack> stacks) {

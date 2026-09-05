@@ -25,6 +25,87 @@ import com.lhy.mest.client.dock.workspace.DockLayoutPersistence;
 
 class DockManagerTest {
     @Test
+    void previewSaveIsSuppressedAndPendingGestureCommitsOnce() throws ReflectiveOperationException {
+        DockWorkspace before = new DockWorkspace(List.of(root("a", new DockRect(0, 0, 100, 80), true)));
+        DockWorkspace preview = new DockWorkspace(List.of(root("a", new DockRect(10, 0, 100, 80), true)));
+        DockManager manager = gestureManager(before, preview);
+        CountingPersistence persistence = (CountingPersistence) getField(manager, "persistence");
+
+        manager.save();
+        assertEquals(0, persistence.saveCount);
+        manager.finishPendingGesture();
+
+        assertEquals(1, persistence.saveCount);
+        assertSame(preview, persistence.savedWorkspace);
+        assertEquals(2L, getLongField(manager, "workspaceRevision"));
+        assertEquals(1, ((WorkspaceUndoHistory) getField(manager, "undoHistory")).size());
+    }
+
+    @Test
+    void noOpPendingGestureDoesNotCreateRevisionOrUndo() throws ReflectiveOperationException {
+        DockWorkspace workspace = new DockWorkspace(List.of(root("a", new DockRect(0, 0, 100, 80), true)));
+        DockManager manager = gestureManager(workspace, workspace);
+        CountingPersistence persistence = (CountingPersistence) getField(manager, "persistence");
+        manager.finishPendingGesture();
+        assertEquals(1L, getLongField(manager, "workspaceRevision"));
+        assertFalse(manager.canUndoLayout());
+        assertEquals(0, persistence.saveCount);
+    }
+
+    @Test
+    void cancelRestoresCanonicalPreview() throws ReflectiveOperationException {
+        DockWorkspace before = new DockWorkspace(List.of(root("a", new DockRect(0, 0, 100, 80), true)));
+        DockWorkspace preview = new DockWorkspace(List.of(root("a", new DockRect(10, 0, 100, 80), true)));
+        DockManager manager = gestureManager(before, preview);
+        setField(manager, "editingLayout", true);
+        setField(manager, "editingOriginal", before);
+        manager.cancelLayoutEditing();
+        assertSame(before, manager.workspaceSnapshot());
+        assertFalse(manager.canUndoLayout());
+    }
+
+    @Test
+    void commitLayoutEditingFinalizesPendingGesture() throws ReflectiveOperationException {
+        DockWorkspace before = new DockWorkspace(List.of(root("a", new DockRect(0, 0, 100, 80), true)));
+        DockWorkspace preview = new DockWorkspace(List.of(root("a", new DockRect(10, 0, 100, 80), true)));
+        DockManager manager = gestureManager(before, preview);
+        CountingPersistence persistence = (CountingPersistence) getField(manager, "persistence");
+        setField(manager, "editingLayout", true);
+        setField(manager, "editingOriginal", before);
+        setField(manager, "centerOnReturn", false);
+        manager.commitLayoutEditing();
+        assertSame(preview, manager.workspaceSnapshot());
+        assertEquals(2L, getLongField(manager, "workspaceRevision"));
+        assertEquals(1, ((WorkspaceUndoHistory) getField(manager, "undoHistory")).size());
+        assertEquals(1, persistence.saveCount);
+    }
+
+    private static DockManager gestureManager(DockWorkspace before, DockWorkspace preview)
+            throws ReflectiveOperationException {
+        DockManager manager = new DockManager();
+        CountingPersistence persistence = new CountingPersistence();
+        setField(manager, "workspace", preview);
+        setField(manager, "viewportWorkspace", preview);
+        setField(manager, "workspaceRevision", 1L);
+        setField(manager, "persistedRevision", 1L);
+        setField(manager, "persistence", persistence);
+        setField(manager, "gestureStartWorkspace", before);
+        setField(manager, "gestureCanonicalWorkspace", before);
+        setField(manager, "gestureCanonicalViewport", before);
+        setField(manager, "mode", Enum.valueOf(modeClass(), "DRAG_ROOT"));
+        return manager;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static Class<? extends Enum> modeClass() {
+        try {
+            return (Class<? extends Enum>) Class.forName(
+                    "com.lhy.mest.client.dock.DockManager$Mode");
+        } catch (ClassNotFoundException e) {
+            throw new AssertionError(e);
+        }
+    }
+    @Test
     void unchangedPresetStillRepairsPersistenceWithoutCreatingUndo() throws ReflectiveOperationException {
         DockManager manager = new DockManager();
         DockWorkspace workspace = new DockWorkspace(List.of(

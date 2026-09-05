@@ -147,6 +147,10 @@ public final class DockManager {
     private int screenHeight;
     private final WorkspaceUndoHistory undoHistory = new WorkspaceUndoHistory(32);
     private DockWorkspace gestureStartWorkspace;
+    /** Canonical workspace held aside while a pointer gesture projects its transient state. */
+    private DockWorkspace gestureCanonicalWorkspace;
+    private DockWorkspace gestureCanonicalViewport;
+    private boolean gestureStructural;
     /**
      * Original workspace captured when the screen raises a root before dispatching a click to a
      * panel-owned child control. The control may consume the click before {@link #mouseClicked}, so
@@ -364,6 +368,8 @@ public final class DockManager {
     }
 
     public void cancelLayoutEditing() {
+        discardPendingGesture();
+        resetGestureState();
         if (editingLayout && editingPresets != null) {
             presets = editingPresets.copy();
             replaceWorkspace(presets.workspaces()[presets.active()], true);
@@ -381,6 +387,7 @@ public final class DockManager {
     }
 
     public void commitLayoutEditing() {
+        finishPendingGesture();
         clearEditorCanvasInsets();
         editingLayout = false;
         editingOriginal = null;
@@ -870,8 +877,8 @@ public final class DockManager {
     }
 
     public void toggleLayoutLocked() {
+        finishPendingGesture();
         layoutLocked = !layoutLocked;
-        resetGestureState();
         structureVersion++;
         savePreferences();
     }
@@ -961,7 +968,7 @@ public final class DockManager {
         contentSnapX = false;
         contentSnapY = false;
         if (mode == Mode.NUDGE_CONTENT) {
-            resetGestureState();
+            finishGesture();
         }
         projectionDirty = true;
         ensureProjection();
@@ -1684,6 +1691,11 @@ public final class DockManager {
         if (button != 0 || mode == Mode.NONE) {
             return false;
         }
+        if (gestureCanonicalWorkspace == null) {
+            gestureCanonicalWorkspace = workspace;
+            gestureCanonicalViewport = viewportWorkspace;
+            gestureStructural = false;
+        }
         ensureProjection();
         if (mode == Mode.NUDGE_CONTENT) {
             lastContentClickWasDrag = true;
@@ -1772,8 +1784,46 @@ public final class DockManager {
 
     private void finishGesture() {
         DockWorkspace beforeInteraction = gestureStartWorkspace;
+        DockWorkspace preview = workspace;
+        DockWorkspace canonical = gestureCanonicalWorkspace;
+        boolean structural = gestureStructural;
         resetGestureState();
+        if (canonical != null && !preview.equals(canonical)) {
+            persistenceBlockedAfterLoadFailure = false;
+            workspace = preview;
+            workspaceRevision++;
+            projectionDirty = true;
+            if (structural) {
+                structureVersion++;
+            }
+            ensureProjection();
+        }
         commitInteraction(beforeInteraction);
+    }
+
+    /** Commits a live pointer gesture exactly once; safe to call during screen removal. */
+    public void finishPendingGesture() {
+        if (mode != Mode.NONE || gestureCanonicalWorkspace != null) {
+            finishGesture();
+        } else {
+            commitPanelInteraction();
+        }
+    }
+
+    /** Drops a live gesture preview and restores the canonical revision without saving. */
+    private void discardPendingGesture() {
+        DockWorkspace canonical = gestureCanonicalWorkspace;
+        DockWorkspace canonicalViewport = gestureCanonicalViewport;
+        resetGestureState();
+        if (canonical == null || canonical.equals(workspace)) {
+            return;
+        }
+        workspace = canonical;
+        viewportWorkspace = canonicalViewport == null
+                ? clampWorkspaceToViewport(canonical)
+                : canonicalViewport;
+        projectionDirty = true;
+        ensureProjection();
     }
 
     private void translateAllRoots(double mouseX, double mouseY) {
@@ -1843,6 +1893,9 @@ public final class DockManager {
         dropCandidate = null;
         dragHoverBounds = null;
         gestureStartWorkspace = null;
+        gestureCanonicalWorkspace = null;
+        gestureCanonicalViewport = null;
+        gestureStructural = false;
         pendingFocusWorkspace = null;
         contentSnapX = false;
         contentSnapY = false;
@@ -1851,7 +1904,7 @@ public final class DockManager {
     /** Persists only a dirty workspace revision; repeated close/store hooks perform no file IO. */
     public void save() {
         if (persistence == null || workspace == null || editingLayout || persistedRevision == workspaceRevision
-                || persistenceBlockedAfterLoadFailure) {
+                || persistenceBlockedAfterLoadFailure || gestureCanonicalWorkspace != null) {
             return;
         }
         try {
@@ -2143,6 +2196,10 @@ public final class DockManager {
     }
 
     private void replaceWorkspace(DockWorkspace changed, boolean structural) {
+        if (gestureCanonicalWorkspace != null && mode != Mode.NONE) {
+            replaceGestureWorkspace(changed, structural);
+            return;
+        }
         if (changed.equals(workspace)) {
             return;
         }
@@ -2160,11 +2217,26 @@ public final class DockManager {
         ensureProjection();
     }
 
+    private void replaceGestureWorkspace(DockWorkspace changed, boolean structural) {
+        if (changed.equals(workspace)) {
+            return;
+        }
+        workspace = changed;
+        viewportWorkspace = clampWorkspaceToViewport(changed);
+        projectionDirty = true;
+        gestureStructural |= structural;
+        ensureProjection();
+    }
+
     static void joinOutsideRails(Iterable<ModulePanel> panels) {
         DockChromeLayout.joinOutsideRails(panels);
     }
 
     private void rememberUndoPoint(DockWorkspace snapshot) {
+        if (gestureCanonicalWorkspace != null) {
+            // Gesture previews must not enter the undo history; only the committed result does.
+            return;
+        }
         if (snapshot == null || snapshot.equals(workspace)) {
             return;
         }
@@ -2231,6 +2303,10 @@ public final class DockManager {
     }
 
     private void clearEditorCanvasInsets() {
+        if (editorInsetLeft == 0 && editorInsetTop == 0
+                && editorInsetRight == 0 && editorInsetBottom == 0) {
+            return;
+        }
         editorInsetLeft = 0;
         editorInsetTop = 0;
         editorInsetRight = 0;

@@ -155,6 +155,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private WirelessSettingsPanel wirelessSettingsPanel;
     private TrashPanel trashPanel;
     private boolean keepPendingOnRemove;
+    private final MestRecipeTransferController recipeTransfer = new MestRecipeTransferController();
 
     public MEListPanel meListPanel() {
         return meListPanel;
@@ -169,7 +170,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         this.meListPanel = new MEListPanel(getMenu());
         this.meListPanel.repo().setUpdateViewListener(this::refreshCraftableKeys);
         getMenu().setGui(this::onMenuReceivedClientUpdate);
-        MestRecipeTransferContext.beginMenu(menu);
+        recipeTransfer.beginMenu(menu);
 
         this.searchField = widgets.addTextField("search");
         this.meListPanel.attachSearch(searchField);
@@ -444,26 +445,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         attachExtraSlotColumns();
         syncExternalModGuiMetrics();
         refreshRecipeTransferAvailability();
-        selectVisibleRecipeTargetIfNeeded();
         if (firstOpen && meListPanel != null && searchField != null
                 && AEConfig.instance().isAutoFocusSearch()
                 && !AEConfig.instance().isUseExternalSearch()) {
             meListPanel.setSearchFocused(true);
-        }
-    }
-
-    private void selectVisibleRecipeTargetIfNeeded() {
-        var selected = MestRecipeTransferContext.targetFor(getMenu());
-        if (selected == MestRecipeTransferContext.Target.PATTERN_ENCODING
-                && !dock.isEffectivelyVisible(patternEncodingPanel)
-                && isCraftingModuleVisible()) {
-            MestRecipeTransferContext.select(
-                    getMenu(), MestRecipeTransferContext.Target.CRAFTING);
-        } else if (selected == MestRecipeTransferContext.Target.CRAFTING
-                && !isCraftingModuleVisible()
-                && dock.isEffectivelyVisible(patternEncodingPanel)) {
-            MestRecipeTransferContext.select(
-                    getMenu(), MestRecipeTransferContext.Target.PATTERN_ENCODING);
         }
     }
 
@@ -527,7 +512,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     private void refreshRecipeTransferAvailability() {
-        MestRecipeTransferContext.updateAvailability(
+        recipeTransfer.synchronize(
                 getMenu(),
                 patternEncodingPanel != null && dock.isEffectivelyVisible(patternEncodingPanel),
                 isCraftingModuleVisible());
@@ -1541,10 +1526,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
 
         if (target == craftingPanel || target == craftingTerminalPanel) {
-            MestRecipeTransferContext.select(
+            recipeTransfer.select(
                     getMenu(), MestRecipeTransferContext.Target.CRAFTING);
         } else if (target == patternEncodingPanel) {
-            MestRecipeTransferContext.select(
+            recipeTransfer.select(
                     getMenu(), MestRecipeTransferContext.Target.PATTERN_ENCODING);
         }
 
@@ -2287,7 +2272,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     private void clearRecipeTransferContext() {
-        MestRecipeTransferContext.clear(getMenu());
+        recipeTransfer.clear(getMenu());
     }
 
     @Override
@@ -2311,6 +2296,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             PlusScreenSupport.cancelPending();
         }
         keepPendingOnRemove = false;
+        dock.finishPendingGesture();
         dock.save();
         dock.saveUiPreferences();
         CursorHelper.resetCursor();
