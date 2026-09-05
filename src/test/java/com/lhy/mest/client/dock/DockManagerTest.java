@@ -226,6 +226,87 @@ class DockManagerTest {
         assertFalse(lower.drawOutsideRail);
     }
 
+    @Test
+    void railsWithAGapSplitIntoSeparateClusters() {
+        DockRect window = new DockRect(0, 0, 100, 200);
+        TestPanel upper = new TestPanel("upper", true);
+        upper.x = 0;
+        upper.y = 0;
+        upper.width = 100;
+        upper.height = 80;
+        upper.splicedWindow = window;
+
+        TestPanel lower = new TestPanel("lower", true);
+        lower.x = 0;
+        lower.y = 90;
+        lower.width = 100;
+        lower.height = 80;
+        lower.splicedWindow = window;
+
+        DockManager.joinOutsideRails(List.of(upper, lower));
+
+        assertTrue(upper.drawOutsideRail);
+        assertEquals(upper.y, upper.joinedRailY);
+        assertEquals(upper.height, upper.joinedRailH);
+        assertTrue(lower.drawOutsideRail);
+        assertEquals(lower.y, lower.joinedRailY);
+        assertEquals(lower.height, lower.joinedRailH);
+    }
+
+    @Test
+    void overlappingVerticalRangesStillJoinEvenWithoutTouching() {
+        DockRect window = new DockRect(0, 0, 100, 200);
+        TestPanel upper = new TestPanel("upper", true);
+        upper.x = 0;
+        upper.y = 0;
+        upper.width = 100;
+        upper.height = 80;
+        upper.splicedWindow = window;
+
+        TestPanel lower = new TestPanel("lower", true);
+        lower.x = 0;
+        lower.y = 80;
+        lower.width = 100;
+        lower.height = 80;
+        lower.splicedWindow = window;
+
+        DockManager.joinOutsideRails(List.of(upper, lower));
+
+        assertTrue(upper.drawOutsideRail);
+        assertEquals(0, upper.joinedRailY);
+        assertEquals(160, upper.joinedRailH);
+        assertFalse(lower.drawOutsideRail);
+    }
+
+    @Test
+    void hiddenLeavesAreExcludedFromRailJoining() {
+        DockRect window = new DockRect(0, 0, 100, 160);
+        TestPanel visible = new TestPanel("visible", true);
+        visible.x = 0;
+        visible.y = 0;
+        visible.width = 100;
+        visible.height = 80;
+        visible.visible = true;
+        visible.splicedWindow = window;
+
+        TestPanel hidden = new TestPanel("hidden", true);
+        hidden.x = 0;
+        hidden.y = 80;
+        hidden.width = 100;
+        hidden.height = 80;
+        hidden.visible = false;
+        hidden.splicedWindow = window;
+
+        DockManager.joinOutsideRails(List.of(visible, hidden));
+
+        assertTrue(visible.drawOutsideRail);
+        assertEquals(visible.y, visible.joinedRailY);
+        assertEquals(visible.height, visible.joinedRailH);
+        assertTrue(hidden.drawOutsideRail);
+        assertEquals(hidden.y, hidden.joinedRailY);
+        assertEquals(hidden.height, hidden.joinedRailH);
+    }
+
     private static FloatingRoot root(String id, DockRect bounds, boolean visible) {
         return new FloatingRoot(
                 "root-" + id,

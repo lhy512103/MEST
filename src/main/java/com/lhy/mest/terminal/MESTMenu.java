@@ -460,8 +460,8 @@ public class MESTMenu extends CraftingTermMenu {
         if (code == 0) {
             long gcd = sharedGcd(copyInv(encodedInputsInv), copyInv(encodedOutputsInv));
             if (gcd > 1L) {
-                writeInv(encodedInputsInv, divideStacks(copyInv(encodedInputsInv), gcd));
-                writeInv(encodedOutputsInv, divideStacks(copyInv(encodedOutputsInv), gcd));
+                writeInv(encodedInputsInv, PatternEncodingAmounts.divideStacks(copyInv(encodedInputsInv), gcd));
+                writeInv(encodedOutputsInv, PatternEncodingAmounts.divideStacks(copyInv(encodedOutputsInv), gcd));
             }
             broadcastChanges();
             return;
@@ -1240,8 +1240,8 @@ public class MESTMenu extends CraftingTermMenu {
                 continue;
             }
             slot.set(PatternDetailsHelper.encodeProcessingPattern(
-                    divideStacks(process.getSparseInputs(), gcd),
-                    divideStacks(process.getSparseOutputs(), gcd)));
+                    PatternEncodingAmounts.divideStacks(process.getSparseInputs(), gcd),
+                    PatternEncodingAmounts.divideStacks(process.getSparseOutputs(), gcd)));
         }
         broadcastChanges();
     }
@@ -1315,17 +1315,9 @@ public class MESTMenu extends CraftingTermMenu {
         var result = new GenericStack[source.length];
         for (int i = 0; i < source.length; i++) {
             if (source[i] != null) {
-                long amount = divide ? source[i].amount() / scale : source[i].amount() * scale;
+                long amount = PatternEncodingAmounts.scaledAmount(source[i].amount(), scale, divide);
                 result[i] = new GenericStack(source[i].what(), amount);
             }
-        }
-        return result;
-    }
-
-    private static List<GenericStack> divideStacks(List<GenericStack> stacks, long divisor) {
-        var result = new ArrayList<GenericStack>(stacks.size());
-        for (GenericStack stack : stacks) {
-            result.add(stack == null ? null : new GenericStack(stack.what(), stack.amount() / divisor));
         }
         return result;
     }
@@ -1343,23 +1335,12 @@ public class MESTMenu extends CraftingTermMenu {
             if (stack == null || stack.amount() <= 0L) {
                 continue;
             }
-            gcd = gcd == 0L ? stack.amount() : gcd(gcd, stack.amount());
+            gcd = gcd == 0L ? stack.amount() : PatternEncodingAmounts.gcd(gcd, stack.amount());
             if (gcd == 1L) {
                 return 1L;
             }
         }
         return gcd;
-    }
-
-    private static long gcd(long left, long right) {
-        left = Math.abs(left);
-        right = Math.abs(right);
-        while (right != 0L) {
-            long remainder = left % right;
-            left = right;
-            right = remainder;
-        }
-        return left;
     }
 
     private static GenericStack[] rotateOutputs(GenericStack[] outputs) {

@@ -18,6 +18,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.compat.MestWtlibSupport;
@@ -26,31 +27,30 @@ import com.lhy.mest.compat.MestWtlibSupport;
  * Keeps a machine menu opened from the spliced terminal valid while the player is using it
  * remotely (vanilla {@code stillValid} would close it for distance).
  *
- * <p>The keep-alive only covers the gap left by the distance check. It re-verifies the target
- * block and, once per second, that the player still carries a linked spliced terminal, so dropping
- * the terminal, leaving wireless range or losing the grid closes the remote menu.
+ * <p>Re-verifies the target block and periodically checks for a linked spliced terminal.
+ * Losing either revokes the remote keep-alive; normal menu validity can still allow local use.
+ * This does not prove that a failed {@code stillValid} was caused only by distance, nor that the
+ * carried terminal is connected to the original grid.
  */
 @EventBusSubscriber(modid = MESplicedterminal.MODID)
 public final class RemoteMenuAccess {
-    private static final int TERMINAL_RECHECK_INTERVAL_TICKS = 20;
-
     private static final Map<UUID, Session> SESSIONS = new HashMap<>();
 
     private RemoteMenuAccess() {
     }
 
     public static boolean open(ServerPlayer player, MenuProvider provider, ServerLevel level, BlockPos pos) {
+        var previousMenu = player.containerMenu;
         var openedId = player.openMenu(provider, pos);
         if (openedId.isEmpty() || player.containerMenu.containerId != openedId.getAsInt()) {
             return false;
         }
-        track(player, level, pos);
-        return true;
+        return trackOpenedMenu(player, previousMenu, level, pos);
     }
 
     public static boolean trackOpenedMenu(ServerPlayer player, AbstractContainerMenu previousMenu,
             ServerLevel level, BlockPos pos) {
-        if (player.containerMenu == previousMenu) {
+        if (player.containerMenu == previousMenu || player.containerMenu == player.inventoryMenu) {
             return false;
         }
         track(player, level, pos);
@@ -59,7 +59,7 @@ public final class RemoteMenuAccess {
 
     public static boolean keepsMenuValid(ServerPlayer player, AbstractContainerMenu menu) {
         Session session = SESSIONS.get(player.getUUID());
-        if (session == null || session.menu != menu) {
+        if (session == null || session.menu != menu || menu != player.containerMenu) {
             if (session != null) {
                 SESSIONS.remove(player.getUUID());
             }
@@ -81,25 +81,12 @@ public final class RemoteMenuAccess {
             SESSIONS.remove(player.getUUID());
             return false;
         }
-        if (!terminalStillLinked(session, player)) {
+        if (!session.linkCheck.isLinked(player.serverLevel().getGameTime(),
+                () -> MestWtlibSupport.hasLinkedTerminal(player))) {
             SESSIONS.remove(player.getUUID());
             return false;
         }
         return true;
-    }
-
-    /**
-     * Re-checks the terminal at most once a second. The keep-alive runs on every server tick while
-     * the player is out of range, and re-resolving the wireless link each tick would be wasteful.
-     */
-    private static boolean terminalStillLinked(Session session, ServerPlayer player) {
-        long tick = player.serverLevel().getGameTime();
-        if (tick - session.lastTerminalCheckTick < TERMINAL_RECHECK_INTERVAL_TICKS) {
-            return session.terminalLinked;
-        }
-        session.lastTerminalCheckTick = tick;
-        session.terminalLinked = MestWtlibSupport.hasLinkedTerminal(player);
-        return session.terminalLinked;
     }
 
     public static void clear(ServerPlayer player, AbstractContainerMenu menu) {
@@ -116,14 +103,20 @@ public final class RemoteMenuAccess {
         }
     }
 
+    @SubscribeEvent
+    public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            SESSIONS.remove(player.getUUID());
+        }
+    }
+
     private static void track(ServerPlayer player, ServerLevel level, BlockPos pos) {
         SESSIONS.put(player.getUUID(), new Session(
                 player.containerMenu,
                 level.dimension(),
                 pos.immutable(),
                 level.getBlockState(pos).getBlock(),
-                level.getBlockEntity(pos),
-                player.serverLevel().getGameTime()));
+                level.getBlockEntity(pos)));
     }
 
     private static final class Session {
@@ -133,18 +126,15 @@ public final class RemoteMenuAccess {
         private final Block block;
         @Nullable
         private final BlockEntity blockEntity;
-        private long lastTerminalCheckTick;
-        private boolean terminalLinked = true;
+        private final RemoteMenuLinkCheck linkCheck = new RemoteMenuLinkCheck();
 
         private Session(AbstractContainerMenu menu, ResourceKey<Level> dimension, BlockPos pos, Block block,
-                @Nullable BlockEntity blockEntity, long openedTick) {
+                @Nullable BlockEntity blockEntity) {
             this.menu = menu;
             this.dimension = dimension;
             this.pos = pos;
             this.block = block;
             this.blockEntity = blockEntity;
-            // The menu was just opened through a terminal that was linked at that moment.
-            this.lastTerminalCheckTick = openedTick;
         }
     }
 }

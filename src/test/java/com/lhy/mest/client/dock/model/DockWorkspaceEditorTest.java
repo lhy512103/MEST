@@ -3,10 +3,12 @@ package com.lhy.mest.client.dock.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -180,6 +182,22 @@ class DockWorkspaceEditorTest {
         DockWorkspace centered = editor.centerRoots(workspace, List.of("root-a"), 400, 240);
 
         assertEquals(workspace, centered);
+    }
+
+    @Test
+    void batchRootBoundsPreservesOrderAndReturnsIdentityForNoOp() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        DockWorkspace initial = new DockWorkspace(List.of(
+                ModelTestFixtures.root("root-a", "leaf-a", "a", 0),
+                ModelTestFixtures.root("root-b", "leaf-b", "b", 20)));
+
+        assertSame(initial, editor.setRootBounds(initial, Map.of()));
+        DockWorkspace moved = editor.setRootBounds(initial, Map.of(
+                "root-a", new DockRect(30, 40, 100, 80),
+                "root-b", new DockRect(50, 60, 100, 80)));
+        assertEquals(List.of("root-a", "root-b"), moved.roots().stream().map(FloatingRoot::rootId).toList());
+        assertEquals(new DockRect(50, 60, 100, 80), moved.roots().get(1).bounds());
     }
 
     @Test

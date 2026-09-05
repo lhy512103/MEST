@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.Map;
 
 /** Immutable tree mutations used by drag, splice, detach, hide and Z-order controls. */
 public final class DockWorkspaceEditor {
@@ -165,6 +166,25 @@ public final class DockWorkspaceEditor {
             }
         }
         throw new IllegalArgumentException("unknown root: " + rootId);
+    }
+
+    /** Updates several root bounds in one validated immutable workspace rebuild. */
+    public DockWorkspace setRootBounds(DockWorkspace workspace, Map<String, DockRect> boundsByRoot) {
+        validate(workspace);
+        if (boundsByRoot == null || boundsByRoot.isEmpty()) {
+            return workspace;
+        }
+        var roots = new ArrayList<>(workspace.roots());
+        boolean changed = false;
+        for (int i = 0; i < roots.size(); i++) {
+            FloatingRoot root = roots.get(i);
+            DockRect bounds = boundsByRoot.get(root.rootId());
+            if (bounds != null && !bounds.equals(root.bounds())) {
+                roots.set(i, root.withBounds(bounds));
+                changed = true;
+            }
+        }
+        return changed ? copyWithRoots(workspace, roots) : workspace;
     }
 
     /**

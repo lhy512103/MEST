@@ -18,10 +18,9 @@ public abstract class RemoteMenuMixin {
                     target = "Lnet/minecraft/world/inventory/AbstractContainerMenu;stillValid(Lnet/minecraft/world/entity/player/Player;)Z"),
             require = 1)
     private boolean mest$keepRemoteProviderMenuOpen(boolean original) {
-        if (original) {
-            return true;
-        }
         ServerPlayer self = (ServerPlayer) (Object) this;
-        return RemoteMenuAccess.keepsMenuValid(self, self.containerMenu);
+        // Revoke stale remote access even while the menu is locally valid.
+        boolean remoteValid = RemoteMenuAccess.keepsMenuValid(self, self.containerMenu);
+        return original || remoteValid;
     }
 }

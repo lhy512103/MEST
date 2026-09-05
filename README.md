@@ -15,8 +15,8 @@ workspace whose modules can be moved, resized, split and rejoined.
   upgrade data, are retained by the result.
 - Includes recipe advancement data, the standard Curios `curio` item tag and a
   dedicated 16x16 terminal texture.
-- Exposes three terminal upgrade slots for the registered AE2WTLib energy-card
-  and quantum-bridge-card upgrades.
+- Exposes the upgrade capacity advertised by AE2WTLib, with a three-slot fallback
+  when no provider count is available. The visible upgrade column is dynamic.
 
 ## Recursive Workspace
 
@@ -30,7 +30,8 @@ workspace whose modules can be moved, resized, split and rejoined.
   edited on a dark grid canvas with a module palette sidebar (press-and-drag an
   entry to place or reveal a module), a property inspector and four-way
   splice-zone highlights while dragging.
-- Provides module visibility toggles, a session-only layout lock, one-step undo,
+- Provides module visibility toggles, a session-only layout lock, bounded undo
+  history (up to 32 snapshots),
   a compact floating preset and a reset-to-default action.
 - Stores tree structure, split ratios, window geometry, per-module interaction
   policy and z-order in `config/mesplicedterminal/layout.json` using the v3
@@ -99,8 +100,10 @@ workspace whose modules can be moved, resized, split and rejoined.
 - Automated tests cover the layout model and codec, atomic storage, ME
   interaction policy, recipe-target selection, provider client state, chunk
   planning, conserving inventory transfers and resource path/key consistency.
-  Dependency locks are committed, archives use deterministic ordering and
-  timestamps, and CI validates the wrapper before building with Java 21.
+  Archives use deterministic ordering and timestamps, and CI validates the wrapper,
+  builds with Java 21, and checks all four JEI/EMI launch declaration combinations.
+  Dependency locking is not currently enabled; version properties and CurseForge file
+  IDs are the source of truth.
   Compilation and unit tests do not replace in-game checks across GUI scales,
   nested layouts, reconnects and optional viewer combinations.
 
@@ -114,9 +117,13 @@ Run the standard checks with:
 .\gradlew.bat build
 ```
 
-Viewer dependency combinations can be inspected with the same Gradle properties,
+Viewer declaration combinations are checked without resolving the full runtime graph by:
 for example:
 
 ```powershell
-.\gradlew.bat dependencies --configuration runtimeClasspath -PmestRunJei=false -PmestRunEmi=true
+  .\gradlew.bat checkViewerLaunchClasspaths -PmestRunJei=false -PmestRunEmi=true
 ```
+
+The distinction between automated declaration checks and real client startup testing, including
+the manual compatibility checklist and remaining rollout risk, is documented in
+`docs/compatibility-verification.md`.

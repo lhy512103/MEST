@@ -99,6 +99,7 @@ public final class DockManager {
 
     private static final LayoutStyle LAYOUT_STYLE =
             new LayoutStyle(DockInsets.NONE, DIVIDER_THICKNESS);
+    private static final boolean DEBUG_DOCK_TIMING = Boolean.getBoolean("mest.debugDockTiming");
 
     private final List<ModulePanel> panels = new ArrayList<>();
     private final Map<String, ModulePanel> panelsByModuleId = new LinkedHashMap<>();
@@ -131,6 +132,8 @@ public final class DockManager {
     private LayoutProjection projection;
     private boolean projectionDirty;
     private long workspaceRevision;
+    private long projectionCount;
+    private long projectionNanos;
     private long persistedRevision = -1;
     /**
      * A corrupt persisted layout is quarantined by the store. Until the player deliberately changes
@@ -1782,15 +1785,16 @@ public final class DockManager {
         if (dx == 0 && dy == 0) {
             return;
         }
-        DockWorkspace next = workspace;
+        var movedBounds = new HashMap<String, DockRect>();
         for (FloatingRoot root : viewportWorkspace.roots()) {
             DockRect bounds = root.bounds();
-            next = editor.setRootBounds(next, root.rootId(), new DockRect(
+            movedBounds.put(root.rootId(), new DockRect(
                     bounds.x() + dx,
                     bounds.y() + dy,
                     bounds.width(),
                     bounds.height()));
         }
+        DockWorkspace next = editor.setRootBounds(workspace, movedBounds);
         replaceWorkspace(next, false);
     }
 
@@ -2063,6 +2067,7 @@ public final class DockManager {
         if (!projectionDirty || workspace == null || viewportWorkspace == null || layoutEngine == null) {
             return;
         }
+        long started = DEBUG_DOCK_TIMING ? System.nanoTime() : 0L;
         leavesCache.clear();
         paintOrderCache = null;
         slotPanelCache = null;
@@ -2108,7 +2113,7 @@ public final class DockManager {
                 ModuleLayoutPolicy policy = workspace.policyFor(leaf.moduleId());
                 panel.setPinControl(visible && !anchored && policy.floating(), policy.pinned());
             }
-            markRightmostLeaves(root, next);
+            DockChromeLayout.markRightmostLeaves(root, next, panelsByModuleId);
             for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
                 ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
                 panel.contentRightInset = panel.preferredContentRightInset();
@@ -2122,73 +2127,17 @@ public final class DockManager {
                 panel.layoutSlots();
             }
         }
-        joinOutsideRails();
+        DockChromeLayout.joinOutsideRails(panelsByModuleId.values());
         projection = next;
         projectionDirty = false;
-    }
-
-    private void markRightmostLeaves(FloatingRoot root, LayoutProjection next) {
-        List<ModulePanel> visible = new ArrayList<>();
-        for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
-            if (next.visibleLeaf(leaf.nodeId()).isEmpty()) {
-                continue;
-            }
-            ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
-            if (panel != null && panel.visible) {
-                visible.add(panel);
-            }
-        }
-        for (ModulePanel panel : visible) {
-            boolean rightmost = true;
-            int panelRight = panel.x + panel.width;
-            for (ModulePanel other : visible) {
-                if (other != panel && other.x >= panelRight - 1) {
-                    rightmost = false;
-                    break;
-                }
-            }
-            panel.rightmostInWindow = rightmost;
-        }
-    }
-
-    private void joinOutsideRails() {
-        joinOutsideRails(panelsByModuleId.values());
-    }
-
-    static void joinOutsideRails(Iterable<ModulePanel> panels) {
-        var clusters = new HashMap<String, List<ModulePanel>>();
-        for (ModulePanel panel : panels) {
-            panel.resetJoinedRail();
-            if (!panel.visible || !panel.hasJoinableOutsideRail()) {
-                continue;
-            }
-            int railX = panel.x + panel.width;
-            String key = (panel.splicedWindow == null ? System.identityHashCode(panel) : System.identityHashCode(panel.splicedWindow))
-                    + ":" + railX;
-            clusters.computeIfAbsent(key, ignored -> new ArrayList<>()).add(panel);
-        }
-        for (List<ModulePanel> group : clusters.values()) {
-            if (group.size() < 2) {
-                continue;
-            }
-            group.sort(Comparator.comparingInt(panel -> panel.y));
-            int clusterStart = 0;
-            for (int index = 1; index <= group.size(); index++) {
-                boolean split = index == group.size()
-                        || group.get(index).y > group.get(index - 1).y + group.get(index - 1).height + 2;
-                if (!split) {
-                    continue;
-                }
-                if (index - clusterStart >= 2) {
-                    ModulePanel first = group.get(clusterStart);
-                    ModulePanel last = group.get(index - 1);
-                    first.joinedRailY = first.y;
-                    first.joinedRailH = last.y + last.height - first.joinedRailY;
-                    for (int joined = clusterStart + 1; joined < index; joined++) {
-                        group.get(joined).drawOutsideRail = false;
-                    }
-                }
-                clusterStart = index;
+        if (DEBUG_DOCK_TIMING) {
+            projectionCount++;
+            projectionNanos += System.nanoTime() - started;
+            if (projectionCount % 120 == 0) {
+                MESplicedterminal.LOGGER.debug(
+                        "Dock projection timing: count={}, average={}us",
+                        projectionCount,
+                        projectionNanos / projectionCount / 1_000L);
             }
         }
     }
@@ -2209,6 +2158,10 @@ public final class DockManager {
             structureVersion++;
         }
         ensureProjection();
+    }
+
+    static void joinOutsideRails(Iterable<ModulePanel> panels) {
+        DockChromeLayout.joinOutsideRails(panels);
     }
 
     private void rememberUndoPoint(DockWorkspace snapshot) {
