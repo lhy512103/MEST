@@ -11,6 +11,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.Slot;
 
+import appeng.client.gui.Icon;
 import appeng.client.gui.style.BackgroundGenerator;
 import appeng.client.gui.style.Blitter;
 import appeng.core.AppEng;
@@ -19,6 +20,7 @@ import net.neoforged.fml.ModList;
 
 import com.glodblock.github.extendedae.client.button.EPPIcon;
 
+import com.lhy.mest.client.MestGuiIcons;
 import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.LayoutProjection;
@@ -302,6 +304,21 @@ public abstract class ModulePanel {
 
     public boolean inResetButton(double mx, double my) {
         return contentChromeVisible() && inChromeButton(mx, my, resetButtonX(), resetButtonY());
+    }
+
+    public Component titleBarTooltip(double mx, double my) {
+        if (inPinButton(mx, my)) {
+            return Component.translatable(pinned()
+                    ? "gui.mesplicedterminal.unpin_panel"
+                    : "gui.mesplicedterminal.pin_panel");
+        }
+        if (inCloseButton(mx, my)) {
+            return Component.translatable("gui.mesplicedterminal.content_edit.close");
+        }
+        if (inResetButton(mx, my)) {
+            return Component.translatable("gui.mesplicedterminal.content_edit.reset");
+        }
+        return null;
     }
 
     private static boolean inChromeButton(double mx, double my, int px, int py) {
@@ -614,7 +631,7 @@ public abstract class ModulePanel {
                 int bg = hovered ? 0xFF4A4A4A : 0xFF2E2E2E;
                 g.fill(px, py + yOffset, px + PIN_SIZE, py + yOffset + PIN_SIZE, bg);
             }
-            com.lhy.mest.client.MestGuiIcons.blit(g, 12, 1, px, py + yOffset, PIN_SIZE, PIN_SIZE);
+            MestGuiIcons.blit(g, 12, 1, px, py + yOffset, PIN_SIZE, PIN_SIZE);
         }
     }
 
@@ -629,26 +646,17 @@ public abstract class ModulePanel {
             int bg = hovered ? 0xFF4A4A4A : 0xFF2E2E2E;
             g.fill(px, py + yOffset, px + PIN_SIZE, py + yOffset + PIN_SIZE, bg);
         }
-        int gx = px + 3;
-        int gy = py + yOffset + 3;
-        int color = 0xFFF2F2F2;
+        int ix = px;
+        int iy = py + yOffset;
         if (glyph == ChromeGlyph.CLOSE) {
-            g.fill(gx, gy, gx + 1, gy + 1, color);
-            g.fill(gx + 5, gy, gx + 6, gy + 1, color);
-            g.fill(gx + 1, gy + 1, gx + 2, gy + 2, color);
-            g.fill(gx + 4, gy + 1, gx + 5, gy + 2, color);
-            g.fill(gx + 2, gy + 2, gx + 4, gy + 4, color);
-            g.fill(gx + 1, gy + 4, gx + 2, gy + 5, color);
-            g.fill(gx + 4, gy + 4, gx + 5, gy + 5, color);
-            g.fill(gx, gy + 5, gx + 1, gy + 6, color);
-            g.fill(gx + 5, gy + 5, gx + 6, gy + 6, color);
+            // layout_preset_icons.png row 4 col 2 (16, 48)
+            MestGuiIcons.blit(g, 1, 3, ix, iy, PIN_SIZE, PIN_SIZE);
         } else {
-            g.fill(gx + 1, gy, gx + 5, gy + 1, color);
-            g.fill(gx + 4, gy + 1, gx + 5, gy + 2, color);
-            g.fill(gx + 5, gy + 1, gx + 6, gy + 5, color);
-            g.fill(gx + 1, gy + 5, gx + 6, gy + 6, color);
-            g.fill(gx, gy + 2, gx + 1, gy + 5, color);
-            g.fill(gx + 1, gy + 1, gx + 2, gy + 2, color);
+            // AE2 states.png last 16px row, first cell (0, 240)
+            Icon.SCHEDULING_DEFAULT.getBlitter()
+                    .dest(ix, iy, PIN_SIZE, PIN_SIZE)
+                    .zOffset(3)
+                    .blit(g);
         }
     }
 
@@ -659,15 +667,18 @@ public abstract class ModulePanel {
 
     /**
      * Dashed centre guides used while nudging a content block inside a shell section.
-     * Section midlines stay faint; the content-block midlines light up when they snap together.
+     * Guides use the same inner content rectangle as {@link #contentSlackX()} / {@link #contentSlackY()},
+     * otherwise the section midline sits in the reserved padding and never meets the content block.
      */
     public void renderContentGuides(GuiGraphics g, boolean snapX, boolean snapY) {
-        int sectionLeft = x;
-        int sectionTop = y + (drawsTitleBar() ? TITLE_BAR_HEIGHT : 0);
-        int sectionRight = x + width;
-        int sectionBottom = y + height;
-        int sectionMidX = sectionLeft + width / 2;
-        int sectionMidY = sectionTop + (sectionBottom - sectionTop) / 2;
+        int innerLeft = x + CONTENT_PADDING;
+        int innerTop = y + (drawsTitleBar() ? TITLE_BAR_HEIGHT : CONTENT_PADDING);
+        int innerRight = innerLeft + contentWidth();
+        int innerBottom = innerTop + contentHeight();
+        int innerW = Math.max(0, innerRight - innerLeft);
+        int innerH = Math.max(0, innerBottom - innerTop);
+        int sectionMidX = innerLeft + innerW / 2;
+        int sectionMidY = innerTop + innerH / 2;
         int contentW = Math.min(preferredContentWidth(), contentWidth());
         int contentH = Math.min(preferredContentHeight(), contentHeight());
         int contentMidX = contentLeft() + contentW / 2;
@@ -675,13 +686,13 @@ public abstract class ModulePanel {
         int sectionColor = 0x66ACE9FF;
         int contentColor = 0xBBACE9FF;
         int snapColor = 0xFFE8F7FF;
-        drawDashedVLine(g, sectionMidX, sectionTop, sectionBottom, snapX ? snapColor : sectionColor);
-        drawDashedHLine(g, sectionMidY, sectionLeft, sectionRight, snapY ? snapColor : sectionColor);
+        drawDashedVLine(g, sectionMidX, innerTop, innerBottom, snapX ? snapColor : sectionColor);
+        drawDashedHLine(g, sectionMidY, innerLeft, innerRight, snapY ? snapColor : sectionColor);
         if (!snapX) {
-            drawDashedVLine(g, contentMidX, sectionTop, sectionBottom, contentColor);
+            drawDashedVLine(g, contentMidX, innerTop, innerBottom, contentColor);
         }
         if (!snapY) {
-            drawDashedHLine(g, contentMidY, sectionLeft, sectionRight, contentColor);
+            drawDashedHLine(g, contentMidY, innerLeft, innerRight, contentColor);
         }
     }
 

@@ -92,15 +92,19 @@ class DockManagerTest {
         setField(manager, "gestureStartWorkspace", before);
         setField(manager, "gestureCanonicalWorkspace", before);
         setField(manager, "gestureCanonicalViewport", before);
-        setField(manager, "mode", Enum.valueOf(modeClass(), "DRAG_ROOT"));
+        setField(manager, "mode", dragRootMode());
         return manager;
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static Class<? extends Enum> modeClass() {
+    private static Object dragRootMode() {
         try {
-            return (Class<? extends Enum>) Class.forName(
-                    "com.lhy.mest.client.dock.DockManager$Mode");
+            Class<?> type = Class.forName("com.lhy.mest.client.dock.DockManager$Mode");
+            for (Object constant : type.getEnumConstants()) {
+                if ("DRAG_ROOT".equals(constant.toString())) {
+                    return constant;
+                }
+            }
+            throw new AssertionError("DRAG_ROOT missing");
         } catch (ClassNotFoundException e) {
             throw new AssertionError(e);
         }

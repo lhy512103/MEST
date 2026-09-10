@@ -1289,17 +1289,22 @@ public final class DockManager {
                         continue;
                     }
                     ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
-                    int routedMouseX = root == hoveredRoot && panel == hoveredLeaf ? mouseX : Integer.MIN_VALUE;
-                    int routedMouseY = root == hoveredRoot && panel == hoveredLeaf ? mouseY : Integer.MIN_VALUE;
+                    boolean hover = root == hoveredRoot && panel == hoveredLeaf
+                            && (contentEditModuleId == null || panel.id().equals(contentEditModuleId));
+                    int routedMouseX = hover ? mouseX : Integer.MIN_VALUE;
+                    int routedMouseY = hover ? mouseY : Integer.MIN_VALUE;
                     panel.renderForegroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
-                    if (panel.pinVisible() && panel.inPinButton(routedMouseX, routedMouseY)) {
-                        graphics.renderComponentTooltip(
-                                font,
-                                List.of(Component.translatable(panel.pinned()
-                                        ? "gui.mesplicedterminal.unpin_panel"
-                                        : "gui.mesplicedterminal.pin_panel")),
-                                mouseX,
-                                mouseY);
+                    if (hover) {
+                        Component chromeTip = panel.titleBarTooltip(mouseX, mouseY);
+                        if (chromeTip != null) {
+                            graphics.renderComponentTooltip(font, List.of(chromeTip), mouseX, mouseY);
+                        }
+                    }
+                }
+                if (contentEditModuleId != null) {
+                    ModulePanel editing = panelsByModuleId.get(contentEditModuleId);
+                    if (editing != null && editing.visible) {
+                        dimUneditedPanels(graphics, root, editing);
                     }
                 }
             });
@@ -1492,6 +1497,24 @@ public final class DockManager {
             layer++;
         }
         return 0;
+    }
+
+    private static final int CONTENT_EDIT_DIM = 0x99000000;
+
+    /** Dim every visible leaf except the one being content-edited. */
+    private void dimUneditedPanels(GuiGraphics graphics, FloatingRoot root, ModulePanel editing) {
+        for (ModulePanel panel : visiblePanels(root)) {
+            if (panel == editing) {
+                continue;
+            }
+            int left = panel.x - panel.outsideHitLeftWidth();
+            int top = panel.y - panel.outsideHitTop();
+            int right = panel.x + panel.width + panel.outsideHitWidth();
+            int bottom = panel.y + panel.height;
+            if (right > left && bottom > top) {
+                graphics.fill(left, top, right, bottom, CONTENT_EDIT_DIM);
+            }
+        }
     }
 
     public boolean ownsSlot(Slot slot) {
@@ -2222,10 +2245,48 @@ public final class DockManager {
             return;
         }
         workspace = changed;
-        viewportWorkspace = clampWorkspaceToViewport(changed);
+        DockWorkspace nextViewport = clampGestureViewport(changed, structural);
+        if (nextViewport.equals(viewportWorkspace)) {
+            // Geometry is identical to what is already projected, so the live drag
+            // preview needs no re-projection. This is the common case for a single
+            // root-translate gesture where every pointer move stays in-bounds.
+            gestureStructural |= structural;
+            return;
+        }
+        viewportWorkspace = nextViewport;
         projectionDirty = true;
         gestureStructural |= structural;
         ensureProjection();
+    }
+
+    /**
+     * Clamps a live gesture preview to the viewport. During a pure root-translate
+     * gesture the recursive layout is unchanged (only one root's absolute position
+     * moved, already clamped by the caller), so the full re-projection normally
+     * used to measure root minimum sizes is skipped and the cached minimums from
+     * the last projection are reused. Any root lacking a cached minimum falls back
+     * to the full clamp, as does every other gesture mode (resize, snap, splice).
+     */
+    private DockWorkspace clampGestureViewport(DockWorkspace changed, boolean structural) {
+        boolean translateOnly = mode == Mode.DRAG_ROOT && !moveAllRoots && !structural;
+        if (translateOnly) {
+            boolean allMeasured = true;
+            for (FloatingRoot root : changed.roots()) {
+                if (rootMinimum(root.rootId()).equals(DockSize.ZERO)) {
+                    allMeasured = false;
+                    break;
+                }
+            }
+            if (allMeasured) {
+                var clampedRoots = new ArrayList<FloatingRoot>(changed.roots().size());
+                for (FloatingRoot root : changed.roots()) {
+                    clampedRoots.add(
+                            root.withBounds(clampRectToViewport(root.bounds(), rootMinimum(root.rootId()))));
+                }
+                return changed.withRoots(clampedRoots);
+            }
+        }
+        return clampWorkspaceToViewport(changed);
     }
 
     static void joinOutsideRails(Iterable<ModulePanel> panels) {
