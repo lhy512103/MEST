@@ -3274,6 +3274,11 @@ public final class DockManager {
     }
 
     private void renderShellRules(GuiGraphics graphics, FloatingRoot root, DividerHit hoveredDivider) {
+        // Section rules are an editing aid: they mark where a shell splits while arranging panels.
+        // In the terminal they only read as stray grey seams, so keep them to the layout editor.
+        if (!editingLayout) {
+            return;
+        }
         var rules = new ArrayList<LayoutProjection.DividerPlacement>();
         for (LayoutProjection.DividerPlacement divider : projection.dividers()) {
             if (LayoutTrees.contains(root.content(), divider.splitNodeId())) {
