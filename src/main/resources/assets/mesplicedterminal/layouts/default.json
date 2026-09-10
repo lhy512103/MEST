@@ -92,6 +92,21 @@
       }
     },
     {
+      "rootId": "root:c3351784-425c-3520-bdbc-e5424919e5ad",
+      "bounds": {
+        "x": 164,
+        "y": 154,
+        "width": 186,
+        "height": 60
+      },
+      "content": {
+        "type": "leaf",
+        "nodeId": "leaf:c3351784-425c-3520-bdbc-e5424919e5ad",
+        "moduleId": "toolkit",
+        "visible": true
+      }
+    },
+    {
       "rootId": "root:dbf63870-2512-34ba-bddf-994a7e30a1ca",
       "bounds": {
         "x": 164,
@@ -209,6 +224,14 @@
       "resizable": true,
       "floating": true,
       "pinned": true,
+      "showTerminalButton": true
+    },
+    "toolkit": {
+      "visible": false,
+      "movable": true,
+      "resizable": true,
+      "floating": true,
+      "pinned": false,
       "showTerminalButton": true
     },
     "crafting_terminal": {

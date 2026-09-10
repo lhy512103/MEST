@@ -65,11 +65,14 @@ public final class DockWorkspaceDefaults {
     public static boolean defaultVisible(String moduleId) {
         return !"provider_select".equals(moduleId)
                 && !"wireless_settings".equals(moduleId)
-                && !"trash".equals(moduleId);
+                && !"trash".equals(moduleId)
+                && !"toolkit".equals(moduleId);
     }
 
     public static boolean defaultFloating(String moduleId) {
-        return "wireless_settings".equals(moduleId) || "trash".equals(moduleId);
+        return "wireless_settings".equals(moduleId)
+                || "trash".equals(moduleId)
+                || "toolkit".equals(moduleId);
     }
 
     public static boolean defaultPinned(String moduleId) {

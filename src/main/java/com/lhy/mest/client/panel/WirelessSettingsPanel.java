@@ -27,6 +27,7 @@ import de.mari_023.ae2wtlib.wct.magnet_card.MagnetMode;
 
 import com.lhy.mest.client.dock.DockManager;
 import com.lhy.mest.client.dock.ModulePanel;
+import com.lhy.mest.network.ToolkitBarTogglePacket;
 import com.lhy.mest.registry.ModComponents;
 import com.lhy.mest.terminal.MESTMenu;
 
@@ -70,7 +71,7 @@ public class WirelessSettingsPanel extends ModulePanel {
         pullItems.setChangeListener(this::savePullItems);
         magnet.setChangeListener(this::save);
         pickupToME.setChangeListener(this::save);
-        toolkitBar.setChangeListener(this::save);
+        toolkitBar.setChangeListener(this::saveToolkitBar);
         widgets.add(pickBlock);
         widgets.add(craftIfMissing);
         widgets.add(restock);
@@ -150,6 +151,12 @@ public class WirelessSettingsPanel extends ModulePanel {
         dock.setPullItemsRecipeButton(pullItems.isSelected());
     }
 
+    private void saveToolkitBar() {
+        ItemStack stack = menu.getMestHost().getItemStack();
+        stack.set(ModComponents.TOOLKIT_BAR.get(), toolkitBar.isSelected());
+        PacketDistributor.sendToServer(new ToolkitBarTogglePacket(toolkitBar.isSelected()));
+    }
+
     private void save() {
         ItemStack stack = menu.getMestHost().getItemStack();
         stack.set(AE2wtlibComponents.PICK_BLOCK, pickBlock.isSelected());
@@ -159,7 +166,6 @@ public class WirelessSettingsPanel extends ModulePanel {
         MagnetMode next = mode.set(magnet.isSelected(), pickupToME.isSelected());
         MagnetHandler.saveMagnetMode(stack, next);
         stack.set(AE2wtlibAdditionalComponents.MAGNET_SETTINGS, next);
-        stack.set(ModComponents.TOOLKIT_BAR.get(), toolkitBar.isSelected());
 
         ItemMenuHostLocator locator = menu.getMestHost().getLocator();
         if (locator == null) {

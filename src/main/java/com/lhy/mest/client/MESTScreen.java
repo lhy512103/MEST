@@ -255,17 +255,21 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     public void dismissWirelessSettings() {
-        if (wirelessSettingsPanel == null) {
+        dismissUnpinnedFloating(wirelessSettingsPanel);
+    }
+
+    private void dismissUnpinnedFloating(ModulePanel panel) {
+        if (panel == null) {
             return;
         }
-        var policy = dock.policyFor(wirelessSettingsPanel);
+        var policy = dock.policyFor(panel);
         if (!policy.floating() || policy.pinned()) {
             return;
         }
-        if (!dock.isEffectivelyVisible(wirelessSettingsPanel)) {
+        if (!dock.isEffectivelyVisible(panel)) {
             return;
         }
-        dock.hideModule(wirelessSettingsPanel);
+        dock.hideModule(panel);
     }
 
     private void syncUtilityHost() {
@@ -1527,7 +1531,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             dismissProviderPicker(true);
         }
         if (target != wirelessSettingsPanel) {
-            dismissWirelessSettings();
+            dismissUnpinnedFloating(wirelessSettingsPanel);
+        }
+        if (target != toolkitPanel) {
+            dismissUnpinnedFloating(toolkitPanel);
         }
 
         if (target == craftingPanel || target == craftingTerminalPanel) {

@@ -22,6 +22,19 @@ import com.lhy.mest.registry.ModItems;
 public final class ToolkitBarActions {
     private ToolkitBarActions() {}
 
+    public static void setBarEnabled(ServerPlayer player, boolean enabled) {
+        ItemStack terminal = terminalFromOpenMenu(player);
+        if (terminal.isEmpty()) {
+            terminal = findTerminal(player);
+        }
+        if (terminal.isEmpty()) {
+            return;
+        }
+        terminal.set(ModComponents.TOOLKIT_BAR.get(), enabled);
+        player.getInventory().setChanged();
+        player.containerMenu.broadcastChanges();
+    }
+
     /**
      * Swaps the player's main-hand item with toolkit slot {@code index}.
      *
@@ -54,15 +67,32 @@ public final class ToolkitBarActions {
         player.containerMenu.broadcastChanges();
     }
 
-    /** First spliced terminal in the player's inventory, or empty when none is carried. */
-    public static ItemStack findTerminal(ServerPlayer player) {
-        Inventory inventory = player.getInventory();
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
-            ItemStack stack = inventory.getItem(i);
+    private static ItemStack terminalFromOpenMenu(ServerPlayer player) {
+        if (player.containerMenu instanceof MESTMenu menu) {
+            ItemStack stack = menu.getMestHost().getItemStack();
             if (!stack.isEmpty() && stack.is(ModItems.SPLICED_TERMINAL.get())) {
                 return stack;
             }
         }
         return ItemStack.EMPTY;
+    }
+
+    /** Prefer a terminal with bars enabled so HUD clicks hit the same stack the HUD is drawing. */
+    public static ItemStack findTerminal(ServerPlayer player) {
+        Inventory inventory = player.getInventory();
+        ItemStack first = ItemStack.EMPTY;
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (stack.isEmpty() || !stack.is(ModItems.SPLICED_TERMINAL.get())) {
+                continue;
+            }
+            if (stack.getOrDefault(ModComponents.TOOLKIT_BAR.get(), false)) {
+                return stack;
+            }
+            if (first.isEmpty()) {
+                first = stack;
+            }
+        }
+        return first;
     }
 }

@@ -59,11 +59,6 @@ public class ToolkitPanel extends ModulePanel {
     }
 
     @Override
-    public boolean pinVisible() {
-        return false;
-    }
-
-    @Override
     public int defaultWidth() {
         return 2 * CONTENT_PADDING + MIN_COLS * SLOT + INSIDE_GUTTER;
     }
@@ -96,11 +91,6 @@ public class ToolkitPanel extends ModulePanel {
     @Override
     public int preferredContentRightInset() {
         return visible ? INSIDE_GUTTER : 0;
-    }
-
-    @Override
-    protected int titleRightInset() {
-        return 24 + (contentChromeVisible() ? 28 : 0);
     }
 
     @Override

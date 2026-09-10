@@ -1,9 +1,12 @@
 package com.lhy.mest.client;
 
+import com.mojang.blaze3d.systems.RenderSystem;
+
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemContainerContents;
@@ -12,19 +15,22 @@ import com.lhy.mest.registry.ModComponents;
 import com.lhy.mest.registry.ModItems;
 
 /**
- * Draws the toolkit quick bars beside the vanilla hotbar.
+ * Draws the toolkit quick bars beside the vanilla hotbar, using the same {@code hud/hotbar} sprite.
  *
  * <p>Left bar maps toolkit slots 0-8, right bar maps 9-17 — together the first 18 toolkit slots.
  * The bar is read straight from the terminal item's {@code TOOLKIT_INV} component, which is
  * network-synchronized, so there is no extra packet traffic and no per-frame server work.
  */
 public final class ToolkitBarHud {
-    public static final int SLOT = 18;
+    private static final ResourceLocation HOTBAR_SPRITE =
+            ResourceLocation.withDefaultNamespace("hud/hotbar");
+    public static final int SLOT = 20;
     public static final int BAR_SLOTS = 9;
-    private static final int HOTBAR_WIDTH = 182;
-    private static final int MARGIN = 6;
-    private static final int BG = 0x99000000;
-    private static final int BG_EMPTY = 0x66000000;
+    private static final int BAR_WIDTH = 182;
+    private static final int BAR_HEIGHT = 22;
+    private static final int HOTBAR_HALF = 91;
+    private static final int OFFHAND_WIDTH = 29;
+    private static final int ITEM_INSET = 3;
 
     private ToolkitBarHud() {}
 
@@ -40,21 +46,21 @@ public final class ToolkitBarHud {
         }
         ItemContainerContents contents = terminal.getOrDefault(
                 ModComponents.TOOLKIT_INV.get(), ItemContainerContents.EMPTY);
-        int y = g.guiHeight() - 22;
+        int y = barY(g.guiHeight());
         drawBar(g, minecraft, contents, 0, leftX(g.guiWidth()), y);
         drawBar(g, minecraft, contents, BAR_SLOTS, rightX(g.guiWidth()), y);
     }
 
     public static int leftX(int guiWidth) {
-        return guiWidth / 2 - HOTBAR_WIDTH / 2 - MARGIN - BAR_SLOTS * SLOT;
+        return guiWidth / 2 - HOTBAR_HALF - OFFHAND_WIDTH - BAR_WIDTH;
     }
 
     public static int rightX(int guiWidth) {
-        return guiWidth / 2 + HOTBAR_WIDTH / 2 + MARGIN;
+        return guiWidth / 2 + HOTBAR_HALF + OFFHAND_WIDTH;
     }
 
     public static int barY(int guiHeight) {
-        return guiHeight - 22;
+        return guiHeight - BAR_HEIGHT;
     }
 
     /**
@@ -68,23 +74,34 @@ public final class ToolkitBarHud {
     }
 
     private static int hitBar(int barX, int barY, double mouseX, double mouseY, int firstSlot) {
-        if (mouseY < barY || mouseY >= barY + SLOT || mouseX < barX) {
+        if (mouseY < barY || mouseY >= barY + BAR_HEIGHT
+                || mouseX < barX || mouseX >= barX + BAR_WIDTH) {
             return -1;
         }
-        int offset = (int) ((mouseX - barX) / SLOT);
-        return offset >= BAR_SLOTS ? -1 : firstSlot + offset;
+        int offset = (int) ((mouseX - barX - ITEM_INSET) / SLOT);
+        return offset < 0 || offset >= BAR_SLOTS ? -1 : firstSlot + offset;
     }
 
     private static void drawBar(
             GuiGraphics g, Minecraft minecraft, ItemContainerContents contents, int firstSlot, int x, int y) {
+        RenderSystem.enableBlend();
+        g.pose().pushPose();
+        try {
+            g.pose().translate(0.0F, 0.0F, -90.0F);
+            g.blitSprite(HOTBAR_SPRITE, x, y, BAR_WIDTH, BAR_HEIGHT);
+        } finally {
+            g.pose().popPose();
+            RenderSystem.disableBlend();
+        }
         for (int i = 0; i < BAR_SLOTS; i++) {
-            int cellX = x + i * SLOT;
             ItemStack stack = stackAt(contents, firstSlot + i);
-            g.fill(cellX, y, cellX + SLOT - 2, y + SLOT - 2, stack.isEmpty() ? BG_EMPTY : BG);
-            if (!stack.isEmpty()) {
-                g.renderItem(stack, cellX + 1, y + 1);
-                g.renderItemDecorations(minecraft.font, stack, cellX + 1, y + 1);
+            if (stack.isEmpty()) {
+                continue;
             }
+            int itemX = x + ITEM_INSET + i * SLOT;
+            int itemY = y + ITEM_INSET;
+            g.renderItem(stack, itemX, itemY);
+            g.renderItemDecorations(minecraft.font, stack, itemX, itemY);
         }
     }
 
@@ -100,16 +117,23 @@ public final class ToolkitBarHud {
         return !terminal.isEmpty() && terminal.getOrDefault(ModComponents.TOOLKIT_BAR.get(), false);
     }
 
-    /** First spliced terminal in the player's inventory (hotbar, main, offhand) with bars enabled. */
+    /** First spliced terminal in the player's inventory with bars enabled, else the first terminal. */
     public static ItemStack findTerminal(LocalPlayer player) {
         Inventory inventory = player.getInventory();
+        ItemStack first = ItemStack.EMPTY;
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack stack = inventory.getItem(i);
-            if (isTerminal(stack)) {
+            if (!isTerminal(stack)) {
+                continue;
+            }
+            if (isBarEnabled(stack)) {
                 return stack;
             }
+            if (first.isEmpty()) {
+                first = stack;
+            }
         }
-        return ItemStack.EMPTY;
+        return first;
     }
 
     private static boolean isTerminal(ItemStack stack) {
