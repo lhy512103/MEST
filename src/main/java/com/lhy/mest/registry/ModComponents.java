@@ -2,8 +2,11 @@ package com.lhy.mest.registry;
 
 import java.util.function.Consumer;
 
+import com.mojang.serialization.Codec;
+
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.world.item.component.ItemContainerContents;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -34,6 +37,12 @@ public final class ModComponents {
             register("toolkit_inv", builder -> builder
                     .persistent(ItemContainerContents.CODEC)
                     .networkSynchronized(ItemContainerContents.STREAM_CODEC));
+
+    /** Whether the toolkit quick bars are drawn beside the player's hotbar. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> TOOLKIT_BAR =
+            register("toolkit_bar", builder -> builder
+                    .persistent(Codec.BOOL)
+                    .networkSynchronized(ByteBufCodecs.BOOL));
 
     private static <T> DeferredHolder<DataComponentType<?>, DataComponentType<T>> register(
             String name, Consumer<DataComponentType.Builder<T>> configurer) {

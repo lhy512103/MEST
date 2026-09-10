@@ -27,6 +27,7 @@ import de.mari_023.ae2wtlib.wct.magnet_card.MagnetMode;
 
 import com.lhy.mest.client.dock.DockManager;
 import com.lhy.mest.client.dock.ModulePanel;
+import com.lhy.mest.registry.ModComponents;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -48,6 +49,7 @@ public class WirelessSettingsPanel extends ModulePanel {
     private final AECheckbox pullItems;
     private final AECheckbox magnet;
     private final AECheckbox pickupToME;
+    private final AECheckbox toolkitBar;
     private final List<AbstractWidget> widgets = new ArrayList<>();
 
     public WirelessSettingsPanel(MESTMenu menu, ScreenStyle style, DockManager dock) {
@@ -60,18 +62,22 @@ public class WirelessSettingsPanel extends ModulePanel {
         pullItems = checkbox(Component.translatable("gui.mesplicedterminal.wireless_settings.pull_items"));
         magnet = checkbox(TextConstants.MAGNET);
         pickupToME = checkbox(TextConstants.PICKUP_TO_ME);
+        toolkitBar = checkbox(
+                Component.translatable("gui.mesplicedterminal.wireless_settings.toolkit_bar"));
         pickBlock.setChangeListener(this::onPickBlockChanged);
         craftIfMissing.setChangeListener(this::save);
         restock.setChangeListener(this::save);
         pullItems.setChangeListener(this::savePullItems);
         magnet.setChangeListener(this::save);
         pickupToME.setChangeListener(this::save);
+        toolkitBar.setChangeListener(this::save);
         widgets.add(pickBlock);
         widgets.add(craftIfMissing);
         widgets.add(restock);
         widgets.add(pullItems);
         widgets.add(magnet);
         widgets.add(pickupToME);
+        widgets.add(toolkitBar);
         reloadFromStack();
     }
 
@@ -115,7 +121,7 @@ public class WirelessSettingsPanel extends ModulePanel {
     }
 
     private static int neededContentHeight() {
-        return ROW * 4 + HEADER + ROW * 2 + 4;
+        return ROW * 4 + HEADER + ROW * 3 + 4;
     }
 
     public void reloadFromStack() {
@@ -132,6 +138,7 @@ public class WirelessSettingsPanel extends ModulePanel {
                 && MagnetHandler.getMagnetMode(stack) != MagnetMode.INVALID;
         magnet.active = hasCard;
         pickupToME.active = hasCard;
+        toolkitBar.setSelected(stack.getOrDefault(ModComponents.TOOLKIT_BAR.get(), false));
     }
 
     private void onPickBlockChanged() {
@@ -152,6 +159,7 @@ public class WirelessSettingsPanel extends ModulePanel {
         MagnetMode next = mode.set(magnet.isSelected(), pickupToME.isSelected());
         MagnetHandler.saveMagnetMode(stack, next);
         stack.set(AE2wtlibAdditionalComponents.MAGNET_SETTINGS, next);
+        stack.set(ModComponents.TOOLKIT_BAR.get(), toolkitBar.isSelected());
 
         ItemMenuHostLocator locator = menu.getMestHost().getLocator();
         if (locator == null) {
@@ -187,6 +195,8 @@ public class WirelessSettingsPanel extends ModulePanel {
         place(magnet, show, left, y, width);
         y += ROW;
         place(pickupToME, show, left, y, width);
+        y += ROW;
+        place(toolkitBar, show, left, y, width);
     }
 
     private static void place(AECheckbox box, boolean show, int x, int y, int width) {

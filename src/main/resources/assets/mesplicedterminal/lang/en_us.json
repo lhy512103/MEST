@@ -81,6 +81,7 @@
   "gui.mesplicedterminal.toolkit": "Toolkit",
   "gui.mesplicedterminal.wireless_settings.magnet": "Magnet",
   "gui.mesplicedterminal.wireless_settings.pull_items": "Show JEI/EMI pull-items button",
+  "gui.mesplicedterminal.wireless_settings.toolkit_bar": "Show toolkit quick bars",
   "gui.mesplicedterminal.recipe.pull_items": "Pull items into the crafting grid",
   "gui.mesplicedterminal.pattern_encoding": "Pattern Encoding",
   "gui.mesplicedterminal.pattern_access": "Pattern Management",

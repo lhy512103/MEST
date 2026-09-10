@@ -81,6 +81,7 @@
   "gui.mesplicedterminal.toolkit": "工具包",
   "gui.mesplicedterminal.wireless_settings.magnet": "磁铁设置",
   "gui.mesplicedterminal.wireless_settings.pull_items": "JEI/EMI 显示拉取物品按钮",
+  "gui.mesplicedterminal.wireless_settings.toolkit_bar": "显示工具包快捷栏",
   "gui.mesplicedterminal.recipe.pull_items": "拉取物品到合成栏",
   "gui.mesplicedterminal.pattern_encoding": "样板编码",
   "gui.mesplicedterminal.pattern_access": "样板管理",
