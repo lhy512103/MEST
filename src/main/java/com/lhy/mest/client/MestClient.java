@@ -1,10 +1,15 @@
 package com.lhy.mest.client;
 
+import net.minecraft.resources.ResourceLocation;
+
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 
 import appeng.init.client.InitScreens;
 
+import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.network.PatternProviderClientBridge;
 import com.lhy.mest.network.ProviderPickerClientBridge;
 import com.lhy.mest.terminal.MESTMenu;
@@ -21,6 +26,14 @@ public final class MestClient {
         PatternProviderClientBridge.install(PatternProviderClientHandler::handle);
         ProviderPickerClientBridge.install(ProviderPickerClientHandler::handle);
         modEventBus.addListener(MestClient::onRegisterScreens);
+        modEventBus.addListener(MestClient::onRegisterGuiLayers);
+    }
+
+    private static void onRegisterGuiLayers(RegisterGuiLayersEvent event) {
+        event.registerAbove(
+                VanillaGuiLayers.HOTBAR,
+                ResourceLocation.fromNamespaceAndPath(MESplicedterminal.MODID, "toolkit_bar"),
+                ToolkitBarHud::render);
     }
 
     private static void onRegisterScreens(RegisterMenuScreensEvent event) {
