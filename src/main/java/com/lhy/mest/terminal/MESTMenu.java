@@ -158,6 +158,7 @@ public class MESTMenu extends CraftingTermMenu {
         addPatternEncodingSlots();
         addPatternCacheSlots();
         addTrashSlots();
+        addToolkitSlots();
 
         this.patternEncodingMode = patternEncodingLogic.getMode();
         this.patternSubstitute = patternEncodingLogic.isSubstitution();
@@ -258,6 +259,10 @@ public class MESTMenu extends CraftingTermMenu {
 
     public List<Slot> getTrashSlots() {
         return getSlots(AE2wtlibSlotSemantics.TRASH);
+    }
+
+    public List<Slot> getToolkitSlots() {
+        return getSlots(MestSlotSemantics.TOOLKIT);
     }
 
     @Override
@@ -743,6 +748,13 @@ public class MESTMenu extends CraftingTermMenu {
         InternalInventory inventory = host.getTrashInventory();
         for (int slot = 0; slot < inventory.size(); slot++) {
             addSlot(new AppEngSlot(inventory, slot), AE2wtlibSlotSemantics.TRASH);
+        }
+    }
+
+    private void addToolkitSlots() {
+        InternalInventory inventory = host.getToolkitInventory();
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            addSlot(new ToolkitSlot(inventory, slot), MestSlotSemantics.TOOLKIT);
         }
     }
 

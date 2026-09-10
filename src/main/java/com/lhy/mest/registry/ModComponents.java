@@ -29,6 +29,12 @@ public final class ModComponents {
                     .persistent(ItemContainerContents.CODEC)
                     .networkSynchronized(ItemContainerContents.STREAM_CODEC));
 
+    /** Toolkit inventory: an extension of the player inventory that only holds unstackable items. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> TOOLKIT_INV =
+            register("toolkit_inv", builder -> builder
+                    .persistent(ItemContainerContents.CODEC)
+                    .networkSynchronized(ItemContainerContents.STREAM_CODEC));
+
     private static <T> DeferredHolder<DataComponentType<?>, DataComponentType<T>> register(
             String name, Consumer<DataComponentType.Builder<T>> configurer) {
         return DATA_COMPONENTS.register(name, () -> {

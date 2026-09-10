@@ -78,6 +78,7 @@
   "gui.mesplicedterminal.crafting": "Crafting",
   "gui.mesplicedterminal.crafting_terminal": "Crafting Terminal",
   "gui.mesplicedterminal.trash": "Trash",
+  "gui.mesplicedterminal.toolkit": "Toolkit",
   "gui.mesplicedterminal.wireless_settings.magnet": "Magnet",
   "gui.mesplicedterminal.wireless_settings.pull_items": "Show JEI/EMI pull-items button",
   "gui.mesplicedterminal.recipe.pull_items": "Pull items into the crafting grid",

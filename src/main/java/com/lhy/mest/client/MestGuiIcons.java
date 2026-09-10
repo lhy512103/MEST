@@ -75,6 +75,8 @@ public final class MestGuiIcons {
             case "pattern_cache" -> 4;
             case "wireless_settings" -> 5;
             case "provider_select" -> 6;
+            // Row 1 icon 12 (0-based col 11) of layout_preset_icons.png.
+            case "toolkit" -> 11;
             default -> -1;
         };
     }

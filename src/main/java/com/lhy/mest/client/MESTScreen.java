@@ -91,6 +91,7 @@ import com.lhy.mest.client.panel.PatternCachePanel;
 import com.lhy.mest.client.panel.PatternEncodingPanel;
 import com.lhy.mest.client.panel.ProviderSelectPanel;
 import com.lhy.mest.client.panel.TrashPanel;
+import com.lhy.mest.client.panel.ToolkitPanel;
 import com.lhy.mest.client.panel.WirelessSettingsPanel;
 import net.neoforged.fml.ModList;
 import com.lhy.mest.integration.MestRecipeTransferContext;
@@ -154,6 +155,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private ProviderSelectPanel providerSelectPanel;
     private WirelessSettingsPanel wirelessSettingsPanel;
     private TrashPanel trashPanel;
+    private ToolkitPanel toolkitPanel;
     private boolean keepPendingOnRemove;
     private final MestRecipeTransferController recipeTransfer = new MestRecipeTransferController();
 
@@ -380,6 +382,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             panels.add(wirelessSettingsPanel);
             trashPanel = new TrashPanel(getMenu(), this);
             panels.add(trashPanel);
+            toolkitPanel = new ToolkitPanel(getMenu());
+            panels.add(toolkitPanel);
             if (ModList.get().isLoaded("extendedae_plus")) {
                 providerSelectPanel = new ProviderSelectPanel(style);
                 panels.add(providerSelectPanel);
@@ -1152,6 +1156,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             case "provider_select" -> Icon.ARROW_UP;
             case "wireless_settings" -> Icon.COG;
             case "trash" -> Icon.BACKGROUND_TRASH;
+            case "toolkit" -> Icon.S_STORAGE;
             case "inventory" -> Icon.S_STORAGE;
             default -> Icon.COG;
         };
