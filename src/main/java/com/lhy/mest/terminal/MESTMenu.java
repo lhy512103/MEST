@@ -100,7 +100,6 @@ public class MESTMenu extends CraftingTermMenu {
 
     private final MESTMenuHost host;
     private final PatternAccessSession patternAccessSession;
-    private NetworkToolMenuHost<?> toolkitNetworkToolHost;
     private final PatternEncodingLogic patternEncodingLogic;
     private boolean blankPatternFilled;
     private final FakeSlot[] patternCraftingSlots = new FakeSlot[CRAFTING_GRID_SLOTS];
@@ -831,7 +830,6 @@ public class MESTMenu extends CraftingTermMenu {
                         RestrictedInputSlot.PlacableItemType.UPGRADES, upgrades, slot),
                         SlotSemantics.TOOLBOX);
             }
-            toolkitNetworkToolHost = toolHost;
             return;
         }
     }

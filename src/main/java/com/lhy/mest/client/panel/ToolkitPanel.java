@@ -37,7 +37,6 @@ public class ToolkitPanel extends ModulePanel {
     private static final int LOCK = 12;
     private static final int TRACK_WIDTH = 5;
     private static final int TRACK_INNER = 3;
-    private static final int INSIDE_TRACK_GAP = 2;
     /** Pin sits 4px from the right edge; keep the same column so lock lines up under it. */
     private static final int INSIDE_GUTTER = LOCK + 4 - CONTENT_PADDING;
     private static final int TRACK_BORDER = 0xFFF2F2F2;

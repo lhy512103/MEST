@@ -21,7 +21,6 @@ import de.mari_023.ae2wtlib.api.registration.AddTerminalEvent;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.compat.MestAddonUpgrades;
-import com.lhy.mest.item.ItemMEST;
 import com.lhy.mest.registry.ModItems;
 
 /**
