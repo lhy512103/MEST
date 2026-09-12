@@ -13,6 +13,7 @@ import appeng.core.localization.GuiText;
 import appeng.items.materials.EnergyCardItem;
 import appeng.items.tools.powered.WirelessTerminalItem;
 import appeng.items.tools.powered.powersink.PoweredItemCapabilities;
+import appeng.menu.locator.MenuLocators;
 
 import de.mari_023.ae2wtlib.api.AE2wtlibAPI;
 import de.mari_023.ae2wtlib.api.gui.Icon;
@@ -82,6 +83,10 @@ public final class MestTerminal {
                 Upgrades.add(magnet, item, 1, group);
             }
             MestAddonUpgrades.register();
+            MenuLocators.register(
+                    ToolkitItemLocator.class,
+                    ToolkitItemLocator::writeToPacket,
+                    ToolkitItemLocator::readFromPacket);
         });
     }
 }

@@ -20,6 +20,6 @@ public class ToolkitSlot extends AppEngSlot {
     public boolean mayPlace(ItemStack stack) {
         // getMaxStackSize() is a property of the item, not of the current count, so a lone stackable
         // item is still rejected here — exactly the intent of "unstackable only".
-        return !stack.isEmpty() && stack.getMaxStackSize() <= 1;
+        return ToolkitBarState.mayStore(stack);
     }
 }

@@ -1,23 +1,17 @@
 package com.lhy.mest.terminal;
 
-import net.minecraft.core.NonNullList;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.ItemContainerContents;
 
-import com.lhy.mest.config.MestConfig;
+import com.lhy.mest.network.ToolkitBarSyncPacket;
 import com.lhy.mest.registry.ModComponents;
-import com.lhy.mest.registry.ModItems;
 
 /**
  * Server-side toolkit quick-bar actions.
  *
- * <p>The toolkit inventory lives in the terminal item's {@code TOOLKIT_INV} component, so the bars
- * work without an open terminal: read the component, swap, write it back. Because the terminal sits
- * in the player's own inventory, the component update is replicated by the normal slot sync — no
- * bespoke S2C packet, no per-tick work.
+ * <p>The toolkit inventory lives in the terminal item's {@code TOOLKIT_INV} component. Extra bars
+ * only change the selected page; {@code Inventory.selected} is the slot inside that page.
  */
 public final class ToolkitBarActions {
     private ToolkitBarActions() {}
@@ -31,46 +25,59 @@ public final class ToolkitBarActions {
             return;
         }
         terminal.set(ModComponents.TOOLKIT_BAR.get(), enabled);
+        if (!enabled) {
+            ToolkitBarState.setSelection(
+                    player, ToolkitBarState.Bar.CENTER, player.getInventory().selected);
+        }
         player.getInventory().setChanged();
         player.containerMenu.broadcastChanges();
+        ToolkitBarSyncPacket.send(player);
+    }
+
+    /** Drops the selected extra-bar cell without touching vanilla hotbar slots. */
+    public static void dropSelected(ServerPlayer player, boolean all) {
+        if (!ToolkitBarState.isToolkitSelected(player)) {
+            return;
+        }
+        ItemStack selected = ToolkitBarState.selectedStack(player);
+        if (selected.isEmpty() || !selected.onDroppedByPlayer(player)) {
+            return;
+        }
+        int count = all ? selected.getCount() : Math.min(1, selected.getCount());
+        ItemStack dropped = selected.copyWithCount(count);
+        if (dropped.isEmpty()) {
+            return;
+        }
+        selected.shrink(dropped.getCount());
+        ToolkitBarState.setSelectedStack(player, selected.isEmpty() ? ItemStack.EMPTY : selected);
+        player.drop(dropped, true);
+    }
+
+    public static void selectVisibleCell(ServerPlayer player, int index) {
+        if (!ToolkitBarState.isBarEnabled(player) || index < 0 || index >= ToolkitBarState.VISIBLE_CELLS) {
+            return;
+        }
+        ToolkitBarState.setSelection(player, ToolkitBarState.barOf(index), ToolkitBarState.slotOf(index));
     }
 
     /**
-     * Swaps the player's main-hand item with toolkit slot {@code index}.
-     *
-     * <p>Rejected when the hand holds a stackable item: the toolkit only stores unstackable items,
-     * so allowing that swap would let a stack sneak past {@link ToolkitSlot#mayPlace(ItemStack)}.
+     * A click on an extra-bar cell only selects it, like a vanilla hotbar slot.
+     * Toolkit index 0-8 is the left bar, 9-17 the right bar.
      */
-    public static void swapWithHand(ServerPlayer player, int index) {
-        ItemStack terminal = findTerminal(player);
-        if (terminal.isEmpty()) {
+    public static void selectToolkitCell(ServerPlayer player, int toolkitIndex) {
+        if (toolkitIndex < 0 || toolkitIndex >= ToolkitBarState.BAR_SLOTS * 2) {
             return;
         }
-        int size = MestConfig.toolkitSlots();
-        if (index < 0 || index >= size) {
-            return;
-        }
-        ItemStack held = player.getMainHandItem();
-        if (!held.isEmpty() && (held.getMaxStackSize() > 1 || held.is(ModItems.SPLICED_TERMINAL.get()))) {
-            return;
-        }
-        NonNullList<ItemStack> items = NonNullList.withSize(size, ItemStack.EMPTY);
-        ItemContainerContents contents = terminal.get(ModComponents.TOOLKIT_INV.get());
-        if (contents != null) {
-            contents.copyInto(items);
-        }
-        ItemStack stored = items.get(index);
-        items.set(index, held.copy());
-        terminal.set(ModComponents.TOOLKIT_INV.get(), ItemContainerContents.fromItems(items));
-        player.setItemInHand(InteractionHand.MAIN_HAND, stored);
-        player.getInventory().setChanged();
-        player.containerMenu.broadcastChanges();
+        int visible = toolkitIndex < ToolkitBarState.BAR_SLOTS
+                ? toolkitIndex
+                : toolkitIndex + ToolkitBarState.BAR_SLOTS;
+        selectVisibleCell(player, visible);
     }
 
     private static ItemStack terminalFromOpenMenu(ServerPlayer player) {
         if (player.containerMenu instanceof MESTMenu menu) {
             ItemStack stack = menu.getMestHost().getItemStack();
-            if (!stack.isEmpty() && stack.is(ModItems.SPLICED_TERMINAL.get())) {
+            if (ToolkitBarState.isTerminalCarrier(stack)) {
                 return stack;
             }
         }
@@ -83,7 +90,7 @@ public final class ToolkitBarActions {
         ItemStack first = ItemStack.EMPTY;
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack stack = inventory.getItem(i);
-            if (stack.isEmpty() || !stack.is(ModItems.SPLICED_TERMINAL.get())) {
+            if (!ToolkitBarState.isTerminalCarrier(stack)) {
                 continue;
             }
             if (stack.getOrDefault(ModComponents.TOOLKIT_BAR.get(), false)) {

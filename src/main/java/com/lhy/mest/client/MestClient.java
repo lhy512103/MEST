@@ -4,6 +4,7 @@ import net.minecraft.resources.ResourceLocation;
 
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
+import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 
@@ -27,6 +28,12 @@ public final class MestClient {
         ProviderPickerClientBridge.install(ProviderPickerClientHandler::handle);
         modEventBus.addListener(MestClient::onRegisterScreens);
         modEventBus.addListener(MestClient::onRegisterGuiLayers);
+        modEventBus.addListener(MestClient::onRegisterKeyMappings);
+    }
+
+    private static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {
+        event.register(MestKeybindings.TOOLKIT_BAR_LEFT);
+        event.register(MestKeybindings.TOOLKIT_BAR_RIGHT);
     }
 
     private static void onRegisterGuiLayers(RegisterGuiLayersEvent event) {

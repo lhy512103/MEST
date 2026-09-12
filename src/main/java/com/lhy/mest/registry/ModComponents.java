@@ -44,6 +44,21 @@ public final class ModComponents {
                     .persistent(Codec.BOOL)
                     .networkSynchronized(ByteBufCodecs.BOOL));
 
+    /** Extra-bar page: 0=left, 1=vanilla hotbar, 2=right. Slot inside the page is Inventory.selected. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Integer>> TOOLKIT_BAR_PAGE =
+            register("toolkit_bar_page", builder -> builder
+                    .persistent(Codec.INT)
+                    .networkSynchronized(ByteBufCodecs.VAR_INT));
+
+    /**
+     * Original hotbar parked while an extra toolkit page occupies {@code Inventory.items[0..8]}.
+     * Cannot reuse toolkit slots: those reject stackable items.
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> HOTBAR_STASH =
+            register("hotbar_stash", builder -> builder
+                    .persistent(ItemContainerContents.CODEC)
+                    .networkSynchronized(ItemContainerContents.STREAM_CODEC));
+
     private static <T> DeferredHolder<DataComponentType<?>, DataComponentType<T>> register(
             String name, Consumer<DataComponentType.Builder<T>> configurer) {
         return DATA_COMPONENTS.register(name, () -> {

@@ -21,6 +21,8 @@ import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
 import com.lhy.mest.MESplicedterminal;
+import appeng.api.networking.IGrid;
+
 import com.lhy.mest.compat.MestWtlibSupport;
 
 /**
@@ -39,21 +41,28 @@ public final class RemoteMenuAccess {
     private RemoteMenuAccess() {
     }
 
-    public static boolean open(ServerPlayer player, MenuProvider provider, ServerLevel level, BlockPos pos) {
+    public static boolean open(ServerPlayer player, MenuProvider provider, ServerLevel level, BlockPos pos,
+            IGrid originalGrid) {
+        if (originalGrid == null) {
+            return false;
+        }
         var previousMenu = player.containerMenu;
         var openedId = player.openMenu(provider, pos);
         if (openedId.isEmpty() || player.containerMenu.containerId != openedId.getAsInt()) {
             return false;
         }
-        return trackOpenedMenu(player, previousMenu, level, pos);
+        return trackOpenedMenu(player, previousMenu, level, pos, originalGrid);
     }
 
     public static boolean trackOpenedMenu(ServerPlayer player, AbstractContainerMenu previousMenu,
-            ServerLevel level, BlockPos pos) {
+            ServerLevel level, BlockPos pos, IGrid originalGrid) {
         if (player.containerMenu == previousMenu || player.containerMenu == player.inventoryMenu) {
             return false;
         }
-        track(player, level, pos);
+        if (originalGrid == null) {
+            return false;
+        }
+        track(player, level, pos, originalGrid);
         return true;
     }
 
@@ -82,7 +91,7 @@ public final class RemoteMenuAccess {
             return false;
         }
         if (!session.linkCheck.isLinked(player.serverLevel().getGameTime(),
-                () -> MestWtlibSupport.hasLinkedTerminal(player))) {
+                () -> MestWtlibSupport.hasLinkedTerminal(player, session.grid))) {
             SESSIONS.remove(player.getUUID());
             return false;
         }
@@ -110,13 +119,14 @@ public final class RemoteMenuAccess {
         }
     }
 
-    private static void track(ServerPlayer player, ServerLevel level, BlockPos pos) {
+    private static void track(ServerPlayer player, ServerLevel level, BlockPos pos, IGrid grid) {
         SESSIONS.put(player.getUUID(), new Session(
                 player.containerMenu,
                 level.dimension(),
                 pos.immutable(),
                 level.getBlockState(pos).getBlock(),
-                level.getBlockEntity(pos)));
+                level.getBlockEntity(pos),
+                grid));
     }
 
     private static final class Session {
@@ -126,15 +136,17 @@ public final class RemoteMenuAccess {
         private final Block block;
         @Nullable
         private final BlockEntity blockEntity;
+        private final IGrid grid;
         private final RemoteMenuLinkCheck linkCheck = new RemoteMenuLinkCheck();
 
         private Session(AbstractContainerMenu menu, ResourceKey<Level> dimension, BlockPos pos, Block block,
-                @Nullable BlockEntity blockEntity) {
+                @Nullable BlockEntity blockEntity, IGrid grid) {
             this.menu = menu;
             this.dimension = dimension;
             this.pos = pos;
             this.block = block;
             this.blockEntity = blockEntity;
+            this.grid = grid;
         }
     }
 }

@@ -310,7 +310,7 @@ public final class PatternAccessSession {
      * the target block has (buttons, levers, machines with a use action) on a block the player may
      * be thousands of blocks away from.
      */
-    private static boolean tryOpenTarget(ServerPlayer player, PatternContainer patternProvider,
+    private boolean tryOpenTarget(ServerPlayer player, PatternContainer patternProvider,
             ServerLevel level, BlockPos pos, Direction face) {
         if (patternProvider instanceof PatternProviderLogicHost logicHost) {
             var targets = logicHost.getTargets();
@@ -340,19 +340,19 @@ public final class PatternAccessSession {
         return false;
     }
 
-    private static boolean tryOpenAt(ServerPlayer player, ServerLevel level, BlockPos pos) {
+    private boolean tryOpenAt(ServerPlayer player, ServerLevel level, BlockPos pos) {
         if (!level.isLoaded(pos)) {
             return false;
         }
         BlockEntity be = level.getBlockEntity(pos);
         if (be instanceof MenuProvider menuProvider) {
-            return RemoteMenuAccess.open(player, menuProvider, level, pos);
+            return RemoteMenuAccess.open(player, menuProvider, level, pos, getCurrentGrid());
         }
         var provider = level.getBlockState(pos).getMenuProvider(level, pos);
-        return provider != null && RemoteMenuAccess.open(player, provider, level, pos);
+        return provider != null && RemoteMenuAccess.open(player, provider, level, pos, getCurrentGrid());
     }
 
-    private static boolean tryUseTargetBlock(ServerPlayer player, ServerLevel level, BlockPos targetPos,
+    private boolean tryUseTargetBlock(ServerPlayer player, ServerLevel level, BlockPos targetPos,
             Direction providerToTarget) {
         if (!level.isLoaded(targetPos)) {
             return false;
@@ -364,7 +364,7 @@ public final class PatternAccessSession {
         var previousMenu = player.containerMenu;
         var hit = new BlockHitResult(Vec3.atCenterOf(targetPos), providerToTarget.getOpposite(), targetPos, false);
         state.useWithoutItem(level, player, hit);
-        return RemoteMenuAccess.trackOpenedMenu(player, previousMenu, level, targetPos);
+        return RemoteMenuAccess.trackOpenedMenu(player, previousMenu, level, targetPos, getCurrentGrid());
     }
 
     private static void quickMoveToPlayer(ServerPlayer player, FilteredInternalInventory patternSlot) {

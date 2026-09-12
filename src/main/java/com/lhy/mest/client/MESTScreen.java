@@ -270,6 +270,19 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             return;
         }
         dock.hideModule(panel);
+        if (panel == toolkitPanel) {
+            syncToolkitOpen();
+        }
+    }
+
+    private void syncToolkitOpen() {
+        if (toolkitPanel == null) {
+            return;
+        }
+        boolean open = dock.isEffectivelyVisible(toolkitPanel);
+        if (getMenu().toolkitOpen != open) {
+            getMenu().setToolkitOpen(open);
+        }
     }
 
     private void syncUtilityHost() {
@@ -451,6 +464,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         attachMeSideBar();
         attachExtraSlotColumns();
+        syncToolkitOpen();
         syncExternalModGuiMetrics();
         refreshRecipeTransferAvailability();
         if (firstOpen && meListPanel != null && searchField != null
@@ -504,6 +518,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (wirelessSettingsPanel != null && dock.isEffectivelyVisible(wirelessSettingsPanel)) {
             wirelessSettingsPanel.reloadFromStack();
         }
+        syncToolkitOpen();
         if (patternAccessPanel != null && dock.isEffectivelyVisible(patternAccessPanel)) {
             patternAccessPanel.tick();
         }
@@ -1362,6 +1377,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         dock.save();
         attachMeSideBar();
         attachExtraSlotColumns();
+        syncToolkitOpen();
     }
 
     private static Component moduleToggleMessage(ModulePanel panel, boolean visible) {

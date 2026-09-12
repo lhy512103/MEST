@@ -93,6 +93,7 @@ public class MESTMenu extends CraftingTermMenu {
     private static final String ACTION_MAGNET_MENU = "magnetMenu";
     private static final String ACTION_TRASH_MENU = "trash";
     private static final String ACTION_CLOSE_TRASH = "closeTrash";
+    private static final String ACTION_SET_TOOLKIT_OPEN = "mestSetToolkitOpen";
 
     private final MESTMenuHost host;
     private final PatternAccessSession patternAccessSession;
@@ -137,6 +138,8 @@ public class MESTMenu extends CraftingTermMenu {
     public ResourceLocation stonecuttingRecipeId;
     @GuiSync(89)
     public boolean trashOpen;
+    @GuiSync(88)
+    public boolean toolkitOpen;
 
     public final IntSet patternSlotsSupportingFluidSubstitution = new IntArraySet();
 
@@ -179,6 +182,7 @@ public class MESTMenu extends CraftingTermMenu {
         registerClientAction(ACTION_MAGNET_MENU, this::openMagnetMenu);
         registerClientAction(ACTION_TRASH_MENU, this::openTrashMenu);
         registerClientAction(ACTION_CLOSE_TRASH, this::closeTrash);
+        registerClientAction(ACTION_SET_TOOLKIT_OPEN, Boolean.class, this::setToolkitOpen);
 
         updateStonecuttingRecipes();
         updatePatternCraftingOutput();
@@ -255,6 +259,15 @@ public class MESTMenu extends CraftingTermMenu {
 
     public boolean isTrashOpen() {
         return trashOpen;
+    }
+
+    public void setToolkitOpen(boolean open) {
+        if (isClientSide()) {
+            sendClientAction(ACTION_SET_TOOLKIT_OPEN, open);
+            toolkitOpen = open;
+            return;
+        }
+        toolkitOpen = open;
     }
 
     public List<Slot> getTrashSlots() {
@@ -1104,6 +1117,17 @@ public class MESTMenu extends CraftingTermMenu {
     protected int transferStackToMenu(ItemStack input) {
         int initialCount = input.getCount();
 
+        if (toolkitOpen) {
+            for (Slot toolkitSlot : getToolkitSlots()) {
+                if (toolkitSlot.mayPlace(input)) {
+                    input = toolkitSlot.safeInsert(input);
+                    if (input.isEmpty()) {
+                        return initialCount;
+                    }
+                }
+            }
+        }
+
         if (trashOpen) {
             for (Slot trashSlot : getTrashSlots()) {
                 if (trashSlot.mayPlace(input)) {
@@ -1146,6 +1170,19 @@ public class MESTMenu extends CraftingTermMenu {
 
     @Override
     protected void handleNetworkInteraction(ServerPlayer player, AEKey clickedKey, InventoryAction action) {
+        if (toolkitOpen && clickedKey instanceof AEItemKey itemKey
+                && itemKey.toStack().getMaxStackSize() <= 1) {
+            if (action == InventoryAction.SHIFT_CLICK) {
+                insertFromNetworkToToolkit(itemKey);
+                return;
+            }
+            if (action == InventoryAction.MOVE_REGION) {
+                int limit = getToolkitSlots().size();
+                for (int i = 0; i < limit && insertFromNetworkToToolkit(itemKey); i++) {
+                }
+                return;
+            }
+        }
         if (trashOpen && clickedKey instanceof AEItemKey itemKey) {
             if (action == InventoryAction.SHIFT_CLICK) {
                 insertFromNetworkToTrash(itemKey);
@@ -1159,6 +1196,33 @@ public class MESTMenu extends CraftingTermMenu {
             }
         }
         super.handleNetworkInteraction(player, clickedKey, action);
+    }
+
+    private boolean insertFromNetworkToToolkit(AEItemKey itemKey) {
+        IGridNode node = getGridNode();
+        if (node == null || node.getGrid() == null || node.getGrid().getStorageService() == null) {
+            return false;
+        }
+        MEStorage storage = node.getGrid().getStorageService().getInventory();
+        long available = storage.extract(itemKey, 1, Actionable.SIMULATE, getActionSource());
+        if (available <= 0L) {
+            return false;
+        }
+        ItemStack stack = itemKey.toStack((int) available);
+        for (Slot toolkitSlot : getToolkitSlots()) {
+            if (stack.isEmpty()) {
+                break;
+            }
+            if (toolkitSlot.mayPlace(stack)) {
+                stack = toolkitSlot.safeInsert(stack);
+            }
+        }
+        int inserted = (int) available - stack.getCount();
+        if (inserted <= 0) {
+            return false;
+        }
+        storage.extract(itemKey, inserted, Actionable.MODULATE, getActionSource());
+        return true;
     }
 
     private boolean insertFromNetworkToTrash(AEItemKey itemKey) {

@@ -11,16 +11,14 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.terminal.ToolkitBarActions;
 
-/** A click on one of the toolkit quick bars selects that cell. Index 0-8 is left, 9-17 right. */
-public record ToolkitBarClickPacket(int index) implements CustomPacketPayload {
-    public static final Type<ToolkitBarClickPacket> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(MESplicedterminal.MODID, "toolkit_bar_click"));
-
-    public static final StreamCodec<RegistryFriendlyByteBuf, ToolkitBarClickPacket> STREAM_CODEC =
+/** Drops the selected extra-bar toolkit cell. Does not use vanilla hotbar drop. */
+public record ToolkitBarDropPacket(boolean all) implements CustomPacketPayload {
+    public static final Type<ToolkitBarDropPacket> TYPE = new Type<>(
+            ResourceLocation.fromNamespaceAndPath(MESplicedterminal.MODID, "toolkit_bar_drop"));
+    public static final StreamCodec<RegistryFriendlyByteBuf, ToolkitBarDropPacket> STREAM_CODEC =
             StreamCodec.composite(
-                    ByteBufCodecs.VAR_INT, ToolkitBarClickPacket::index, ToolkitBarClickPacket::new);
-
-    /** Hand-paced action; a burst of clicks inside one tick is never legitimate. */
+                    ByteBufCodecs.BOOL, ToolkitBarDropPacket::all,
+                    ToolkitBarDropPacket::new);
     private static final PlayerTickBudgets BUDGETS = new PlayerTickBudgets(8);
 
     @Override
@@ -28,10 +26,10 @@ public record ToolkitBarClickPacket(int index) implements CustomPacketPayload {
         return TYPE;
     }
 
-    public static void handle(ToolkitBarClickPacket packet, IPayloadContext context) {
+    public static void handle(ToolkitBarDropPacket packet, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player && BUDGETS.tryAcquire(player)) {
-                ToolkitBarActions.selectToolkitCell(player, packet.index());
+                ToolkitBarActions.dropSelected(player, packet.all());
             }
         });
     }

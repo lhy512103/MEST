@@ -31,14 +31,24 @@ public final class MestPackets {
                 MestPickBlockPacket::handle);
 
         registrar.playToServer(
-                ToolkitBarClickPacket.TYPE,
-                ToolkitBarClickPacket.STREAM_CODEC,
-                ToolkitBarClickPacket::handle);
-
-        registrar.playToServer(
                 ToolkitBarTogglePacket.TYPE,
                 ToolkitBarTogglePacket.STREAM_CODEC,
                 ToolkitBarTogglePacket::handle);
+
+        registrar.playToServer(
+                ToolkitBarSelectPacket.TYPE,
+                ToolkitBarSelectPacket.STREAM_CODEC,
+                ToolkitBarSelectPacket::handle);
+
+        registrar.playToServer(
+                ToolkitBarDropPacket.TYPE,
+                ToolkitBarDropPacket.STREAM_CODEC,
+                ToolkitBarDropPacket::handle);
+
+        registrar.playToClient(
+                ToolkitBarSyncPacket.TYPE,
+                ToolkitBarSyncPacket.STREAM_CODEC,
+                ToolkitBarSyncPacket::handle);
 
         registrar.playToClient(
                 PatternProviderListPacket.TYPE,

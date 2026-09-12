@@ -25,6 +25,7 @@ import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.compat.MestWtlibSupport;
 import com.lhy.mest.compat.plus.PlusScreenSupport;
 import com.lhy.mest.network.MestPickBlockPacket;
+import com.lhy.mest.terminal.ToolkitBarState;
 
 /**
  * Survival middle-click pick is handled by wtlib only for the crafting terminal item.
@@ -62,12 +63,26 @@ public final class MestWtlibClientEvents {
         if (player.getAbilities().instabuild || player.isSpectator()) {
             return;
         }
+        ItemStack picked = stackFromHit(minecraft);
+        if (picked.isEmpty()) {
+            return;
+        }
+        ToolkitBarState.PickMatch match = ToolkitBarState.selectMatchingItem(player, picked);
+        if (match == ToolkitBarState.PickMatch.TOOLKIT) {
+            ToolkitBarInput.applySelection(
+                    player, ToolkitBarState.getBar(player), ToolkitBarState.getSlot(player));
+            event.setCanceled(true);
+            return;
+        }
+        if (match == ToolkitBarState.PickMatch.HOTBAR) {
+            ToolkitBarInput.applySelection(player, ToolkitBarState.Bar.CENTER, player.getInventory().selected);
+            return;
+        }
         ItemStack mest = MestWtlibSupport.mestStack(player);
         if (mest.isEmpty() || !mest.getOrDefault(AE2wtlibComponents.PICK_BLOCK, false)) {
             return;
         }
-        ItemStack picked = stackFromHit(minecraft);
-        if (picked.isEmpty() || player.getInventory().findSlotMatchingItem(picked) != -1) {
+        if (player.getInventory().findSlotMatchingItem(picked) != -1) {
             return;
         }
         PacketDistributor.sendToServer(new MestPickBlockPacket(picked));

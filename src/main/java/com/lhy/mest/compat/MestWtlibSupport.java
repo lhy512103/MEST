@@ -31,6 +31,7 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import appeng.api.config.Actionable;
+import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridNode;
 import appeng.api.stacks.AEItemKey;
 import appeng.api.stacks.KeyCounter;
@@ -54,6 +55,8 @@ import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.network.MestRestockAmountPacket;
 import com.lhy.mest.terminal.MestMagnetHost;
 import com.lhy.mest.terminal.MestTerminal;
+import com.lhy.mest.terminal.ToolkitBarState;
+import com.lhy.mest.terminal.ToolkitHand;
 
 /**
  * wtlib pick/restock/magnet run against {@code WTDefinitions.CRAFTING}. MEST is registered as
@@ -139,7 +142,7 @@ public final class MestWtlibSupport {
         ItemStack picked = requested.copy();
         picked.setCount((int) extracted);
         inventory.setItem(targetSlot, picked);
-        inventory.selected = targetSlot;
+        ToolkitBarState.setSelection(player, ToolkitBarState.Bar.CENTER, targetSlot);
         player.connection.send(new ClientboundSetCarriedItemPacket(inventory.selected));
     }
 
@@ -164,12 +167,19 @@ public final class MestWtlibSupport {
      * keep remotely opened machine menus from outliving the terminal that opened them.
      */
     public static boolean hasLinkedTerminal(Player player) {
+        return hasLinkedTerminal(player, null);
+    }
+
+    /** Checks that the carried terminal is connected to the grid that opened the remote menu. */
+    public static boolean hasLinkedTerminal(Player player, @Nullable IGrid expectedGrid) {
         WTMenuHost host = linkedHost(player);
         if (host == null) {
             return false;
         }
         IGridNode node = host.getActionableNode();
-        return node != null && node.isActive() && node.getGrid() != null;
+        IGrid grid = node == null ? null : node.getGrid();
+        return node != null && node.isActive() && grid != null
+                && (expectedGrid == null || grid == expectedGrid);
     }
 
     @Nullable
@@ -278,6 +288,9 @@ public final class MestWtlibSupport {
         }
         ItemStack mest = mestStack(player);
         if (mest.isEmpty() || !mest.getOrDefault(AE2wtlibComponents.RESTOCK, false)) {
+            return;
+        }
+        if (ToolkitHand.isOverrideActive(player)) {
             return;
         }
         int slot = player.getInventory().selected;
