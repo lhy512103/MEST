@@ -1,6 +1,8 @@
 {
   "itemGroup.mesplicedterminal": "ME Spliced Terminal",
   "item.mesplicedterminal.spliced_terminal": "ME Spliced Terminal",
+  "item.mesplicedterminal.network_toolkit": "Network Toolkit",
+  "gui.mesplicedterminal.config.network_toolkit_slots": "Network toolkit upgrade slots",
 
   "gui.mesplicedterminal.reset_layout": "Reset Layout",
   "gui.mesplicedterminal.lock_layout": "Lock Layout (anchored panels only)",

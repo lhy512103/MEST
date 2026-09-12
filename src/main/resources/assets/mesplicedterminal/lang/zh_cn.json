@@ -1,6 +1,8 @@
 {
   "itemGroup.mesplicedterminal": "ME 拼接终端",
   "item.mesplicedterminal.spliced_terminal": "ME 拼接终端",
+  "item.mesplicedterminal.network_toolkit": "网络工具包",
+  "gui.mesplicedterminal.config.network_toolkit_slots": "网络工具包升级槽位数",
 
   "gui.mesplicedterminal.reset_layout": "重置布局",
   "gui.mesplicedterminal.lock_layout": "锁定布局（仅固定面板）",

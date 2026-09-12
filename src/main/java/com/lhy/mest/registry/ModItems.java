@@ -6,8 +6,11 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
+import net.minecraft.world.item.Item;
+
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.item.ItemMEST;
+import com.lhy.mest.item.ItemMestNetworkToolkit;
 
 /**
  * Item and creative-tab registration for the ME Spliced Terminal.
@@ -35,10 +38,16 @@ public final class ModItems {
     public static final DeferredItem<ItemMEST> SPLICED_TERMINAL =
             ITEMS.register("spliced_terminal", ModItems::splicedTerminalItem);
 
+    public static final DeferredItem<ItemMestNetworkToolkit> NETWORK_TOOLKIT =
+            ITEMS.register("network_toolkit", () -> new ItemMestNetworkToolkit(new Item.Properties().stacksTo(1)));
+
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> TAB =
             CREATIVE_TABS.register("main", () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup." + MESplicedterminal.MODID))
                     .icon(() -> SPLICED_TERMINAL.get().getDefaultInstance())
-                    .displayItems((parameters, output) -> output.accept(SPLICED_TERMINAL.get()))
+                    .displayItems((parameters, output) -> {
+                        output.accept(SPLICED_TERMINAL.get());
+                        output.accept(NETWORK_TOOLKIT.get());
+                    })
                     .build());
 }

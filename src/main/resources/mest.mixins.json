@@ -12,7 +12,9 @@
   ],
   "client": [
     "GuiRestockMixin",
-    "ToolkitHotbarGuiMixin"
+    "ToolkitHotbarGuiMixin",
+    "WidgetContainerAccessor",
+    "NetworkToolboxScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

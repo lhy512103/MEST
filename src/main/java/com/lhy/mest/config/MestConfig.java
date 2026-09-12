@@ -13,6 +13,9 @@ public final class MestConfig {
     public static final int TOOLKIT_MIN = 18;
     public static final int TOOLKIT_MAX = 9 * 64;
     public static final int TOOLKIT_STEP = 9;
+    public static final int NETWORK_TOOLKIT_MIN = 9;
+    public static final int NETWORK_TOOLKIT_MAX = 9 * 24;
+    public static final int NETWORK_TOOLKIT_STEP = 9;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
     private static final ModConfigSpec.IntValue PATTERN_CACHE_SLOTS = BUILDER
@@ -27,6 +30,10 @@ public final class MestConfig {
             .comment("工具包槽位数。最少 18（2×9），按 9 递增。只存放不可堆叠物品。下次打开终端生效。")
             .translation("gui.mesplicedterminal.config.toolkit_slots")
             .defineInRange("toolkitSlots", 27, TOOLKIT_MIN, TOOLKIT_MAX);
+    private static final ModConfigSpec.IntValue NETWORK_TOOLKIT_SLOTS = BUILDER
+            .comment("网络工具包升级槽位数。最少 9（3×3），按 9 递增。下次打开界面生效。")
+            .translation("gui.mesplicedterminal.config.network_toolkit_slots")
+            .defineInRange("networkToolkitSlots", 27, NETWORK_TOOLKIT_MIN, NETWORK_TOOLKIT_MAX);
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private MestConfig() {}
@@ -47,5 +54,11 @@ public final class MestConfig {
         int value = SPEC.isLoaded() ? TOOLKIT_SLOTS.get() : 27;
         int rows = Math.max(TOOLKIT_MIN / TOOLKIT_STEP, value / TOOLKIT_STEP);
         return Math.min(TOOLKIT_MAX, rows * TOOLKIT_STEP);
+    }
+
+    public static int networkToolkitSlots() {
+        int value = SPEC.isLoaded() ? NETWORK_TOOLKIT_SLOTS.get() : 27;
+        int rows = Math.max(NETWORK_TOOLKIT_MIN / NETWORK_TOOLKIT_STEP, value / NETWORK_TOOLKIT_STEP);
+        return Math.min(NETWORK_TOOLKIT_MAX, rows * NETWORK_TOOLKIT_STEP);
     }
 }
