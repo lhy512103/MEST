@@ -41,7 +41,6 @@ import appeng.core.definitions.AEItems;
 import appeng.crafting.pattern.AECraftingPattern;
 import appeng.crafting.pattern.AEProcessingPattern;
 import appeng.menu.MenuOpener;
-import appeng.menu.locator.MenuLocators;
 import appeng.menu.SlotSemantic;
 import appeng.menu.SlotSemantics;
 import appeng.menu.guisync.GuiSync;
@@ -64,7 +63,6 @@ import de.mari_023.ae2wtlib.wct.ArmorSlot;
 import de.mari_023.ae2wtlib.wct.magnet_card.MagnetHandler;
 import de.mari_023.ae2wtlib.wct.magnet_card.MagnetMode;
 
-import com.lhy.mest.item.ItemMestNetworkToolkit;
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.registry.ModComponents;
 import com.lhy.mest.compat.plus.PlusEncodingUpload;
