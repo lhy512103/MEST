@@ -147,8 +147,8 @@ public class ToolboxChrome implements ExtraChrome, ICompositeWidget {
                 continue;
             }
             int visible = index - first;
-            int row = COLS == 0 ? 0 : visible / COLS;
-            int col = COLS == 0 ? 0 : visible % COLS;
+            int row = visible / COLS;
+            int col = visible % COLS;
             if (visible < 0 || row >= ROWS) {
                 slot.x = -9999;
                 slot.y = -9999;

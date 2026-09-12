@@ -101,7 +101,6 @@ import com.lhy.mest.compat.plus.PlusScreenSupport;
 import com.lhy.mest.network.PatternProviderActionPacket;
 import com.lhy.mest.network.ProviderPickerListPacket;
 import com.lhy.mest.terminal.MESTMenu;
-import com.lhy.mest.terminal.MestSlotSemantics;
 import com.lhy.mest.terminal.ToolkitSlot;
 
 /**
