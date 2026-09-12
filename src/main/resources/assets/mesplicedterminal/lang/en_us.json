@@ -81,6 +81,7 @@
   "gui.mesplicedterminal.crafting_terminal": "Crafting Terminal",
   "gui.mesplicedterminal.trash": "Trash",
   "gui.mesplicedterminal.toolkit": "Toolkit",
+  "gui.mesplicedterminal.network_toolkit": "Network Toolkit",
   "gui.mesplicedterminal.toolkit.lock": "Lock slots",
   "gui.mesplicedterminal.toolkit.lock.hint1": "Left-click a filled slot to lock it to that item.",
   "gui.mesplicedterminal.toolkit.lock.hint2": "Locked empty slots only accept that item and are filled first.",

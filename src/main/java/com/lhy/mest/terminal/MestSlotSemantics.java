@@ -31,4 +31,6 @@ public final class MestSlotSemantics {
             SlotSemantics.register("MEST_PATTERN_CACHE", false);
     public static final SlotSemantic TOOLKIT =
             SlotSemantics.register("MEST_TOOLKIT", false);
+    public static final SlotSemantic NETWORK_TOOLKIT =
+            SlotSemantics.register("MEST_NETWORK_TOOLKIT", false);
 }

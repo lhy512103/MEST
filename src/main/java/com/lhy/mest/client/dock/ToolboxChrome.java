@@ -121,6 +121,16 @@ public class ToolboxChrome implements ExtraChrome, ICompositeWidget {
         bounds = new Rect2i(0, 0, 0, 0);
         scrollbar.setVisible(false);
         draggingScrollbar = false;
+        hideSlots();
+    }
+
+    public void hideChrome() {
+        bounds = new Rect2i(0, 0, 0, 0);
+        scrollbar.setVisible(false);
+        draggingScrollbar = false;
+    }
+
+    private void hideSlots() {
         for (Slot slot : slots) {
             slot.x = -9999;
             slot.y = -9999;

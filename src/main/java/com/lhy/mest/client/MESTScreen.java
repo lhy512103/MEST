@@ -91,6 +91,7 @@ import com.lhy.mest.client.panel.PatternAccessPanel;
 import com.lhy.mest.client.panel.PatternCachePanel;
 import com.lhy.mest.client.panel.PatternEncodingPanel;
 import com.lhy.mest.client.panel.ProviderSelectPanel;
+import com.lhy.mest.client.panel.NetworkToolkitPanel;
 import com.lhy.mest.client.panel.TrashPanel;
 import com.lhy.mest.client.panel.ToolkitPanel;
 import com.lhy.mest.client.panel.WirelessSettingsPanel;
@@ -100,6 +101,7 @@ import com.lhy.mest.compat.plus.PlusScreenSupport;
 import com.lhy.mest.network.PatternProviderActionPacket;
 import com.lhy.mest.network.ProviderPickerListPacket;
 import com.lhy.mest.terminal.MESTMenu;
+import com.lhy.mest.terminal.MestSlotSemantics;
 import com.lhy.mest.terminal.ToolkitSlot;
 
 /**
@@ -159,6 +161,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private WirelessSettingsPanel wirelessSettingsPanel;
     private TrashPanel trashPanel;
     private ToolkitPanel toolkitPanel;
+    private NetworkToolkitPanel networkToolkitPanel;
     private boolean keepPendingOnRemove;
     private final MestRecipeTransferController recipeTransfer = new MestRecipeTransferController();
 
@@ -404,6 +407,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             panels.add(trashPanel);
             toolkitPanel = new ToolkitPanel(getMenu());
             panels.add(toolkitPanel);
+            networkToolkitPanel = new NetworkToolkitPanel(getMenu());
+            panels.add(networkToolkitPanel);
             if (ModList.get().isLoaded("extendedae_plus")) {
                 providerSelectPanel = new ProviderSelectPanel(style);
                 panels.add(providerSelectPanel);
@@ -686,16 +691,24 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     private void layoutToolbox(DockRect group) {
-        if (toolboxColumn == null) {
-            List<Slot> toolboxSlots = getMenu().getSlots(SlotSemantics.TOOLBOX);
-            if (toolboxSlots.isEmpty()) {
-                return;
+        List<Slot> toolboxSlots = getMenu().getNetworkToolkitSlots();
+        if (toolboxSlots.isEmpty()) {
+            if (toolboxColumn != null) {
+                toolboxColumn.hide();
             }
+            return;
+        }
+        if (toolboxColumn == null || !toolboxColumn.ownsSlot(toolboxSlots.getFirst())) {
             Component name = getMenu().getToolbox().getName();
             if (name.getString().isEmpty()) {
                 name = GuiText.NetworkTool.text();
             }
             toolboxColumn = new ToolboxChrome(toolboxSlots, name);
+        }
+        hideVanillaToolboxWhenExpanded();
+        if (networkToolkitPanel != null && dock.isEffectivelyVisible(networkToolkitPanel)) {
+            toolboxColumn.hideChrome();
+            return;
         }
         if (toolboxColumn.hasSlots()) {
             int x = extraColumnAttachX(group);
@@ -707,6 +720,16 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             toolboxColumn.layoutAgainst(x, Math.max(group.y(), group.bottom() - 66), true);
         } else {
             toolboxColumn.hide();
+        }
+    }
+
+    private void hideVanillaToolboxWhenExpanded() {
+        if (getMenu().getSlots(MestSlotSemantics.NETWORK_TOOLKIT).isEmpty()) {
+            return;
+        }
+        for (Slot slot : getMenu().getSlots(SlotSemantics.TOOLBOX)) {
+            slot.x = -9999;
+            slot.y = -9999;
         }
     }
 

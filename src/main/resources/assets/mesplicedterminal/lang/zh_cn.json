@@ -81,6 +81,7 @@
   "gui.mesplicedterminal.crafting_terminal": "合成终端",
   "gui.mesplicedterminal.trash": "垃圾桶",
   "gui.mesplicedterminal.toolkit": "工具包",
+  "gui.mesplicedterminal.network_toolkit": "网络工具包",
   "gui.mesplicedterminal.toolkit.lock": "锁定槽位",
   "gui.mesplicedterminal.toolkit.lock.hint1": "左键有物品的槽位，即可锁定为该物品。",
   "gui.mesplicedterminal.toolkit.lock.hint2": "锁定的空槽只收该物品，Shift 放入时优先填入。",
