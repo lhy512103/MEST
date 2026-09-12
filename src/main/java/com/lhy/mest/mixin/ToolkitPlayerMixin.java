@@ -25,21 +25,4 @@ public abstract class ToolkitPlayerMixin {
             ci.cancel();
         }
     }
-
-    @Inject(method = "swapWithOffhand", at = @At("HEAD"), cancellable = true)
-    private void mest$swapWithOffhand(CallbackInfo ci) {
-        Player player = (Player) (Object) this;
-        if (!ToolkitHand.isOverrideActive(player)) {
-            return;
-        }
-        ItemStack offhand = player.getOffhandItem();
-        if (!offhand.isEmpty() && !ToolkitBarState.mayStore(offhand)) {
-            ci.cancel();
-            return;
-        }
-        ItemStack toolkit = ToolkitBarState.selectedStack(player);
-        ToolkitBarState.setSelectedStack(player, offhand.copy());
-        player.setItemSlot(EquipmentSlot.OFFHAND, toolkit.copy());
-        ci.cancel();
-    }
 }

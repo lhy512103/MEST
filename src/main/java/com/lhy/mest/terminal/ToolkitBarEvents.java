@@ -1,8 +1,11 @@
 package com.lhy.mest.terminal;
 
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.living.LivingSwapItemsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
@@ -12,6 +15,17 @@ import com.lhy.mest.network.ToolkitBarSyncPacket;
 @EventBusSubscriber(modid = MESplicedterminal.MODID)
 public final class ToolkitBarEvents {
     private ToolkitBarEvents() {}
+
+    @SubscribeEvent
+    public static void onSwapHands(LivingSwapItemsEvent.Hands event) {
+        if (!(event.getEntity() instanceof Player player) || !ToolkitHand.isOverrideActive(player)) {
+            return;
+        }
+        ItemStack toMain = event.getItemSwappedToMainHand();
+        if (!toMain.isEmpty() && !ToolkitBarState.mayStore(toMain)) {
+            event.setCanceled(true);
+        }
+    }
 
     @SubscribeEvent
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
