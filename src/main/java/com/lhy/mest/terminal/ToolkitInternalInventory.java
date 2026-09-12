@@ -185,6 +185,9 @@ public final class ToolkitInternalInventory extends BaseInternalInventory {
         if (slotIndex < 0 || slotIndex >= items.size()) {
             return;
         }
+        if (!stack.isEmpty() && !isItemValid(slotIndex, stack)) {
+            return;
+        }
         items.set(slotIndex, stack);
         save();
     }

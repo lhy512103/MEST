@@ -28,6 +28,7 @@ import de.mari_023.ae2wtlib.wct.magnet_card.MagnetMode;
 import com.lhy.mest.client.dock.DockManager;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.network.ToolkitBarTogglePacket;
+import com.lhy.mest.network.ToolkitQuickMovePacket;
 import com.lhy.mest.registry.ModComponents;
 import com.lhy.mest.terminal.MESTMenu;
 
@@ -51,6 +52,7 @@ public class WirelessSettingsPanel extends ModulePanel {
     private final AECheckbox magnet;
     private final AECheckbox pickupToME;
     private final AECheckbox toolkitBar;
+    private final AECheckbox toolkitQuickMove;
     private final List<AbstractWidget> widgets = new ArrayList<>();
 
     public WirelessSettingsPanel(MESTMenu menu, ScreenStyle style, DockManager dock) {
@@ -65,6 +67,8 @@ public class WirelessSettingsPanel extends ModulePanel {
         pickupToME = checkbox(TextConstants.PICKUP_TO_ME);
         toolkitBar = checkbox(
                 Component.translatable("gui.mesplicedterminal.wireless_settings.toolkit_bar"));
+        toolkitQuickMove = checkbox(
+                Component.translatable("gui.mesplicedterminal.wireless_settings.toolkit_quick_move"));
         pickBlock.setChangeListener(this::onPickBlockChanged);
         craftIfMissing.setChangeListener(this::save);
         restock.setChangeListener(this::save);
@@ -72,13 +76,15 @@ public class WirelessSettingsPanel extends ModulePanel {
         magnet.setChangeListener(this::save);
         pickupToME.setChangeListener(this::save);
         toolkitBar.setChangeListener(this::saveToolkitBar);
+        toolkitQuickMove.setChangeListener(this::saveToolkitQuickMove);
         widgets.add(pickBlock);
         widgets.add(craftIfMissing);
         widgets.add(restock);
-        widgets.add(pullItems);
         widgets.add(magnet);
         widgets.add(pickupToME);
+        widgets.add(pullItems);
         widgets.add(toolkitBar);
+        widgets.add(toolkitQuickMove);
         reloadFromStack();
     }
 
@@ -122,7 +128,7 @@ public class WirelessSettingsPanel extends ModulePanel {
     }
 
     private static int neededContentHeight() {
-        return ROW * 4 + HEADER + ROW * 3 + 4;
+        return ROW * 3 + HEADER + ROW * 2 + HEADER + ROW * 3 + 4;
     }
 
     public void reloadFromStack() {
@@ -140,6 +146,7 @@ public class WirelessSettingsPanel extends ModulePanel {
         magnet.active = hasCard;
         pickupToME.active = hasCard;
         toolkitBar.setSelected(stack.getOrDefault(ModComponents.TOOLKIT_BAR.get(), false));
+        toolkitQuickMove.setSelected(stack.getOrDefault(ModComponents.TOOLKIT_QUICK_MOVE.get(), true));
     }
 
     private void onPickBlockChanged() {
@@ -155,6 +162,12 @@ public class WirelessSettingsPanel extends ModulePanel {
         ItemStack stack = menu.getMestHost().getItemStack();
         stack.set(ModComponents.TOOLKIT_BAR.get(), toolkitBar.isSelected());
         PacketDistributor.sendToServer(new ToolkitBarTogglePacket(toolkitBar.isSelected()));
+    }
+
+    private void saveToolkitQuickMove() {
+        ItemStack stack = menu.getMestHost().getItemStack();
+        stack.set(ModComponents.TOOLKIT_QUICK_MOVE.get(), toolkitQuickMove.isSelected());
+        PacketDistributor.sendToServer(new ToolkitQuickMovePacket(toolkitQuickMove.isSelected()));
     }
 
     private void save() {
@@ -195,14 +208,16 @@ public class WirelessSettingsPanel extends ModulePanel {
         place(craftIfMissing, show, left, y, width);
         y += ROW;
         place(restock, show, left, y, width);
-        y += ROW;
-        place(pullItems, show, left, y, width);
         y += ROW + HEADER;
         place(magnet, show, left, y, width);
         y += ROW;
         place(pickupToME, show, left, y, width);
+        y += ROW + HEADER;
+        place(pullItems, show, left, y, width);
         y += ROW;
         place(toolkitBar, show, left, y, width);
+        y += ROW;
+        place(toolkitQuickMove, show, left, y, width);
     }
 
     private static void place(AECheckbox box, boolean show, int x, int y, int width) {
@@ -220,7 +235,9 @@ public class WirelessSettingsPanel extends ModulePanel {
         int left = contentLeft();
         int top = contentTop();
         g.drawString(font, Component.translatable("gui.mesplicedterminal.wireless_settings.magnet"),
-                left, top + ROW * 4 + 1, color, false);
+                left, top + ROW * 3 + 1, color, false);
+        g.drawString(font, Component.translatable("gui.mesplicedterminal.wireless_settings.mest"),
+                left, top + ROW * 3 + HEADER + ROW * 2 + 1, color, false);
         for (AbstractWidget widget : widgets) {
             widget.render(g, mouseX, mouseY, partialTicks);
         }

@@ -62,6 +62,7 @@ import de.mari_023.ae2wtlib.wct.magnet_card.MagnetHandler;
 import de.mari_023.ae2wtlib.wct.magnet_card.MagnetMode;
 
 import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.registry.ModComponents;
 import com.lhy.mest.compat.plus.PlusEncodingUpload;
 import com.lhy.mest.network.PatternAccessSession;
 import com.lhy.mest.network.PatternCacheActionPacket;
@@ -1148,7 +1149,7 @@ public class MESTMenu extends CraftingTermMenu {
     protected int transferStackToMenu(ItemStack input) {
         int initialCount = input.getCount();
 
-        if (toolkitOpen) {
+        if (prefersToolkitQuickMove()) {
             input = insertIntoToolkit(input, true);
             if (input.isEmpty()) {
                 return initialCount;
@@ -1201,7 +1202,7 @@ public class MESTMenu extends CraftingTermMenu {
 
     @Override
     protected void handleNetworkInteraction(ServerPlayer player, AEKey clickedKey, InventoryAction action) {
-        if (toolkitOpen && clickedKey instanceof AEItemKey itemKey
+        if (prefersToolkitQuickMove() && clickedKey instanceof AEItemKey itemKey
                 && itemKey.toStack().getMaxStackSize() <= 1) {
             if (action == InventoryAction.SHIFT_CLICK) {
                 insertFromNetworkToToolkit(itemKey);
@@ -1227,6 +1228,10 @@ public class MESTMenu extends CraftingTermMenu {
             }
         }
         super.handleNetworkInteraction(player, clickedKey, action);
+    }
+
+    private boolean prefersToolkitQuickMove() {
+        return host.getItemStack().getOrDefault(ModComponents.TOOLKIT_QUICK_MOVE.get(), true);
     }
 
     private ItemStack insertIntoToolkit(ItemStack input, boolean rememberedEmptyOnly) {

@@ -36,6 +36,11 @@ public final class MestPackets {
                 ToolkitBarTogglePacket::handle);
 
         registrar.playToServer(
+                ToolkitQuickMovePacket.TYPE,
+                ToolkitQuickMovePacket.STREAM_CODEC,
+                ToolkitQuickMovePacket::handle);
+
+        registrar.playToServer(
                 ToolkitBarSelectPacket.TYPE,
                 ToolkitBarSelectPacket.STREAM_CODEC,
                 ToolkitBarSelectPacket::handle);

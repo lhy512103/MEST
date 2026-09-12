@@ -14,6 +14,14 @@ import com.lhy.mest.terminal.ToolkitHand;
 
 @Mixin(Inventory.class)
 public abstract class ToolkitInventoryMixin {
+    @Inject(method = "add(Lnet/minecraft/world/item/ItemStack;)Z", at = @At("HEAD"), cancellable = true)
+    private void mest$addToMemory(ItemStack stack, CallbackInfoReturnable<Boolean> cir) {
+        Inventory inventory = (Inventory) (Object) this;
+        if (ToolkitBarState.tryInsertIntoMemory(inventory.player, stack) && stack.isEmpty()) {
+            cir.setReturnValue(true);
+        }
+    }
+
     @Inject(method = "getSelected", at = @At("HEAD"), cancellable = true)
     private void mest$getSelected(CallbackInfoReturnable<ItemStack> cir) {
         Inventory inventory = (Inventory) (Object) this;

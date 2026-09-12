@@ -1,7 +1,9 @@
 package com.lhy.mest.item;
 
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 import appeng.api.upgrades.IUpgradeInventory;
@@ -12,6 +14,7 @@ import appeng.menu.locator.ItemMenuHostLocator;
 import de.mari_023.ae2wtlib.api.terminal.ItemWT;
 import de.mari_023.ae2wtlib.api.terminal.WUTHandler;
 
+import com.lhy.mest.registry.ModItems;
 import com.lhy.mest.registry.ModMenus;
 
 /**
@@ -31,12 +34,30 @@ public class ItemMEST extends ItemWT {
     }
 
     /**
-     * Same slot count the universal terminal advertises: the sum of every registered wireless
-     * terminal's {@code upgradeCount}, so extra terminals from other mods raise this too.
+     * Slot count is the larger of wtlib's summed wireless-terminal upgrade counts and the sum of
+     * every compatible card's max-installable value (the numbers in the Compatible Upgrades tooltip).
      */
     public static int upgradeInventorySize() {
-        int count = WUTHandler.getUpgradeCardCount();
-        return count > 0 ? count : 3;
+        int wt = WUTHandler.getUpgradeCardCount();
+        int tooltipTotal = compatibleUpgradeTotal();
+        int size = Math.max(wt, tooltipTotal);
+        return size > 0 ? size : 3;
+    }
+
+    private static int compatibleUpgradeTotal() {
+        try {
+            Item terminal = ModItems.SPLICED_TERMINAL.get();
+            int total = 0;
+            for (Item card : BuiltInRegistries.ITEM) {
+                int max = Upgrades.getMaxInstallable(card, terminal);
+                if (max > 0) {
+                    total += max;
+                }
+            }
+            return total;
+        } catch (Exception ignored) {
+            return 0;
+        }
     }
 
     private void onUpgradesChanged(ItemStack stack, IUpgradeInventory upgrades) {

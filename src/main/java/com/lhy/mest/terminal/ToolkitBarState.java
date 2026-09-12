@@ -201,7 +201,40 @@ public final class ToolkitBarState {
         if (!isValidToolkitIndex(index)) {
             return;
         }
+        if (!stack.isEmpty() && !mayStore(stack)) {
+            return;
+        }
         inventory(player).setItemDirect(index, stack);
+    }
+
+    /**
+     * Puts a picked-up unstackable item into the first empty remembered slot of the same type.
+     * Shrinks {@code stack} in place when accepted.
+     *
+     * @return {@code true} if the stack was fully moved into a memory slot
+     */
+    public static boolean tryInsertIntoMemory(Player player, ItemStack stack) {
+        if (!mayStore(stack)) {
+            return false;
+        }
+        ItemStack terminal = findTerminal(player);
+        if (terminal.isEmpty()) {
+            return false;
+        }
+        ItemContainerContents memory = terminal.getOrDefault(
+                ModComponents.TOOLKIT_MEMORY.get(), ItemContainerContents.EMPTY);
+        ToolkitInternalInventory toolkit = inventory(player);
+        int limit = Math.min(toolkit.size(), memory.getSlots());
+        for (int i = 0; i < limit; i++) {
+            ItemStack remembered = memory.getStackInSlot(i);
+            if (remembered.isEmpty() || !remembered.is(stack.getItem()) || !toolkit.getStackInSlot(i).isEmpty()) {
+                continue;
+            }
+            toolkit.setItemDirect(i, stack.copy());
+            stack.setCount(0);
+            return true;
+        }
+        return false;
     }
 
     public static void persistIfDirty(Player player) {
