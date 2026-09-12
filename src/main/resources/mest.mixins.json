@@ -8,7 +8,9 @@
     "ToolkitInventoryMixin",
     "ToolkitPlayerMixin",
     "ToolkitMenuLocatorsMixin",
-    "ToolkitDropMixin"
+    "ToolkitDropMixin",
+    "ToolboxMenuMixin",
+    "AEBaseMenuAccessor"
   ],
   "client": [
     "GuiRestockMixin",

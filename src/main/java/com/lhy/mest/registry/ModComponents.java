@@ -32,6 +32,12 @@ public final class ModComponents {
                     .persistent(ItemContainerContents.CODEC)
                     .networkSynchronized(ItemContainerContents.STREAM_CODEC));
 
+    /** Built-in network-tool upgrade inventory on the spliced terminal. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> NETWORK_TOOLKIT_INV =
+            register("network_toolkit_inv", builder -> builder
+                    .persistent(ItemContainerContents.CODEC)
+                    .networkSynchronized(ItemContainerContents.STREAM_CODEC));
+
     /** Toolkit inventory: an extension of the player inventory that only holds unstackable items. */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> TOOLKIT_INV =
             register("toolkit_inv", builder -> builder

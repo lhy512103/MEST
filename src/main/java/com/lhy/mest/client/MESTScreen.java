@@ -383,6 +383,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         // Slot coordinates are absolute screen coords set directly by panels, so they're unaffected.
         this.imageWidth = 0;
         this.imageHeight = 0;
+        setSlotsHidden(SlotSemantics.TOOLBOX, true);
 
         boolean firstOpen = dock.isEmpty();
         if (firstOpen) {
@@ -724,9 +725,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     private void hideVanillaToolboxWhenExpanded() {
-        if (getMenu().getSlots(MestSlotSemantics.NETWORK_TOOLKIT).isEmpty()) {
-            return;
-        }
         for (Slot slot : getMenu().getSlots(SlotSemantics.TOOLBOX)) {
             slot.x = -9999;
             slot.y = -9999;

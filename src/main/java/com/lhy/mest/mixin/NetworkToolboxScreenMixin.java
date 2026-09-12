@@ -44,12 +44,16 @@ public abstract class NetworkToolboxScreenMixin {
             return;
         }
         List<Slot> slots = menu.getSlots(SlotSemantics.TOOLBOX);
-        if (!ToolboxChrome.needsScroll(slots)) {
+        if (slots.isEmpty()) {
             mest$toolbox = null;
             return;
         }
         Map<String, ICompositeWidget> composites = ((WidgetContainerAccessor) widgets).mest$compositeWidgets();
         ICompositeWidget previous = composites.get("toolbox");
+        if (!ToolboxChrome.needsScroll(slots) && previous != null) {
+            mest$toolbox = null;
+            return;
+        }
         int x = previous != null ? previous.getBounds().getX() : self.getXSize() - 21;
         int y = previous != null ? previous.getBounds().getY() : self.getYSize() - 90;
         mest$toolbox = new ToolboxChrome(slots, appeng.core.localization.GuiText.NetworkTool.text());

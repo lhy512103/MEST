@@ -168,7 +168,7 @@ public class MESTMenu extends CraftingTermMenu {
         addTrashSlots();
         addToolkitSlots();
         addToolkitNetworkToolSlots();
-        addMestNetworkToolkitSlots();
+        addTerminalNetworkToolkitSlots();
 
         this.patternEncodingMode = patternEncodingLogic.getMode();
         this.patternSubstitute = patternEncodingLogic.isSubstitution();
@@ -289,8 +289,7 @@ public class MESTMenu extends CraftingTermMenu {
      * Prefer the expanded MEST network toolkit; fall back to AE2's 9-slot TOOLBOX.
      */
     public List<Slot> getNetworkToolkitSlots() {
-        List<Slot> expanded = getSlots(MestSlotSemantics.NETWORK_TOOLKIT);
-        return expanded.isEmpty() ? getSlots(SlotSemantics.TOOLBOX) : expanded;
+        return getSlots(MestSlotSemantics.NETWORK_TOOLKIT);
     }
 
     public ItemStack getToolkitMemoryStack(int toolkitIndex) {
@@ -845,34 +844,11 @@ public class MESTMenu extends CraftingTermMenu {
         }
     }
 
-    private void addMestNetworkToolkitSlots() {
-        Player player = getPlayer();
-        Inventory inventory = player.getInventory();
-        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-            ItemStack stack = inventory.getItem(slot);
-            if (stack.getItem() instanceof ItemMestNetworkToolkit tool) {
-                addNetworkToolkitHost(tool.getMenuHost(player, MenuLocators.forInventorySlot(slot), null));
-                return;
-            }
-        }
-        InternalInventory toolkit = host.getToolkitInventory();
-        for (int index = 0; index < toolkit.size(); index++) {
-            ItemStack stack = toolkit.getStackInSlot(index);
-            if (stack.getItem() instanceof ItemMestNetworkToolkit tool) {
-                addNetworkToolkitHost(tool.getMenuHost(player, new ToolkitItemLocator(index), null));
-                return;
-            }
-        }
-    }
-
-    private void addNetworkToolkitHost(NetworkToolMenuHost<?> toolHost) {
-        if (toolHost == null) {
-            return;
-        }
-        InternalInventory upgrades = toolHost.getInventory();
-        for (int slot = 0; slot < upgrades.size(); slot++) {
+    private void addTerminalNetworkToolkitSlots() {
+        InternalInventory inventory = host.getNetworkToolkitInventory();
+        for (int slot = 0; slot < inventory.size(); slot++) {
             addSlot(new RestrictedInputSlot(
-                    RestrictedInputSlot.PlacableItemType.UPGRADES, upgrades, slot),
+                    RestrictedInputSlot.PlacableItemType.UPGRADES, inventory, slot),
                     MestSlotSemantics.NETWORK_TOOLKIT);
         }
     }
