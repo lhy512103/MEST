@@ -49,6 +49,8 @@ import appeng.menu.me.items.CraftingTermMenu;
 import appeng.menu.slot.AppEngSlot;
 import appeng.menu.slot.FakeSlot;
 import appeng.menu.slot.PatternTermSlot;
+import appeng.items.contents.NetworkToolMenuHost;
+import appeng.items.tools.NetworkToolItem;
 import appeng.menu.slot.RestrictedInputSlot;
 import appeng.parts.encoding.EncodingMode;
 import appeng.parts.encoding.PatternEncodingLogic;
@@ -98,6 +100,7 @@ public class MESTMenu extends CraftingTermMenu {
 
     private final MESTMenuHost host;
     private final PatternAccessSession patternAccessSession;
+    private NetworkToolMenuHost<?> toolkitNetworkToolHost;
     private final PatternEncodingLogic patternEncodingLogic;
     private boolean blankPatternFilled;
     private final FakeSlot[] patternCraftingSlots = new FakeSlot[CRAFTING_GRID_SLOTS];
@@ -163,6 +166,7 @@ public class MESTMenu extends CraftingTermMenu {
         addPatternCacheSlots();
         addTrashSlots();
         addToolkitSlots();
+        addToolkitNetworkToolSlots();
 
         this.patternEncodingMode = patternEncodingLogic.getMode();
         this.patternSubstitute = patternEncodingLogic.isSubstitution();
@@ -800,6 +804,35 @@ public class MESTMenu extends CraftingTermMenu {
         InternalInventory inventory = host.getToolkitInventory();
         for (int slot = 0; slot < inventory.size(); slot++) {
             addSlot(new ToolkitSlot(inventory, slot, this), MestSlotSemantics.TOOLKIT);
+        }
+    }
+
+    /**
+     * Vanilla {@link ToolboxMenu} only searches the player inventory. If the network tool is in
+     * the toolkit, attach the same TOOLBOX slots through {@link ToolkitItemLocator}.
+     */
+    private void addToolkitNetworkToolSlots() {
+        if (getToolbox().isPresent()) {
+            return;
+        }
+        InternalInventory toolkit = host.getToolkitInventory();
+        for (int index = 0; index < toolkit.size(); index++) {
+            ItemStack stack = toolkit.getStackInSlot(index);
+            if (!(stack.getItem() instanceof NetworkToolItem tool)) {
+                continue;
+            }
+            NetworkToolMenuHost<?> toolHost = tool.getMenuHost(getPlayer(), new ToolkitItemLocator(index), null);
+            if (toolHost == null) {
+                continue;
+            }
+            InternalInventory upgrades = toolHost.getInventory();
+            for (int slot = 0; slot < upgrades.size(); slot++) {
+                addSlot(new RestrictedInputSlot(
+                        RestrictedInputSlot.PlacableItemType.UPGRADES, upgrades, slot),
+                        SlotSemantics.TOOLBOX);
+            }
+            toolkitNetworkToolHost = toolHost;
+            return;
         }
     }
 

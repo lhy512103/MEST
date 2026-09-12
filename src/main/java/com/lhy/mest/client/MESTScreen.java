@@ -81,6 +81,7 @@ import com.lhy.mest.client.dock.ExtraSlotColumn;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.PanelSideBar;
 import com.lhy.mest.client.dock.ScrollingUpgradeColumn;
+import com.lhy.mest.client.dock.ToolboxChrome;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.panel.CraftingPanel;
 import com.lhy.mest.client.panel.CraftingTerminalPanel;
@@ -116,6 +117,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private final PanelSideBar moreSettingsBar = new PanelSideBar();
     private ExtraChrome upgradeColumn;
     private ExtraSlotColumn viewCellColumn;
+    private ToolboxChrome toolboxColumn;
     private final MestAddonUpgradeButtons addonUpgradeButtons = new MestAddonUpgradeButtons();
     private ToolbarIconButton viewCellsToggleBtn;
     private boolean viewCellsVisible = true;
@@ -654,6 +656,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             if (viewCellColumn != null) {
                 viewCellColumn.hide();
             }
+            if (toolboxColumn != null) {
+                toolboxColumn.hide();
+            }
             return;
         }
         int attachX = extraColumnAttachX(group);
@@ -676,6 +681,32 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             viewCellColumn.layoutAgainst(attachX, attachY, true);
         } else if (viewCellColumn != null) {
             viewCellColumn.hide();
+        }
+        layoutToolbox(group);
+    }
+
+    private void layoutToolbox(DockRect group) {
+        if (toolboxColumn == null) {
+            List<Slot> toolboxSlots = getMenu().getSlots(SlotSemantics.TOOLBOX);
+            if (toolboxSlots.isEmpty()) {
+                return;
+            }
+            Component name = getMenu().getToolbox().getName();
+            if (name.getString().isEmpty()) {
+                name = GuiText.NetworkTool.text();
+            }
+            toolboxColumn = new ToolboxChrome(toolboxSlots, name);
+        }
+        if (toolboxColumn.hasSlots()) {
+            int x = extraColumnAttachX(group);
+            if (rightEdgeIsPatternCache(group)) {
+                x += 2;
+            } else {
+                x -= 2;
+            }
+            toolboxColumn.layoutAgainst(x, Math.max(group.y(), group.bottom() - 66), true);
+        } else {
+            toolboxColumn.hide();
         }
     }
 
@@ -897,6 +928,18 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 g.pose().popPose();
             }
         }
+        if (toolboxColumn != null && toolboxColumn.isVisible()) {
+            toolboxColumn.renderBackground(g);
+            g.flush();
+            g.pose().pushPose();
+            try {
+                g.pose().translate(0.0F, 0.0F, DockManager.SLOT_CONTENT_Z);
+                toolboxColumn.renderSlots(g, this::drawRootSlot);
+                g.flush();
+            } finally {
+                g.pose().popPose();
+            }
+        }
     }
 
     /**
@@ -1001,6 +1044,11 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         if (viewCellColumn != null && viewCellColumn.isVisible()) {
             Rect2i extra = viewCellColumn.bounds();
+            right = Math.max(right, extra.getX() + extra.getWidth());
+            bottom = Math.max(bottom, extra.getY() + extra.getHeight());
+        }
+        if (toolboxColumn != null && toolboxColumn.isVisible()) {
+            Rect2i extra = toolboxColumn.bounds();
             right = Math.max(right, extra.getX() + extra.getWidth());
             bottom = Math.max(bottom, extra.getY() + extra.getHeight());
         }
@@ -1123,6 +1171,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         addExtraColumnExclusion(zones, upgradeColumn);
         addExtraColumnExclusion(zones, viewCellColumn);
+        addExtraColumnExclusion(zones, toolboxColumn);
         return zones;
     }
 
@@ -1773,6 +1822,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         if (viewCellColumn != null) {
             columns.add(viewCellColumn);
+        }
+        if (toolboxColumn != null) {
+            columns.add(toolboxColumn);
         }
         return columns;
     }
