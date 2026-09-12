@@ -288,7 +288,8 @@ public class ToolkitPanel extends ModulePanel {
         scrollbar.setRange(0, max, 1);
         int height = trackHeight();
         scrollbar.setHeight(Math.max(1, height - 2));
-        scrollbar.setPosition(new Point(trackDrawLeft() + 1, trackTop() + 1));
+        // Same inset as TrashPanel: thumb sits in the 3px inner fill of the 5px track.
+        scrollbar.setPosition(new Point(trackDrawLeft() - 1, trackTop() + 1));
         scrollbar.setCurrentScroll(Math.min(scrollRows, max));
         scrollRows = scrollbar.getCurrentScroll();
     }
@@ -485,11 +486,13 @@ public class ToolkitPanel extends ModulePanel {
             if (memoryMode) {
                 return List.of(
                         Component.translatable("gui.mesplicedterminal.toolkit.lock.editing"),
-                        Component.translatable("gui.mesplicedterminal.toolkit.lock.editing.hint"));
+                        Component.translatable("gui.mesplicedterminal.toolkit.lock.editing.hint1"),
+                        Component.translatable("gui.mesplicedterminal.toolkit.lock.editing.hint2"));
             }
             return List.of(
                     Component.translatable("gui.mesplicedterminal.toolkit.lock"),
-                    Component.translatable("gui.mesplicedterminal.toolkit.lock.hint"));
+                    Component.translatable("gui.mesplicedterminal.toolkit.lock.hint1"),
+                    Component.translatable("gui.mesplicedterminal.toolkit.lock.hint2"));
         }
 
         @Override
