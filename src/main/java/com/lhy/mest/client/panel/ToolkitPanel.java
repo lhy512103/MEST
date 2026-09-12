@@ -9,12 +9,16 @@ import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import appeng.client.Point;
 import appeng.client.gui.Icon;
+import appeng.client.gui.style.Blitter;
 import appeng.client.gui.widgets.ITooltip;
 import appeng.client.gui.widgets.Scrollbar;
+
+import com.glodblock.github.extendedae.client.button.EPPIcon;
 
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.config.MestConfig;
@@ -34,8 +38,8 @@ public class ToolkitPanel extends ModulePanel {
     private static final int TRACK_WIDTH = 5;
     private static final int TRACK_INNER = 3;
     private static final int INSIDE_TRACK_GAP = 2;
-    private static final int TRACK_SHIFT_X = 3;
-    private static final int INSIDE_GUTTER = LOCK + 2;
+    /** Pin sits 4px from the right edge; keep the same column so lock lines up under it. */
+    private static final int INSIDE_GUTTER = LOCK + 4 - CONTENT_PADDING;
     private static final int TRACK_BORDER = 0xFFF2F2F2;
     private static final int TRACK_FILL = 0xFF9A9FB4;
     private static final float MEMORY_GHOST_ALPHA = 0.38F;
@@ -171,20 +175,30 @@ public class ToolkitPanel extends ModulePanel {
 
     @Override
     public void renderForegroundContent(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
+    }
+
+    public ITooltip hoveredTooltip(int mouseX, int mouseY) {
+        layoutLock();
         if (lockButton.visible && lockButton.isMouseOver(mouseX, mouseY)) {
-            g.renderTooltip(font, lockButton.getMessage(), mouseX, mouseY);
-            return;
+            return lockButton;
         }
         if (!memoryMode) {
-            return;
+            return null;
         }
         Slot hovered = slotAt(mouseX, mouseY);
         if (hovered == null) {
-            return;
+            return null;
         }
-        g.renderTooltip(font, hovered.getItem().isEmpty()
-                ? Component.translatable("gui.mesplicedterminal.toolkit.memory_slot.empty")
-                : Component.translatable("gui.mesplicedterminal.toolkit.memory_slot.set"), mouseX, mouseY);
+        Component line;
+        if (hovered.getItem().isEmpty()) {
+            boolean locked = hovered instanceof ToolkitSlot slot && menu.hasToolkitMemory(slot.toolkitIndex());
+            line = Component.translatable(locked
+                    ? "gui.mesplicedterminal.toolkit.lock.slot.clear"
+                    : "gui.mesplicedterminal.toolkit.lock.slot.empty");
+        } else {
+            line = Component.translatable("gui.mesplicedterminal.toolkit.lock.slot.set");
+        }
+        return new SlotLockTooltip(hovered, line);
     }
 
     @Override
@@ -264,11 +278,8 @@ public class ToolkitPanel extends ModulePanel {
     private void layoutLock() {
         lockButton.visible = visible;
         lockButton.active = visible;
-        lockButton.setX(lockLeft());
+        lockButton.setX(pinButtonX());
         lockButton.setY(contentTop());
-        lockButton.setMessage(Component.translatable(memoryMode
-                ? "gui.mesplicedterminal.toolkit.memory_mode.enabled"
-                : "gui.mesplicedterminal.toolkit.memory_mode.disabled"));
     }
 
     private void layoutScrollbar() {
@@ -277,7 +288,7 @@ public class ToolkitPanel extends ModulePanel {
         scrollbar.setRange(0, max, 1);
         int height = trackHeight();
         scrollbar.setHeight(Math.max(1, height - 2));
-        scrollbar.setPosition(new Point(trackLeft() + 2, trackTop() + 1));
+        scrollbar.setPosition(new Point(trackDrawLeft() + 1, trackTop() + 1));
         scrollbar.setCurrentScroll(Math.min(scrollRows, max));
         scrollRows = scrollbar.getCurrentScroll();
     }
@@ -317,16 +328,8 @@ public class ToolkitPanel extends ModulePanel {
         return Math.max(0, occupiedRows() * SLOT);
     }
 
-    private int lockLeft() {
-        return contentLeft() + cols * SLOT + 1;
-    }
-
-    private int trackLeft() {
-        return contentLeft() + cols * SLOT + INSIDE_TRACK_GAP;
-    }
-
     private int trackDrawLeft() {
-        return trackLeft() + TRACK_SHIFT_X;
+        return pinButtonX() + (LOCK - TRACK_WIDTH) / 2;
     }
 
     private int trackTop() {
@@ -465,15 +468,28 @@ public class ToolkitPanel extends ModulePanel {
                 return;
             }
             int yOffset = isHovered() ? 1 : 0;
-            Icon bg = isHovered() ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER : Icon.TOOLBAR_BUTTON_BACKGROUND;
-            bg.getBlitter().dest(getX(), getY() + yOffset, getWidth(), getHeight()).zOffset(2).blit(graphics);
+            int px = getX();
+            int py = getY() + yOffset;
+            if (ModList.get().isLoaded("extendedae")) {
+                Blitter background = isHovered() ? EPPIcon.TERMINAL_BUTTON_HOVER : EPPIcon.TERMINAL_BUTTON;
+                background.dest(px, py, getWidth(), getHeight()).zOffset(2).blit(graphics);
+            } else {
+                graphics.fill(px, py, px + getWidth(), py + getHeight(), isHovered() ? 0xFF4A4A4A : 0xFF2E2E2E);
+            }
             Icon icon = memoryMode ? Icon.LOCKED : Icon.UNLOCKED;
-            icon.getBlitter().dest(getX(), getY() + yOffset, getWidth(), getHeight()).zOffset(3).blit(graphics);
+            icon.getBlitter().dest(px, py, getWidth(), getHeight()).zOffset(3).blit(graphics);
         }
 
         @Override
         public List<Component> getTooltipMessage() {
-            return List.of(getMessage());
+            if (memoryMode) {
+                return List.of(
+                        Component.translatable("gui.mesplicedterminal.toolkit.lock.editing"),
+                        Component.translatable("gui.mesplicedterminal.toolkit.lock.editing.hint"));
+            }
+            return List.of(
+                    Component.translatable("gui.mesplicedterminal.toolkit.lock"),
+                    Component.translatable("gui.mesplicedterminal.toolkit.lock.hint"));
         }
 
         @Override
@@ -484,6 +500,23 @@ public class ToolkitPanel extends ModulePanel {
         @Override
         public boolean isTooltipAreaVisible() {
             return visible;
+        }
+    }
+
+    private record SlotLockTooltip(Slot slot, Component line) implements ITooltip {
+        @Override
+        public List<Component> getTooltipMessage() {
+            return List.of(line);
+        }
+
+        @Override
+        public Rect2i getTooltipArea() {
+            return new Rect2i(slot.x, slot.y, 16, 16);
+        }
+
+        @Override
+        public boolean isTooltipAreaVisible() {
+            return true;
         }
     }
 }

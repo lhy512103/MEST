@@ -2072,6 +2072,13 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     private void renderTooltipAtOverlay(GuiGraphics g, int x, int y) {
         ModulePanel target = dock.topLeafAt(x, y);
+        if (target == toolkitPanel && toolkitPanel != null) {
+            ITooltip lockTip = toolkitPanel.hoveredTooltip(x, y);
+            if (lockTip != null && lockTip.isTooltipAreaVisible() && !lockTip.getTooltipMessage().isEmpty()) {
+                drawAeWidgetTooltip(g, x, y, lockTip);
+                return;
+            }
+        }
         if (target == providerSelectPanel && providerSelectPanel != null) {
             ITooltip picker = providerSelectPanel.hoveredTooltip(x, y);
             if (picker != null && picker.isTooltipAreaVisible() && !picker.getTooltipMessage().isEmpty()) {
