@@ -30,7 +30,7 @@ public class ToolkitPanel extends ModulePanel {
     private static final int SLOT = 18;
     private static final int MIN_COLS = 9;
     private static final int MIN_ROWS = 2;
-    private static final int LOCK = 16;
+    private static final int LOCK = 12;
     private static final int TRACK_WIDTH = 5;
     private static final int TRACK_INNER = 3;
     private static final int INSIDE_TRACK_GAP = 2;
@@ -97,7 +97,17 @@ public class ToolkitPanel extends ModulePanel {
 
     @Override
     public boolean fillsContentArea() {
-        return true;
+        return false;
+    }
+
+    @Override
+    public int preferredContentWidth() {
+        return Math.max(MIN_COLS, cols) * SLOT + INSIDE_GUTTER;
+    }
+
+    @Override
+    public int preferredContentHeight() {
+        return Math.max(MIN_ROWS * SLOT, occupiedHeight());
     }
 
     @Override
