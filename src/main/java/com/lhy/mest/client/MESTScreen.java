@@ -1523,16 +1523,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             return false;
         }
         ensureHoverFrame(mx, my);
-        if (toolboxColumn != null && toolboxColumn.ownsSlot(slot)) {
-            return toolboxColumn.isVisible()
-                    && toolboxColumn.contains(mx, my)
-                    && super.isHovering(slot, mx, my);
-        }
-        if (networkToolkitPanel != null && networkToolkitPanel.ownsSlot(slot)) {
-            return dock.isEffectivelyVisible(networkToolkitPanel)
-                    && hoverTop == networkToolkitPanel
-                    && super.isHovering(slot, mx, my);
-        }
         if (hoverTop == null || !hoverFloating) {
             if (hoverExtra != null) {
                 return hoverExtra.ownsSlot(slot) && super.isHovering(slot, mx, my);

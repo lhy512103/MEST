@@ -148,7 +148,7 @@ public class NetworkToolkitPanel extends ModulePanel {
 
     @Override
     public boolean mouseScrolled(double mx, double my, double scrollY) {
-        if (!visible || scrollY == 0 || maxScroll() <= 0) {
+        if (!visible || scrollY == 0 || (!inGrid(mx, my) && !inScrollbar(mx, my))) {
             return false;
         }
         scrollbar.setCurrentScroll(scrollbar.getCurrentScroll() - (int) Math.signum(scrollY));
@@ -159,7 +159,7 @@ public class NetworkToolkitPanel extends ModulePanel {
 
     @Override
     public boolean scrollbarPressed(double mx, double my) {
-        if (!visible || maxScroll() <= 0) {
+        if (!visible || maxScroll() <= 0 || !inScrollbar(mx, my)) {
             return false;
         }
         boolean consumed = scrollbar.onMouseDown(new Point((int) mx, (int) my), 0);
@@ -213,5 +213,30 @@ public class NetworkToolkitPanel extends ModulePanel {
 
     private int maxScroll() {
         return Math.max(0, neededRows() - Math.max(1, Math.min(rows, neededRows())));
+    }
+
+    private boolean inGrid(double mx, double my) {
+        int visibleCells = Math.min(Math.max(0, slots.size() - scrollRows * COLS), rows * COLS);
+        int occupiedRows = visibleCells <= 0 ? 0 : (visibleCells + COLS - 1) / COLS;
+        if (occupiedRows <= 0) {
+            return false;
+        }
+        int lastCols = visibleCells % COLS == 0 ? COLS : visibleCells % COLS;
+        int y = (int) my - contentTop();
+        if (y < 0 || y >= occupiedRows * SLOT) {
+            return false;
+        }
+        int row = y / SLOT;
+        int width = row == occupiedRows - 1 ? lastCols * SLOT : COLS * SLOT;
+        return mx >= contentLeft() && mx < contentLeft() + width;
+    }
+
+    private boolean inScrollbar(double mx, double my) {
+        if (maxScroll() <= 0) {
+            return false;
+        }
+        Rect2i bounds = scrollbar.getBounds();
+        return mx >= bounds.getX() && mx < bounds.getX() + bounds.getWidth()
+                && my >= bounds.getY() && my < bounds.getY() + bounds.getHeight();
     }
 }
