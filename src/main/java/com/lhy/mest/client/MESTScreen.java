@@ -99,6 +99,7 @@ import com.lhy.mest.compat.plus.PlusScreenSupport;
 import com.lhy.mest.network.PatternProviderActionPacket;
 import com.lhy.mest.network.ProviderPickerListPacket;
 import com.lhy.mest.terminal.MESTMenu;
+import com.lhy.mest.terminal.ToolkitSlot;
 
 /**
  * Client screen for the ME Spliced Terminal.
@@ -1417,7 +1418,14 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                     .opacity(armorSlot.getOpacityOfIcon())
                     .blit(g);
         }
+        if (toolkitPanel != null && toolkitPanel.ownsSlot(s) && toolkitPanel.hideLiveItem(s)) {
+            toolkitPanel.renderMemoryGhost(g, s);
+            return;
+        }
         super.renderSlot(g, s);
+        if (toolkitPanel != null && toolkitPanel.ownsSlot(s)) {
+            toolkitPanel.renderMemoryGhost(g, s);
+        }
         if (getMenu().isPatternEncodingInputSlot(s)) {
             GenericStack stack = GenericStack.fromItemStack(s.getItem());
             var repo = getMenu().getClientRepo();
@@ -2047,6 +2055,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     protected List<Component> getTooltipFromContainerItem(ItemStack stack) {
+        if (toolkitPanel != null && toolkitPanel.isLockEditing() && hoveredSlot instanceof ToolkitSlot) {
+            return List.of();
+        }
         List<Component> lines = super.getTooltipFromContainerItem(stack);
         if (hoveredSlot != null && getMenu().isPatternEncodingInputSlot(hoveredSlot)) {
             GenericStack genericStack = GenericStack.fromItemStack(hoveredSlot.getItem());
@@ -2072,6 +2083,14 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     private void renderTooltipAtOverlay(GuiGraphics g, int x, int y) {
         ModulePanel target = dock.topLeafAt(x, y);
+        if (toolkitPanel != null && toolkitPanel.isLockEditing()
+                && (target == toolkitPanel || hoveredSlot instanceof ToolkitSlot)) {
+            ITooltip lockTip = toolkitPanel.hoveredTooltip(x, y);
+            if (lockTip != null && lockTip.isTooltipAreaVisible() && !lockTip.getTooltipMessage().isEmpty()) {
+                drawAeWidgetTooltip(g, x, y, lockTip);
+            }
+            return;
+        }
         if (target == toolkitPanel && toolkitPanel != null) {
             ITooltip lockTip = toolkitPanel.hoveredTooltip(x, y);
             if (lockTip != null && lockTip.isTooltipAreaVisible() && !lockTip.getTooltipMessage().isEmpty()) {

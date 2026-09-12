@@ -170,7 +170,33 @@ public class ToolkitPanel extends ModulePanel {
             drawTrack(g, trackDrawLeft(), trackTop(), trackHeight);
             scrollbar.drawForegroundLayer(g, new Rect2i(0, 0, 0, 0), new Point(mouseX, mouseY));
         }
-        renderMemoryGhosts(g);
+    }
+
+    public boolean isLockEditing() {
+        return memoryMode;
+    }
+
+    /** In lock-editing, a remembered slot shows only the ghost, not the live item. */
+    public boolean hideLiveItem(Slot slot) {
+        return memoryMode
+                && slot instanceof ToolkitSlot toolkitSlot
+                && menu.hasToolkitMemory(toolkitSlot.toolkitIndex());
+    }
+
+    public void renderMemoryGhost(GuiGraphics g, Slot slot) {
+        if (slot.x <= -1000 || slot.y <= -1000 || !(slot instanceof ToolkitSlot toolkitSlot)) {
+            return;
+        }
+        if (!menu.hasToolkitMemory(toolkitSlot.toolkitIndex())) {
+            return;
+        }
+        ItemStack memory = menu.getToolkitMemoryStack(toolkitSlot.toolkitIndex());
+        if (memory.isEmpty()) {
+            return;
+        }
+        g.setColor(1.0F, 1.0F, 1.0F, MEMORY_GHOST_ALPHA);
+        g.renderItem(memory, slot.x, slot.y);
+        g.setColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     @Override
@@ -393,24 +419,6 @@ public class ToolkitPanel extends ModulePanel {
             }
         }
         return null;
-    }
-
-    private void renderMemoryGhosts(GuiGraphics g) {
-        for (Slot slot : toolkitSlots) {
-            if (slot.x <= -1000 || slot.y <= -1000 || slot.hasItem()) {
-                continue;
-            }
-            if (!(slot instanceof ToolkitSlot toolkitSlot) || !menu.hasToolkitMemory(toolkitSlot.toolkitIndex())) {
-                continue;
-            }
-            ItemStack memory = menu.getToolkitMemoryStack(toolkitSlot.toolkitIndex());
-            if (memory.isEmpty()) {
-                continue;
-            }
-            g.setColor(1.0F, 1.0F, 1.0F, MEMORY_GHOST_ALPHA);
-            g.renderItem(memory, slot.x, slot.y);
-            g.setColor(1.0F, 1.0F, 1.0F, 1.0F);
-        }
     }
 
     private static void drawOccupiedBorder(GuiGraphics g, int px, int py, int cols, int occupiedRows, int lastCols) {
