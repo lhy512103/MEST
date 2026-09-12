@@ -706,21 +706,27 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             toolboxColumn = new ToolboxChrome(toolboxSlots, name);
         }
         hideVanillaToolboxWhenExpanded();
-        if (networkToolkitPanel != null && dock.isEffectivelyVisible(networkToolkitPanel)) {
-            toolboxColumn.hideChrome();
+        boolean moduleVisible = networkToolkitPanel != null && dock.isEffectivelyVisible(networkToolkitPanel);
+        if (moduleVisible) {
+            toolboxColumn.hide();
+            networkToolkitPanel.layoutSlots();
             return;
         }
-        if (toolboxColumn.hasSlots()) {
-            int x = extraColumnAttachX(group);
-            if (rightEdgeIsPatternCache(group)) {
-                x += 2;
-            } else {
-                x -= 2;
-            }
-            toolboxColumn.layoutAgainst(x, Math.max(group.y(), group.bottom() - 66), true);
-        } else {
-            toolboxColumn.hide();
+        if (networkToolkitPanel != null) {
+            networkToolkitPanel.layoutSlots();
         }
+        int x = extraColumnAttachX(group);
+        if (rightEdgeIsPatternCache(group)) {
+            x += 2;
+        } else {
+            x -= 2;
+        }
+        int y = Math.max(group.y(), group.bottom() - ToolboxChrome.HEIGHT);
+        if (group.width() < 32 || group.height() < 32) {
+            toolboxColumn.hide();
+            return;
+        }
+        toolboxColumn.layoutAgainst(x, y, true);
     }
 
     private void hideVanillaToolboxWhenExpanded() {
@@ -1513,7 +1519,20 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
      */
     @Override
     protected boolean isHovering(Slot slot, double mx, double my) {
+        if (slot.x <= -1000 || slot.y <= -1000) {
+            return false;
+        }
         ensureHoverFrame(mx, my);
+        if (toolboxColumn != null && toolboxColumn.ownsSlot(slot)) {
+            return toolboxColumn.isVisible()
+                    && toolboxColumn.contains(mx, my)
+                    && super.isHovering(slot, mx, my);
+        }
+        if (networkToolkitPanel != null && networkToolkitPanel.ownsSlot(slot)) {
+            return dock.isEffectivelyVisible(networkToolkitPanel)
+                    && hoverTop == networkToolkitPanel
+                    && super.isHovering(slot, mx, my);
+        }
         if (hoverTop == null || !hoverFloating) {
             if (hoverExtra != null) {
                 return hoverExtra.ownsSlot(slot) && super.isHovering(slot, mx, my);

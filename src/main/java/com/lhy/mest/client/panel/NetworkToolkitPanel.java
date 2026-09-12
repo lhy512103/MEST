@@ -87,7 +87,7 @@ public class NetworkToolkitPanel extends ModulePanel {
     public void layoutSlots() {
         this.rows = Math.max(MIN_ROWS, contentHeight() / SLOT);
         layoutScrollbar();
-        if (!visible) {
+        if (!visible || width < minWidth() || height < minHeight()) {
             for (Slot slot : slots) {
                 hideSlot(slot);
             }

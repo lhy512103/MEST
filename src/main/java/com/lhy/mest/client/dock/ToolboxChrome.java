@@ -73,7 +73,9 @@ public class ToolboxChrome implements ExtraChrome, ICompositeWidget {
     public void setPosition(Point position) {
         bounds = new Rect2i(position.getX(), position.getY(), WIDTH, HEIGHT);
         layoutScrollbar();
-        placeSlots();
+        if (isVisible()) {
+            placeSlots();
+        }
     }
 
     @Override
@@ -122,12 +124,6 @@ public class ToolboxChrome implements ExtraChrome, ICompositeWidget {
         scrollbar.setVisible(false);
         draggingScrollbar = false;
         hideSlots();
-    }
-
-    public void hideChrome() {
-        bounds = new Rect2i(0, 0, 0, 0);
-        scrollbar.setVisible(false);
-        draggingScrollbar = false;
     }
 
     private void hideSlots() {
