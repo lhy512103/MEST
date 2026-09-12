@@ -21,8 +21,9 @@ public class ToolboxChrome implements ExtraChrome {
     private static final int COLS = 3;
     private static final int WIDTH = 59;
     private static final int HEIGHT = 66;
-    private static final int WELL_X = 2;
-    private static final int WELL_Y = 7;
+    /** Item origin inside the 59×66 sprite; AE2 JSON is left 1, top 6 (well at 0, 5). */
+    private static final int SLOT_X = 1;
+    private static final int SLOT_Y = 6;
     private static final Blitter BACKGROUND = Blitter.texture("guis/extra_panels.png", 128, 128)
             .src(69, 62, WIDTH, HEIGHT);
 
@@ -90,8 +91,8 @@ public class ToolboxChrome implements ExtraChrome {
             }
             int col = index % COLS;
             int row = index / COLS;
-            slot.x = attachX + WELL_X + col * SLOT + 1;
-            slot.y = attachY + WELL_Y + row * SLOT + 1;
+            slot.x = attachX + SLOT_X + col * SLOT;
+            slot.y = attachY + SLOT_Y + row * SLOT;
             index++;
         }
     }
