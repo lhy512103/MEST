@@ -152,11 +152,18 @@ public final class ToolkitBarHud {
         drawBarFrame(g, x, y, slot, selected, selectedSlot);
         for (int i = 0; i < BAR_SLOTS; i++) {
             ItemStack stack = ToolkitBarState.stackAt(player, firstSlot + i);
-            if (stack.isEmpty()) {
-                continue;
-            }
             int itemX = x + ITEM_INSET + i * slot;
             int itemY = y + ITEM_INSET;
+            if (stack.isEmpty()) {
+                ItemStack memory = ToolkitBarState.memoryAt(player, firstSlot + i);
+                if (memory.isEmpty()) {
+                    continue;
+                }
+                g.setColor(1.0F, 1.0F, 1.0F, 0.38F);
+                g.renderItem(memory, itemX, itemY);
+                g.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+                continue;
+            }
             g.renderItem(stack, itemX, itemY);
             g.renderItemDecorations(minecraft.font, stack, itemX, itemY);
         }

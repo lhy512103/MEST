@@ -45,6 +45,11 @@ public final class MestPackets {
                 ToolkitBarDropPacket.STREAM_CODEC,
                 ToolkitBarDropPacket::handle);
 
+        registrar.playToServer(
+                ToolkitMemorySlotPacket.TYPE,
+                ToolkitMemorySlotPacket.STREAM_CODEC,
+                ToolkitMemorySlotPacket::handle);
+
         registrar.playToClient(
                 ToolkitBarSyncPacket.TYPE,
                 ToolkitBarSyncPacket.STREAM_CODEC,

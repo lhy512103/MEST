@@ -278,6 +278,37 @@ public class MESTMenu extends CraftingTermMenu {
         return getSlots(MestSlotSemantics.TOOLKIT);
     }
 
+    public ItemStack getToolkitMemoryStack(int toolkitIndex) {
+        InternalInventory memory = host.getToolkitMemoryInventory();
+        if (toolkitIndex < 0 || toolkitIndex >= memory.size()) {
+            return ItemStack.EMPTY;
+        }
+        return memory.getStackInSlot(toolkitIndex);
+    }
+
+    public boolean hasToolkitMemory(int toolkitIndex) {
+        return !getToolkitMemoryStack(toolkitIndex).isEmpty();
+    }
+
+    public void setToolkitMemorySlot(int toolkitIndex, boolean rememberFromSlot) {
+        InternalInventory memory = host.getToolkitMemoryInventory();
+        InternalInventory toolkit = host.getToolkitInventory();
+        if (toolkitIndex < 0 || toolkitIndex >= memory.size() || toolkitIndex >= toolkit.size()) {
+            return;
+        }
+        if (!rememberFromSlot) {
+            memory.setItemDirect(toolkitIndex, ItemStack.EMPTY);
+            broadcastChanges();
+            return;
+        }
+        ItemStack stack = toolkit.getStackInSlot(toolkitIndex);
+        if (stack.isEmpty()) {
+            return;
+        }
+        memory.setItemDirect(toolkitIndex, stack.copyWithCount(1));
+        broadcastChanges();
+    }
+
     @Override
     protected boolean canSlotsBeHidden(SlotSemantic semantic) {
         return semantic == AE2wtlibSlotSemantics.OFFHAND
@@ -767,7 +798,7 @@ public class MESTMenu extends CraftingTermMenu {
     private void addToolkitSlots() {
         InternalInventory inventory = host.getToolkitInventory();
         for (int slot = 0; slot < inventory.size(); slot++) {
-            addSlot(new ToolkitSlot(inventory, slot), MestSlotSemantics.TOOLKIT);
+            addSlot(new ToolkitSlot(inventory, slot, this), MestSlotSemantics.TOOLKIT);
         }
     }
 
@@ -1118,13 +1149,13 @@ public class MESTMenu extends CraftingTermMenu {
         int initialCount = input.getCount();
 
         if (toolkitOpen) {
-            for (Slot toolkitSlot : getToolkitSlots()) {
-                if (toolkitSlot.mayPlace(input)) {
-                    input = toolkitSlot.safeInsert(input);
-                    if (input.isEmpty()) {
-                        return initialCount;
-                    }
-                }
+            input = insertIntoToolkit(input, true);
+            if (input.isEmpty()) {
+                return initialCount;
+            }
+            input = insertIntoToolkit(input, false);
+            if (input.isEmpty()) {
+                return initialCount;
             }
         }
 
@@ -1198,6 +1229,25 @@ public class MESTMenu extends CraftingTermMenu {
         super.handleNetworkInteraction(player, clickedKey, action);
     }
 
+    private ItemStack insertIntoToolkit(ItemStack input, boolean rememberedEmptyOnly) {
+        for (Slot toolkitSlot : getToolkitSlots()) {
+            if (input.isEmpty()) {
+                break;
+            }
+            if (rememberedEmptyOnly) {
+                if (!(toolkitSlot instanceof ToolkitSlot slot)
+                        || toolkitSlot.hasItem()
+                        || !hasToolkitMemory(slot.toolkitIndex())) {
+                    continue;
+                }
+            }
+            if (toolkitSlot.mayPlace(input)) {
+                input = toolkitSlot.safeInsert(input);
+            }
+        }
+        return input;
+    }
+
     private boolean insertFromNetworkToToolkit(AEItemKey itemKey) {
         IGridNode node = getGridNode();
         if (node == null || node.getGrid() == null || node.getGrid().getStorageService() == null) {
@@ -1209,14 +1259,8 @@ public class MESTMenu extends CraftingTermMenu {
             return false;
         }
         ItemStack stack = itemKey.toStack((int) available);
-        for (Slot toolkitSlot : getToolkitSlots()) {
-            if (stack.isEmpty()) {
-                break;
-            }
-            if (toolkitSlot.mayPlace(stack)) {
-                stack = toolkitSlot.safeInsert(stack);
-            }
-        }
+        stack = insertIntoToolkit(stack, true);
+        stack = insertIntoToolkit(stack, false);
         int inserted = (int) available - stack.getCount();
         if (inserted <= 0) {
             return false;

@@ -38,6 +38,12 @@ public final class ModComponents {
                     .persistent(ItemContainerContents.CODEC)
                     .networkSynchronized(ItemContainerContents.STREAM_CODEC));
 
+    /** Remembered item type per toolkit slot; empty remembered slots prefer matching tools. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> TOOLKIT_MEMORY =
+            register("toolkit_memory", builder -> builder
+                    .persistent(ItemContainerContents.CODEC)
+                    .networkSynchronized(ItemContainerContents.STREAM_CODEC));
+
     /** Whether the toolkit quick bars are drawn beside the player's hotbar. */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> TOOLKIT_BAR =
             register("toolkit_bar", builder -> builder

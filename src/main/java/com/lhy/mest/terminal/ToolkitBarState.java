@@ -7,6 +7,7 @@ import java.util.WeakHashMap;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemContainerContents;
 
 import appeng.api.inventories.InternalInventory;
 
@@ -142,6 +143,16 @@ public final class ToolkitBarState {
 
     public static ItemStack stackAt(Player player, int index) {
         return inventory(player).liveStack(index);
+    }
+
+    public static ItemStack memoryAt(Player player, int index) {
+        ItemStack terminal = findTerminal(player);
+        if (terminal.isEmpty() || index < 0) {
+            return ItemStack.EMPTY;
+        }
+        ItemContainerContents memory = terminal.getOrDefault(
+                ModComponents.TOOLKIT_MEMORY.get(), ItemContainerContents.EMPTY);
+        return index < memory.getSlots() ? memory.getStackInSlot(index) : ItemStack.EMPTY;
     }
 
     /** Live toolkit cell for the current extra-bar selection, or empty. */

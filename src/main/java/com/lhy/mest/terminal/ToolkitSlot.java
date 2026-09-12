@@ -7,19 +7,28 @@ import appeng.menu.slot.AppEngSlot;
 
 /**
  * A toolkit slot: an extension of the player inventory that only accepts items which cannot stack
- * (tools, gear, single-instance curios...). Vanilla click / drag / shift-click handling is untouched —
- * every placement path in {@code AbstractContainerMenu} funnels through {@link #mayPlace(ItemStack)},
- * so rejecting stackables here is enough to cover mouse, keyboard and hotbar transfers alike.
+ * (tools, gear, single-instance curios...). Remembered slots additionally only accept that item type.
  */
 public class ToolkitSlot extends AppEngSlot {
-    public ToolkitSlot(InternalInventory inventory, int index) {
+    private final int toolkitIndex;
+    private final MESTMenu menu;
+
+    public ToolkitSlot(InternalInventory inventory, int index, MESTMenu menu) {
         super(inventory, index);
+        this.toolkitIndex = index;
+        this.menu = menu;
+    }
+
+    public int toolkitIndex() {
+        return toolkitIndex;
     }
 
     @Override
     public boolean mayPlace(ItemStack stack) {
-        // getMaxStackSize() is a property of the item, not of the current count, so a lone stackable
-        // item is still rejected here — exactly the intent of "unstackable only".
-        return ToolkitBarState.mayStore(stack);
+        if (!ToolkitBarState.mayStore(stack)) {
+            return false;
+        }
+        ItemStack memory = menu.getToolkitMemoryStack(toolkitIndex);
+        return memory.isEmpty() || memory.is(stack.getItem());
     }
 }
