@@ -664,7 +664,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         int attachY = group.y();
         if (upgradeColumn instanceof ScrollingUpgradeColumn scrolling) {
-            scrolling.setMaxRows(Math.max(2, (group.height() - 10) / 18));
+            scrolling.setMaxRows(Math.max(2, (group.height() / 2 - 10) / 18));
         }
         if (upgradeColumn != null && upgradeColumn.hasSlots()) {
             upgradeColumn.layoutAgainst(attachX, attachY, true);

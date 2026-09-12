@@ -12,7 +12,6 @@ import appeng.api.upgrades.Upgrades;
 import appeng.menu.locator.ItemMenuHostLocator;
 
 import de.mari_023.ae2wtlib.api.terminal.ItemWT;
-import de.mari_023.ae2wtlib.api.terminal.WUTHandler;
 
 import com.lhy.mest.registry.ModItems;
 import com.lhy.mest.registry.ModMenus;
@@ -33,15 +32,10 @@ public class ItemMEST extends ItemWT {
         return UpgradeInventories.forItem(stack, upgradeInventorySize(), this::onUpgradesChanged);
     }
 
-    /**
-     * Slot count is the larger of wtlib's summed wireless-terminal upgrade counts and the sum of
-     * every compatible card's max-installable value (the numbers in the Compatible Upgrades tooltip).
-     */
+    /** Slot count is the sum of each compatible card's max, matching the Compatible Upgrades tooltip. */
     public static int upgradeInventorySize() {
-        int wt = WUTHandler.getUpgradeCardCount();
-        int tooltipTotal = compatibleUpgradeTotal();
-        int size = Math.max(wt, tooltipTotal);
-        return size > 0 ? size : 3;
+        int total = compatibleUpgradeTotal();
+        return total > 0 ? total : 3;
     }
 
     private static int compatibleUpgradeTotal() {

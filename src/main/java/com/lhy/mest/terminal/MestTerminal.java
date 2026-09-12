@@ -72,10 +72,9 @@ public final class MestTerminal {
             var item = ModItems.splicedTerminalItem();
             GridLinkables.register(item, WirelessTerminalItem.LINKABLE_HANDLER);
             String group = GuiText.WirelessTerminals.getTranslationKey();
-            int count = ItemMEST.upgradeInventorySize();
             for (var card : BuiltInRegistries.ITEM) {
                 if (card instanceof EnergyCardItem) {
-                    Upgrades.add(card, item, count, group);
+                    Upgrades.add(card, item, 3, group);
                 }
             }
             var magnet = BuiltInRegistries.ITEM.get(AE2wtlibAPI.id("magnet_card"));
