@@ -24,6 +24,12 @@ import appeng.menu.slot.AppEngSlot;
 public class ToolboxChrome implements ICompositeWidget {
     /** Inset from the panel edge to the first slot: the AE2 window bevel is 4px wide. */
     public static final int PAD = 4;
+    /**
+     * Offset from the panel origin to the first slot's item origin. AE2 puts {@code slot.x} at the
+     * item area, and the 18×18 well is drawn one pixel before it, so callers anchor the panel at
+     * {@code vanillaSlotPosition - SLOT_ORIGIN}.
+     */
+    public static final int SLOT_ORIGIN = PAD + 1;
     private static final int SLOT = 18;
     private static final int COLS = 3;
     private static final int ROWS = 3;
@@ -48,12 +54,12 @@ public class ToolboxChrome implements ICompositeWidget {
         this.scrollbar.setCaptureMouseWheel(false);
     }
 
-    public static boolean needsScroll(List<Slot> slots) {
-        return enabledCount(slots) > COLS * ROWS;
+    /** True when at least one toolbox slot is usable; hidden toolboxes leave every slot disabled. */
+    public static boolean hasVisibleSlots(List<Slot> slots) {
+        return enabledCount(slots) > 0;
     }
 
-    public boolean isVisible() {
-        return bounds.getWidth() > 0 && bounds.getHeight() > 0;
+    public boolean isVisible() {        return bounds.getWidth() > 0 && bounds.getHeight() > 0;
     }
 
     @Override

@@ -23,6 +23,11 @@ public class NetworkToolkitPanel extends ModulePanel {
     private static final int MIN_ROWS = 3;
     /** Tighter than {@link ModulePanel#CONTENT_PADDING}; matches the AE2 window bevel width. */
     private static final int PAD = 4;
+    /**
+     * Invisible drag strip along the top edge. There is no title bar, so window dragging is bound
+     * to this band instead of {@link ModulePanel#TITLE_BAR_HEIGHT}.
+     */
+    private static final int DRAG_BAND = 8;
     private static final int TRACK_WIDTH = 5;
     private static final int TRACK_INNER = 3;
     private static final int INSIDE_TRACK_GAP = 2;
@@ -61,13 +66,18 @@ public class NetworkToolkitPanel extends ModulePanel {
 
     @Override
     public int defaultHeight() {
-        return 2 * PAD + MIN_ROWS * SLOT;
+        return DRAG_BAND + MIN_ROWS * SLOT + PAD;
     }
 
     @Override
     protected boolean drawsTitleBar() {
-        // No title strip: the panel is pinned by default, so there is nothing to drag or pin.
+        // No title strip: no title text and no pin button. Dragging uses DRAG_BAND instead.
         return false;
+    }
+
+    @Override
+    public boolean inTitleBar(double mx, double my) {
+        return mx >= x && mx < x + width && my >= y && my < y + DRAG_BAND;
     }
 
     @Override
@@ -103,7 +113,7 @@ public class NetworkToolkitPanel extends ModulePanel {
 
     @Override
     public int contentTop() {
-        return y + PAD + contentOffsetY;
+        return y + DRAG_BAND + contentOffsetY;
     }
 
     @Override
@@ -113,7 +123,7 @@ public class NetworkToolkitPanel extends ModulePanel {
 
     @Override
     public int contentHeight() {
-        return Math.max(0, height - 2 * PAD);
+        return Math.max(0, height - DRAG_BAND - PAD);
     }
 
     @Override
