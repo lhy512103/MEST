@@ -135,7 +135,7 @@ public class ToolboxChrome implements ICompositeWidget {
             g.pose().translate(gui.getX(), gui.getY(), 0.0F);
             int x = bounds.getX();
             int y = bounds.getY();
-            ModulePanel.drawGeneratedBackground(g, x, y, WIDTH, HEIGHT, 0);
+            MestPanelSkin.drawFrame(g, x, y, WIDTH, HEIGHT);
             int visibleCells = Math.min(enabledCount(slots), ROWS * COLS);
             for (int cell = 0; cell < visibleCells; cell++) {
                 ModulePanel.drawSlot(g, x + PAD + (cell % COLS) * SLOT, y + PAD + (cell / COLS) * SLOT);

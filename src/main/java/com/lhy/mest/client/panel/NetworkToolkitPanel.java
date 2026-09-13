@@ -11,6 +11,7 @@ import net.minecraft.world.inventory.Slot;
 import appeng.client.Point;
 import appeng.client.gui.widgets.Scrollbar;
 
+import com.lhy.mest.client.dock.MestPanelSkin;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.terminal.MESTMenu;
 
@@ -98,7 +99,7 @@ public class NetworkToolkitPanel extends ModulePanel {
         if ((sharedEdges & EDGE_RIGHT) == 0 && outsideHitWidth() <= 0) {
             g.fill(x + width, y + 2, x + width + 2, y + height + 2, 0x55000000);
         }
-        drawGeneratedBackground(g, x, y, width, height, sharedEdges);
+        MestPanelSkin.drawFrame(g, x, y, width, height);
     }
 
     @Override
