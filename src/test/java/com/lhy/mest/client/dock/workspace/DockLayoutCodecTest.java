@@ -8,20 +8,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
+import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.LeafNode;
 import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
 import com.lhy.mest.client.dock.model.SplitNode;
 
 class DockLayoutCodecTest {
     @Test
-    void roundTripsV3WithoutLosingRootOrderTreeStateOrPolicies() throws Exception {
+    void roundTripsCurrentVersionWithoutLosingRootOrderTreeStateOrPolicies() throws Exception {
         DockLayoutCodec codec = codec();
         var original = WorkspacePersistenceFixtures.workspace();
 
         String encoded = codec.encode(original);
         DockLayoutCodec.DecodedLayout decoded = codec.decode(encoded);
 
-        assertEquals(3, decoded.sourceVersion());
+        assertEquals(DockLayoutDto.CURRENT_VERSION, decoded.sourceVersion());
         assertFalse(decoded.migrated());
         assertFalse(decoded.reconciled());
         assertFalse(decoded.needsRewrite());
@@ -168,6 +169,45 @@ class DockLayoutCodecTest {
         assertTrue(decoded.needsRewrite());
         assertTrue(leaf.visible(), "v3 normalizes structural leaf visibility");
         assertFalse(decoded.workspace().policyFor("a").visible());
+    }
+
+    @Test
+    void migratesOlderLayoutsToTheCurrentNetworkToolkitPlacement() throws Exception {
+        String persisted = """
+                {
+                  "version": 3,
+                  "roots": [{
+                    "rootId": "root-nt",
+                    "bounds": {"x": 501, "y": 284, "width": 71, "height": 66},
+                    "content": {
+                      "type": "leaf", "nodeId": "leaf-nt", "moduleId": "network_toolkit",
+                      "visible": true
+                    }
+                  }],
+                  "policies": {
+                    "network_toolkit": {"visible": true, "movable": true, "resizable": true,
+                                        "floating": true, "pinned": true, "showTerminalButton": true}
+                  }
+                }
+                """;
+        DockLayoutCodec codec = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog("network_toolkit"),
+                WorkspacePersistenceFixtures.migrationContext());
+
+        DockLayoutCodec.DecodedLayout decoded = codec.decode(persisted);
+
+        assertEquals(3, decoded.sourceVersion());
+        assertTrue(decoded.needsRewrite());
+        DockRect migrated = decoded.workspace().roots().getFirst().bounds();
+        assertEquals(501 - DockWorkspaceDefaults.NETWORK_TOOLKIT_SHIFT_X, migrated.x());
+        assertEquals(284, migrated.y());
+        assertEquals(71, migrated.width());
+        assertEquals(66, migrated.height());
+
+        // The migrated position is persisted, so the shift is only ever applied once.
+        DockLayoutCodec.DecodedLayout again = codec.decode(codec.encode(decoded.workspace()));
+        assertFalse(again.needsRewrite());
+        assertEquals(migrated, again.workspace().roots().getFirst().bounds());
     }
 
     @Test
