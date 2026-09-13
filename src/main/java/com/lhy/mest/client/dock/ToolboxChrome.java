@@ -24,8 +24,8 @@ import appeng.menu.slot.AppEngSlot;
 public class ToolboxChrome implements ICompositeWidget {
     /** Inset from the panel edge to the first slot: the AE2 window bevel is 4px wide. */
     public static final int PAD = 4;
-    /** Extra left shift of the whole panel when the custom borderless skin is installed. */
-    private static final int CUSTOM_SHIFT_X = 4;
+    /** Left shift of the whole panel when the custom borderless skin is installed. */
+    private static final int CUSTOM_SHIFT_X = 1;
     private static final int SLOT = 18;
     private static final int COLS = 3;
     private static final int ROWS = 3;

@@ -70,6 +70,9 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     private static final int CRAFT_STATUS_SIZE = 20;
     private static final int CRAFT_STATUS_OVERHANG = 4;
     private static final int TITLE_SEARCH_TOP = 4;
+    /** Pinned-row strip inside {@code guis/terminal.png}: 9 slots wide, one row tall, at y=204. */
+    private static final int PINNED_ROW_SRC_Y = 204;
+    private static final int PINNED_ROW_NATIVE_WIDTH = 162;
     private static final Blitter TERMINAL = Blitter.texture("guis/terminal.png", 256, 256);
     private static final Set<String> REPORTED_RENDER_FAILURES = new HashSet<>();
 
@@ -296,6 +299,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         layoutChrome();
         updateScrollbar();
         drawTerminalRows(g);
+        drawPinnedRowStrip(g);
         drawScrollerRail(g);
         // blitSprite is batched; flush so the well/handle are not covered by the rail.
         g.flush();
@@ -713,6 +717,20 @@ public class MEListPanel extends ModulePanel implements ISortSource {
                 g.vLine(gridLeft + cols * SLOT - 1, destY, destY + SLOT - 1, 0xFFF2F2F2);
             }
         }
+    }
+
+    /**
+     * The pinned row's background strip, exactly as AE2's {@code MEStorageScreen.drawBG} blits it:
+     * {@code guis/terminal.png} at (0, 204), one row tall, over the row backgrounds.
+     */
+    private void drawPinnedRowStrip(GuiGraphics g) {
+        if (!repo.hasPinnedRow() || cols <= 0 || rows <= 0) {
+            return;
+        }
+        TERMINAL.copy()
+                .src(0, PINNED_ROW_SRC_Y, Math.min(PINNED_ROW_NATIVE_WIDTH, cols * SLOT), SLOT)
+                .dest(contentLeft(), contentTop())
+                .blit(g);
     }
 
     /** Right-hand rail. Outside chrome unless a sibling occupies this leaf's right edge. */
