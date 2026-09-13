@@ -380,7 +380,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         // Slot coordinates are absolute screen coords set directly by panels, so they're unaffected.
         this.imageWidth = 0;
         this.imageHeight = 0;
-        setSlotsHidden(SlotSemantics.TOOLBOX, true);
+        layoutToolboxSlots();
 
         boolean firstOpen = dock.isEmpty();
         if (firstOpen) {
@@ -659,10 +659,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             if (viewCellColumn != null) {
                 viewCellColumn.hide();
             }
-            hideVanillaToolboxSlots();
+            layoutToolboxSlots();
             return;
-        }
-        int attachX = extraColumnAttachX(group);
+        }        int attachX = extraColumnAttachX(group);
         if (rightEdgeIsPatternCache(group)) {
             attachX += 2;
         } else {
@@ -683,14 +682,20 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         } else if (viewCellColumn != null) {
             viewCellColumn.hide();
         }
-        hideVanillaToolboxSlots();
+        layoutToolboxSlots();
     }
 
     /**
-     * The terminal's network toolkit lives in the dock module. AE2's own TOOLBOX slots (a carried
-     * vanilla network tool) stay parked so the same inventory is not drawn twice.
+     * The network-tool module owns whatever {@link MESTMenu#getNetworkToolkitSlots()} reports — the
+     * carried vanilla tool's slots when there is one, the terminal's built-in inventory otherwise.
+     * TOOLBOX slots are only parked while that module is hidden.
      */
-    private void hideVanillaToolboxSlots() {
+    private void layoutToolboxSlots() {
+        List<Slot> owned = getMenu().getNetworkToolkitSlots();
+        if (!owned.isEmpty() && networkToolkitPanel != null
+                && dock.isEffectivelyVisible(networkToolkitPanel)) {
+            return;
+        }
         for (Slot slot : getMenu().getSlots(SlotSemantics.TOOLBOX)) {
             slot.x = -9999;
             slot.y = -9999;

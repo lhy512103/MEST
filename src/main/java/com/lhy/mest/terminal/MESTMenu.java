@@ -284,10 +284,12 @@ public class MESTMenu extends CraftingTermMenu {
     }
 
     /**
-     * Prefer the expanded MEST network toolkit; fall back to AE2's 9-slot TOOLBOX.
+     * A carried vanilla network tool wins, matching AE machines (which keep AE2's own toolbox in
+     * that case); otherwise the panel shows the terminal's built-in upgrade inventory.
      */
     public List<Slot> getNetworkToolkitSlots() {
-        return getSlots(MestSlotSemantics.NETWORK_TOOLKIT);
+        List<Slot> vanilla = getSlots(SlotSemantics.TOOLBOX);
+        return vanilla.isEmpty() ? getSlots(MestSlotSemantics.NETWORK_TOOLKIT) : vanilla;
     }
 
     public ItemStack getToolkitMemoryStack(int toolkitIndex) {
