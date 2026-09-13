@@ -24,8 +24,7 @@ public class NetworkToolkitPanel extends ModulePanel {
     private static final int TRACK_WIDTH = 5;
     private static final int TRACK_INNER = 3;
     private static final int INSIDE_TRACK_GAP = 2;
-    private static final int TRACK_SHIFT_X = 3;
-    private static final int INSIDE_GUTTER = INSIDE_TRACK_GAP + TRACK_WIDTH + TRACK_SHIFT_X;
+    private static final int INSIDE_GUTTER = INSIDE_TRACK_GAP + TRACK_WIDTH + 2;
     private static final int TRACK_BORDER = 0xFFF2F2F2;
     private static final int TRACK_FILL = 0xFF9A9FB4;
 
@@ -130,20 +129,34 @@ public class NetworkToolkitPanel extends ModulePanel {
             g.vLine(gridLeft + width - 1, gridTop, gridTop + occupiedRows * SLOT - 1, 0xFFF2F2F2);
         }
         g.flush();
-        int trackHeight = Math.max(1, occupiedRows * SLOT);
         if (maxScroll() > 0) {
-            int trackLeft = contentLeft() + COLS * SLOT + INSIDE_TRACK_GAP + TRACK_SHIFT_X;
-            int x1 = trackLeft + TRACK_WIDTH - 1;
-            int y1 = contentTop() + trackHeight - 1;
-            g.hLine(trackLeft, x1, contentTop(), TRACK_BORDER);
-            g.hLine(trackLeft, x1, y1, TRACK_BORDER);
-            g.vLine(trackLeft, contentTop(), y1, TRACK_BORDER);
-            g.vLine(x1, contentTop(), y1, TRACK_BORDER);
-            if (trackHeight > 2) {
-                g.fill(trackLeft + 1, contentTop() + 1, trackLeft + 1 + TRACK_INNER, y1, TRACK_FILL);
-            }
+            int trackLeft = trackLeft();
+            int trackTop = contentTop();
+            int trackHeight = trackHeight();
+            drawTrack(g, trackLeft, trackTop, trackHeight);
             scrollbar.drawForegroundLayer(g, new Rect2i(0, 0, 0, 0), new Point(mouseX, mouseY));
         }
+    }
+
+    /** Same recipe as {@code ToolkitPanel}: 7px handle centred on the 5px track. */
+    private void drawTrack(GuiGraphics g, int x, int y, int height) {
+        int x1 = x + TRACK_WIDTH - 1;
+        int y1 = y + height - 1;
+        g.hLine(x, x1, y, TRACK_BORDER);
+        g.hLine(x, x1, y1, TRACK_BORDER);
+        g.vLine(x, y, y1, TRACK_BORDER);
+        g.vLine(x1, y, y1, TRACK_BORDER);
+        if (height > 2) {
+            g.fill(x + 1, y + 1, x + 1 + TRACK_INNER, y1, TRACK_FILL);
+        }
+    }
+
+    private int trackLeft() {
+        return contentLeft() + COLS * SLOT + INSIDE_TRACK_GAP;
+    }
+
+    private int trackHeight() {
+        return Math.max(1, rows * SLOT - 1);
     }
 
     @Override
@@ -199,10 +212,9 @@ public class NetworkToolkitPanel extends ModulePanel {
         int shown = Math.max(1, Math.min(rows, neededRows()));
         int max = Math.max(0, neededRows() - shown);
         scrollbar.setRange(0, max, 1);
-        int height = Math.max(1, shown * SLOT);
-        scrollbar.setHeight(Math.max(1, height - 2));
-        scrollbar.setPosition(new Point(contentLeft() + COLS * SLOT + INSIDE_TRACK_GAP + TRACK_SHIFT_X + 1,
-                contentTop() + 1));
+        scrollbar.setHeight(Math.max(1, trackHeight() - 2));
+        // Thumb sits in the 3px inner fill of the 5px track, same inset as ToolkitPanel.
+        scrollbar.setPosition(new Point(trackLeft() - 1, contentTop() + 1));
         scrollbar.setCurrentScroll(Math.min(scrollRows, max));
         scrollRows = scrollbar.getCurrentScroll();
     }

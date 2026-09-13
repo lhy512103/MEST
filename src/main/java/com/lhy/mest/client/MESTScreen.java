@@ -81,7 +81,6 @@ import com.lhy.mest.client.dock.ExtraSlotColumn;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.PanelSideBar;
 import com.lhy.mest.client.dock.ScrollingUpgradeColumn;
-import com.lhy.mest.client.dock.ToolboxChrome;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.panel.CraftingPanel;
 import com.lhy.mest.client.panel.CraftingTerminalPanel;
@@ -118,7 +117,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private final PanelSideBar moreSettingsBar = new PanelSideBar();
     private ExtraChrome upgradeColumn;
     private ExtraSlotColumn viewCellColumn;
-    private ToolboxChrome toolboxColumn;
     private final MestAddonUpgradeButtons addonUpgradeButtons = new MestAddonUpgradeButtons();
     private ToolbarIconButton viewCellsToggleBtn;
     private boolean viewCellsVisible = true;
@@ -661,9 +659,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             if (viewCellColumn != null) {
                 viewCellColumn.hide();
             }
-            if (toolboxColumn != null) {
-                toolboxColumn.hide();
-            }
+            hideVanillaToolboxSlots();
             return;
         }
         int attachX = extraColumnAttachX(group);
@@ -687,49 +683,14 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         } else if (viewCellColumn != null) {
             viewCellColumn.hide();
         }
-        layoutToolbox(group);
+        hideVanillaToolboxSlots();
     }
 
-    private void layoutToolbox(DockRect group) {
-        List<Slot> toolboxSlots = getMenu().getNetworkToolkitSlots();
-        if (toolboxSlots.isEmpty()) {
-            if (toolboxColumn != null) {
-                toolboxColumn.hide();
-            }
-            return;
-        }
-        if (toolboxColumn == null || !toolboxColumn.ownsSlot(toolboxSlots.getFirst())) {
-            Component name = getMenu().getToolbox().getName();
-            if (name.getString().isEmpty()) {
-                name = GuiText.NetworkTool.text();
-            }
-            toolboxColumn = new ToolboxChrome(toolboxSlots, name);
-        }
-        hideVanillaToolboxWhenExpanded();
-        boolean moduleVisible = networkToolkitPanel != null && dock.isEffectivelyVisible(networkToolkitPanel);
-        if (moduleVisible) {
-            toolboxColumn.hide();
-            networkToolkitPanel.layoutSlots();
-            return;
-        }
-        if (networkToolkitPanel != null) {
-            networkToolkitPanel.layoutSlots();
-        }
-        int x = extraColumnAttachX(group);
-        if (rightEdgeIsPatternCache(group)) {
-            x += 2;
-        } else {
-            x -= 2;
-        }
-        int y = Math.max(group.y(), group.bottom() - ToolboxChrome.HEIGHT);
-        if (group.width() < 32 || group.height() < 32) {
-            toolboxColumn.hide();
-            return;
-        }
-        toolboxColumn.layoutAgainst(x, y, true);
-    }
-
-    private void hideVanillaToolboxWhenExpanded() {
+    /**
+     * The terminal's network toolkit lives in the dock module. AE2's own TOOLBOX slots (a carried
+     * vanilla network tool) stay parked so the same inventory is not drawn twice.
+     */
+    private void hideVanillaToolboxSlots() {
         for (Slot slot : getMenu().getSlots(SlotSemantics.TOOLBOX)) {
             slot.x = -9999;
             slot.y = -9999;
@@ -954,18 +915,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 g.pose().popPose();
             }
         }
-        if (toolboxColumn != null && toolboxColumn.isVisible()) {
-            toolboxColumn.renderBackground(g);
-            g.flush();
-            g.pose().pushPose();
-            try {
-                g.pose().translate(0.0F, 0.0F, DockManager.SLOT_CONTENT_Z);
-                toolboxColumn.renderSlots(g, this::drawRootSlot);
-                g.flush();
-            } finally {
-                g.pose().popPose();
-            }
-        }
     }
 
     /**
@@ -1070,11 +1019,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         if (viewCellColumn != null && viewCellColumn.isVisible()) {
             Rect2i extra = viewCellColumn.bounds();
-            right = Math.max(right, extra.getX() + extra.getWidth());
-            bottom = Math.max(bottom, extra.getY() + extra.getHeight());
-        }
-        if (toolboxColumn != null && toolboxColumn.isVisible()) {
-            Rect2i extra = toolboxColumn.bounds();
             right = Math.max(right, extra.getX() + extra.getWidth());
             bottom = Math.max(bottom, extra.getY() + extra.getHeight());
         }
@@ -1197,7 +1141,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         addExtraColumnExclusion(zones, upgradeColumn);
         addExtraColumnExclusion(zones, viewCellColumn);
-        addExtraColumnExclusion(zones, toolboxColumn);
         return zones;
     }
 
@@ -1851,9 +1794,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         if (viewCellColumn != null) {
             columns.add(viewCellColumn);
-        }
-        if (toolboxColumn != null) {
-            columns.add(toolboxColumn);
         }
         return columns;
     }
