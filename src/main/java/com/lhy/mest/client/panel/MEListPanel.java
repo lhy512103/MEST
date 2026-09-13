@@ -13,8 +13,10 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.renderer.Rect2i;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.Slot;
 
 import appeng.api.client.AEKeyRendering;
@@ -28,6 +30,7 @@ import appeng.api.stacks.AmountFormat;
 import appeng.api.util.IConfigManager;
 import appeng.client.Point;
 import appeng.client.gui.me.common.Repo;
+import appeng.client.gui.me.common.PendingCraftingJobs;
 import appeng.client.gui.me.common.RepoSlot;
 import appeng.client.gui.me.common.StackSizeRenderer;
 import appeng.client.gui.style.Blitter;
@@ -37,6 +40,7 @@ import appeng.client.gui.widgets.ITooltip;
 import appeng.client.gui.widgets.Scrollbar;
 import appeng.client.gui.widgets.TabButton;
 import appeng.core.AEConfig;
+import appeng.core.AppEng;
 import appeng.core.localization.GuiText;
 import appeng.integration.abstraction.ItemListMod;
 import appeng.menu.me.common.GridInventoryEntry;
@@ -319,12 +323,37 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         if (hosted) {
             return;
         }
+        renderPinnedRowDecorations(g);
         AbstractWidget hovered = hoveredChrome(mouseX, mouseY);
         if (hovered == craftingStatusBtn) {
             return;
         }
         if (hovered instanceof ITooltip tooltip && !tooltip.getTooltipMessage().isEmpty()) {
             g.renderComponentTooltip(font, tooltip.getTooltipMessage(), mouseX, mouseY);
+        }
+    }
+
+    /**
+     * The "pinned crafted items" row background: AE2's {@code MEStorageScreen} paints an animated
+     * molecular-assembler light over every slot whose item is currently being crafted. Replicated
+     * here because this screen is a custom dock UI and cannot inherit that screen.
+     */
+    private void renderPinnedRowDecorations(GuiGraphics g) {
+        if (!repo.hasPinnedRow()) {
+            return;
+        }
+        var atlas = Minecraft.getInstance().getTextureAtlas(InventoryMenu.BLOCK_ATLAS);
+        for (RepoSlot repoSlot : repoSlots) {
+            GridInventoryEntry entry = repoSlot.getEntry();
+            if (entry == null || !PendingCraftingJobs.hasPendingJob(entry.getWhat())) {
+                continue;
+            }
+            TextureAtlasSprite sprite = atlas.apply(AppEng.makeId("block/molecular_assembler_lights"));
+            Blitter.sprite(sprite)
+                    .src(sprite.getX() + 2, sprite.getY() + 2,
+                            sprite.contents().width() - 4, sprite.contents().height() - 4)
+                    .dest(repoSlot.x - 1, repoSlot.y - 1, 18, 18)
+                    .blit(g);
         }
     }
 

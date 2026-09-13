@@ -258,7 +258,22 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     public void dismissWirelessSettings() {
-        dismissUnpinnedFloating(wirelessSettingsPanel);
+        dismissWirelessSettingsPanel();
+    }
+
+    /**
+     * The wireless-settings panel is a transient popover: interacting with any other panel hides it
+     * rather than leaving it open behind the workspace stack. Pinning does not keep it open, and
+     * being covered by the panel just clicked must not block the dismissal either.
+     */
+    private void dismissWirelessSettingsPanel() {
+        if (wirelessSettingsPanel == null) {
+            return;
+        }
+        if (!dock.policyFor(wirelessSettingsPanel).visible()) {
+            return;
+        }
+        dock.hideModule(wirelessSettingsPanel);
     }
 
     private void dismissUnpinnedFloating(ModulePanel panel) {
@@ -266,10 +281,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             return;
         }
         var policy = dock.policyFor(panel);
-        if (!policy.floating() || policy.pinned()) {
-            return;
-        }
-        if (!dock.isEffectivelyVisible(panel)) {
+        if (!policy.floating() || policy.pinned() || !policy.visible()) {
             return;
         }
         dock.hideModule(panel);
@@ -1581,7 +1593,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             dismissProviderPicker(true);
         }
         if (target != wirelessSettingsPanel) {
-            dismissUnpinnedFloating(wirelessSettingsPanel);
+            dismissWirelessSettingsPanel();
         }
         if (target != toolkitPanel) {
             dismissUnpinnedFloating(toolkitPanel);
