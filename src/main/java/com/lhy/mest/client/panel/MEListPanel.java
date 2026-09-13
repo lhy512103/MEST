@@ -70,6 +70,12 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     private static final Set<String> REPORTED_RENDER_FAILURES = new HashSet<>();
 
     private static String rememberedSearch = "";
+    /**
+     * Search text carried across a screen rebuild inside one session (sub-screens such as the craft
+     * amount screen close and reopen the terminal). AE2 keeps this in {@code MEStorageScreen}'s
+     * state, which this screen cannot inherit because it is a custom dock UI.
+     */
+    private static String sessionSearch = "";
 
     private final MESTMenu menu;
     private final IConfigManager configSrc;
@@ -113,6 +119,12 @@ public class MEListPanel extends ModulePanel implements ISortSource {
                 && rememberedSearch != null && !rememberedSearch.isEmpty()) {
             field.setValue(rememberedSearch);
             onSearchChanged(rememberedSearch);
+            field.setFocused(false);
+        } else if (!sessionSearch.isEmpty() && repo.getSearchString().isEmpty()) {
+            // Same session, fresh Repo (e.g. back from the craft amount screen): keep the filter.
+            field.setValue(sessionSearch);
+            onSearchChanged(sessionSearch);
+            field.selectAll();
             field.setFocused(false);
         }
     }
@@ -261,6 +273,18 @@ public class MEListPanel extends ModulePanel implements ISortSource {
             return;
         }
         rememberedSearch = AEConfig.instance().isRememberLastSearch() ? searchField.getValue() : "";
+        sessionSearch = rememberedSearch;
+    }
+
+    /**
+     * AE2's {@code MEStorageScreen.storeState()}: hand the current search to the next screen before
+     * switching terminals or opening a sub-screen. Unconditional, exactly like the vanilla method.
+     */
+    public void storeSearch() {
+        if (searchField != null) {
+            rememberedSearch = searchField.getValue();
+            sessionSearch = rememberedSearch;
+        }
     }
 
     @Override
@@ -515,7 +539,8 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     private Set<AEKeyType> sortKeyTypesCache;
 
     private void onSearchChanged(String text) {
-        repo.setSearchString(text == null ? "" : text);
+        sessionSearch = text == null ? "" : text;
+        repo.setSearchString(sessionSearch);
         repo.updateView();
         updateScrollbar();
     }

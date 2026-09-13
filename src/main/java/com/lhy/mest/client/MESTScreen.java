@@ -2343,6 +2343,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     public void storeState() {
         dock.save();
         dock.saveUiPreferences();
+        if (meListPanel != null) {
+            // Mirrors AE2's MEStorageScreen.storeState(): carry the search to the next screen.
+            meListPanel.storeSearch();
+        }
     }
 
     void closePatternAccessSubscription() {
