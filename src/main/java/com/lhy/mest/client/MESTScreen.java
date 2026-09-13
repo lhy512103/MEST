@@ -100,6 +100,7 @@ import com.lhy.mest.compat.plus.PlusScreenSupport;
 import com.lhy.mest.network.PatternProviderActionPacket;
 import com.lhy.mest.network.ProviderPickerListPacket;
 import com.lhy.mest.terminal.MESTMenu;
+import com.lhy.mest.terminal.MestSlotSemantics;
 import com.lhy.mest.terminal.ToolkitSlot;
 
 /**
@@ -700,18 +701,25 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     /**
      * The network-tool module owns whatever {@link MESTMenu#getNetworkToolkitSlots()} reports — the
      * carried vanilla tool's slots when there is one, the terminal's built-in inventory otherwise.
-     * TOOLBOX slots are only parked while that module is hidden.
+     * The set the module does not show is parked, so neither ends up drawn at the screen origin.
      */
     private void layoutToolboxSlots() {
-        List<Slot> owned = getMenu().getNetworkToolkitSlots();
-        if (!owned.isEmpty() && networkToolkitPanel != null
-                && dock.isEffectivelyVisible(networkToolkitPanel)) {
-            return;
-        }
+        boolean moduleVisible = networkToolkitPanel != null && dock.isEffectivelyVisible(networkToolkitPanel);
         for (Slot slot : getMenu().getSlots(SlotSemantics.TOOLBOX)) {
-            slot.x = -9999;
-            slot.y = -9999;
+            if (!moduleVisible || !networkToolkitPanel.ownsSlot(slot)) {
+                parkSlot(slot);
+            }
         }
+        for (Slot slot : getMenu().getSlots(MestSlotSemantics.NETWORK_TOOLKIT)) {
+            if (!moduleVisible || !networkToolkitPanel.ownsSlot(slot)) {
+                parkSlot(slot);
+            }
+        }
+    }
+
+    private static void parkSlot(Slot slot) {
+        slot.x = -9999;
+        slot.y = -9999;
     }
 
     /**
