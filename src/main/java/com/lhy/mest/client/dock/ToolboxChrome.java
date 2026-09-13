@@ -25,7 +25,7 @@ public class ToolboxChrome implements ICompositeWidget {
     /** Inset from the panel edge to the first slot: the AE2 window bevel is 4px wide. */
     public static final int PAD = 4;
     /** Left shift of the whole panel when the custom borderless skin is installed. */
-    private static final int CUSTOM_SHIFT_X = 1;
+    private static final int CUSTOM_SHIFT_X = 0;
     private static final int SLOT = 18;
     private static final int COLS = 3;
     private static final int ROWS = 3;
@@ -35,6 +35,8 @@ public class ToolboxChrome implements ICompositeWidget {
     private static final int INSIDE_GUTTER = TRACK_GAP + TRACK_WIDTH + 2;
     private static final int TRACK_BORDER = 0xFFF2F2F2;
     private static final int TRACK_FILL = 0xFF9A9FB4;
+    /** Frame around the 3×3 grid; identical to the network-tool module's grid border. */
+    private static final int GRID_BORDER = 0xFFF2F2F2;
     public static final int WIDTH = 2 * PAD + COLS * SLOT + INSIDE_GUTTER;
     public static final int HEIGHT = 2 * PAD + ROWS * SLOT;
 
@@ -142,6 +144,7 @@ public class ToolboxChrome implements ICompositeWidget {
             for (int cell = 0; cell < visibleCells; cell++) {
                 ModulePanel.drawSlot(g, x + PAD + (cell % COLS) * SLOT, y + PAD + (cell / COLS) * SLOT);
             }
+            drawGridBorder(g, x + PAD, y + PAD);
             if (scrollbar.isVisible()) {
                 drawTrack(g, trackLeft(), y + PAD, ROWS * SLOT - 1);
                 scrollbar.drawForegroundLayer(g, new Rect2i(0, 0, 0, 0), mouse);
@@ -151,8 +154,20 @@ public class ToolboxChrome implements ICompositeWidget {
         }
     }
 
-    private void drawTrack(GuiGraphics g, int x, int y, int height) {
-        int x1 = x + TRACK_WIDTH - 1;
+    /**
+     * Same 1px frame the terminal's network-tool module draws around its grid, so the machine
+     * panel matches it.
+     */
+    private void drawGridBorder(GuiGraphics g, int gridX, int gridY) {
+        int x1 = gridX + COLS * SLOT - 1;
+        int y1 = gridY + ROWS * SLOT - 1;
+        g.hLine(gridX, x1, gridY, GRID_BORDER);
+        g.hLine(gridX, x1, y1, GRID_BORDER);
+        g.vLine(gridX, gridY, y1, GRID_BORDER);
+        g.vLine(x1, gridY, y1, GRID_BORDER);
+    }
+
+    private void drawTrack(GuiGraphics g, int x, int y, int height) {        int x1 = x + TRACK_WIDTH - 1;
         int y1 = y + height - 1;
         g.hLine(x, x1, y, TRACK_BORDER);
         g.hLine(x, x1, y1, TRACK_BORDER);

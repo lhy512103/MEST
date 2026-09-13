@@ -70,9 +70,10 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     private static final int CRAFT_STATUS_SIZE = 20;
     private static final int CRAFT_STATUS_OVERHANG = 4;
     private static final int TITLE_SEARCH_TOP = 4;
-    /** Pinned-row strip inside {@code guis/terminal.png}: 9 slots wide, one row tall, at y=204. */
+    /** Pinned-row strip inside {@code guis/terminal.png}: one 18px cell per slot, at y=204. */
     private static final int PINNED_ROW_SRC_Y = 204;
-    private static final int PINNED_ROW_NATIVE_WIDTH = 162;
+    /** Cells 2..n start here; the art is exactly 18px periodic from this x. */
+    private static final int PINNED_ROW_CELL_X = 1;
     private static final Blitter TERMINAL = Blitter.texture("guis/terminal.png", 256, 256);
     private static final Set<String> REPORTED_RENDER_FAILURES = new HashSet<>();
 
@@ -720,17 +721,23 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     }
 
     /**
-     * The pinned row's background strip, exactly as AE2's {@code MEStorageScreen.drawBG} blits it:
-     * {@code guis/terminal.png} at (0, 204), one row tall, over the row backgrounds.
+     * The pinned row's background strip, as AE2's {@code MEStorageScreen.drawBG} blits it:
+     * {@code guis/terminal.png} at (0, 204), one row tall, over the row backgrounds. AE2 only ever
+     * needs the native nine columns; the art is 18px periodic, so it is tiled per column here.
      */
     private void drawPinnedRowStrip(GuiGraphics g) {
         if (!repo.hasPinnedRow() || cols <= 0 || rows <= 0) {
             return;
         }
-        TERMINAL.copy()
-                .src(0, PINNED_ROW_SRC_Y, Math.min(PINNED_ROW_NATIVE_WIDTH, cols * SLOT), SLOT)
-                .dest(contentLeft(), contentTop())
-                .blit(g);
+        int gridLeft = contentLeft();
+        int gridTop = contentTop();
+        TERMINAL.copy().src(0, PINNED_ROW_SRC_Y, SLOT, SLOT).dest(gridLeft, gridTop).blit(g);
+        for (int col = 1; col < cols; col++) {
+            TERMINAL.copy()
+                    .src(PINNED_ROW_CELL_X, PINNED_ROW_SRC_Y, SLOT, SLOT)
+                    .dest(gridLeft + col * SLOT, gridTop)
+                    .blit(g);
+        }
     }
 
     /** Right-hand rail. Outside chrome unless a sibling occupies this leaf's right edge. */
