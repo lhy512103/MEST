@@ -133,10 +133,12 @@ public final class DockLayoutCodec {
     }
 
     /**
-     * v4 placement tweak: an older document may hold the network-tool panel at the pre-shift spot.
+     * Placement tweaks: an older document may hold the network-tool panel further right than the
+     * current default.
      */
     private static void migrateNetworkToolkitPlacement(List<FloatingRoot> roots, int version) {
-        if (version >= DockLayoutDto.CURRENT_VERSION) {
+        int shift = DockWorkspaceDefaults.networkToolkitShiftFrom(version);
+        if (shift <= 0) {
             return;
         }
         for (int index = 0; index < roots.size(); index++) {
@@ -149,7 +151,8 @@ public final class DockLayoutCodec {
                 }
             }
             if (holdsNetworkToolkit) {
-                roots.set(index, root.withBounds(DockWorkspaceDefaults.networkToolkitBounds(root.bounds())));
+                roots.set(index, root.withBounds(
+                        DockWorkspaceDefaults.networkToolkitBounds(root.bounds(), shift)));
             }
         }
     }

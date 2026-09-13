@@ -18,8 +18,8 @@ public record DockLayoutDto(
         Map<String, DockSize> restoreSizes,
         SpliceMode spliceMode,
         Map<String, ContentOffset> contentOffsets) {
-    /** v4 tightened the network-tool panel's placement by 4px; older documents are migrated. */
-    public static final int CURRENT_VERSION = 4;
+    /** v4 tightened the network-tool panel's placement; v5 tightened it by another 2px. */
+    public static final int CURRENT_VERSION = 5;
     /** Oldest version this codec still decodes. */
     public static final int MIN_SUPPORTED_VERSION = 2;
 

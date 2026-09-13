@@ -18,20 +18,43 @@ import com.lhy.mest.client.dock.model.NodeIds;
 public final class DockWorkspaceDefaults {
     private static final String BUNDLED_LAYOUT = "/assets/mesplicedterminal/layouts/default.json";
     public static final String NETWORK_TOOLKIT_MODULE = "network_toolkit";
-    /** The network-tool panel sits 4px further left than the generic cascade placement. */
-    public static final int NETWORK_TOOLKIT_SHIFT_X = 4;
+    /**
+     * Placement deltas by source layout version: index 3 is the v3→v4 shift, index 4 the v4→v5 one.
+     * {@link #NETWORK_TOOLKIT_SHIFT_X} is their sum, i.e. the offset new placements use.
+     */
+    private static final int[] SHIFT_BY_FROM_VERSION = { 0, 0, 0, 4, 2 };
+    /** The network-tool panel sits 6px further left than the generic cascade placement. */
+    public static final int NETWORK_TOOLKIT_SHIFT_X = 6;
 
     private DockWorkspaceDefaults() {
     }
 
-    /** Placement tweak for {@link #NETWORK_TOOLKIT_MODULE}; every other module is unchanged. */
-    public static DockRect defaultBounds(String moduleId, DockRect bounds) {
-        return NETWORK_TOOLKIT_MODULE.equals(moduleId) ? networkToolkitBounds(bounds) : bounds;
+    /** Cumulative shift owed to a document stored as {@code version}. */
+    public static int networkToolkitShiftFrom(int version) {
+        int shift = 0;
+        for (int from = Math.max(0, version); from < SHIFT_BY_FROM_VERSION.length; from++) {
+            shift += SHIFT_BY_FROM_VERSION[from];
+        }
+        return shift;
     }
 
-    public static DockRect networkToolkitBounds(DockRect bounds) {
+    /** Placement tweak for {@link #NETWORK_TOOLKIT_MODULE}; every other module is unchanged. */
+    public static DockRect defaultBounds(String moduleId, DockRect bounds) {
+        return NETWORK_TOOLKIT_MODULE.equals(moduleId)
+                ? shiftNetworkToolkit(bounds, NETWORK_TOOLKIT_SHIFT_X)
+                : bounds;
+    }
+
+    public static DockRect networkToolkitBounds(DockRect bounds, int shift) {
+        return shiftNetworkToolkit(bounds, shift);
+    }
+
+    private static DockRect shiftNetworkToolkit(DockRect bounds, int shift) {
+        if (shift == 0) {
+            return bounds;
+        }
         return new DockRect(
-                Math.max(0, bounds.x() - NETWORK_TOOLKIT_SHIFT_X),
+                Math.max(0, bounds.x() - shift),
                 bounds.y(),
                 bounds.width(),
                 bounds.height());

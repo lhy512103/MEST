@@ -24,6 +24,7 @@ import appeng.menu.AEBaseMenu;
 import appeng.menu.SlotSemantic;
 import appeng.menu.SlotSemantics;
 
+import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.client.MESTScreen;
 import com.lhy.mest.client.dock.ToolboxChrome;
 import com.lhy.mest.terminal.MestNetworkToolkitAccess;
@@ -77,11 +78,18 @@ public abstract class NetworkToolboxScreenMixin {
             return;
         }
         if (mest$toolbox != null && mest$toolbox.ownsSlot(slots.get(0))) {
+            // AE2 re-populates widgets on every init() and re-anchors any "toolbox" composite to the
+            // vanilla widget position, so our placement has to be re-asserted here.
+            mest$toolbox.setPosition(mest$toolboxPosition(screen));
             return;
         }
         mest$toolbox = new ToolboxChrome(slots, GuiText.NetworkTool.text());
-        mest$toolbox.setPosition(mest$toolboxPosition(screen));
+        Point position = mest$toolboxPosition(screen);
+        mest$toolbox.setPosition(position);
         mest$replaced = ((WidgetContainerAccessor) widgets).mest$compositeWidgets().put("toolbox", mest$toolbox);
+        MESplicedterminal.LOGGER.info(
+                "MEST: network toolbox panel at {},{} ({} slots, skin shift {})",
+                position.getX(), position.getY(), slots.size(), ToolboxChrome.shiftX());
     }
 
     @Unique
