@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 
 import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.DockWorkspace;
 import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.dock.model.LeafNode;
@@ -16,8 +17,24 @@ import com.lhy.mest.client.dock.model.NodeIds;
 /** Deterministic default roots for registered modules. */
 public final class DockWorkspaceDefaults {
     private static final String BUNDLED_LAYOUT = "/assets/mesplicedterminal/layouts/default.json";
+    public static final String NETWORK_TOOLKIT_MODULE = "network_toolkit";
+    /** The network-tool panel sits 4px further left than the generic cascade placement. */
+    public static final int NETWORK_TOOLKIT_SHIFT_X = 4;
 
     private DockWorkspaceDefaults() {
+    }
+
+    /** Placement tweak for {@link #NETWORK_TOOLKIT_MODULE}; every other module is unchanged. */
+    public static DockRect defaultBounds(String moduleId, DockRect bounds) {
+        return NETWORK_TOOLKIT_MODULE.equals(moduleId) ? networkToolkitBounds(bounds) : bounds;
+    }
+
+    public static DockRect networkToolkitBounds(DockRect bounds) {
+        return new DockRect(
+                Math.max(0, bounds.x() - NETWORK_TOOLKIT_SHIFT_X),
+                bounds.y(),
+                bounds.width(),
+                bounds.height());
     }
 
     public static DockWorkspace create(ModuleCatalog catalog, LegacyMigrationContext geometry) {
@@ -31,7 +48,7 @@ public final class DockWorkspaceDefaults {
             var leaf = new LeafNode(leafNodeId(moduleId), moduleId, defaultVisible(moduleId));
             roots.add(new FloatingRoot(
                     rootId(moduleId),
-                    geometry.defaultRootBounds(catalog.metrics(moduleId), index++),
+                    defaultBounds(moduleId, geometry.defaultRootBounds(catalog.metrics(moduleId), index++)),
                     leaf));
         }
         DockWorkspace workspace = new DockWorkspace(roots);

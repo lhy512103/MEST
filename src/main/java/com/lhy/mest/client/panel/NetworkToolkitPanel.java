@@ -109,7 +109,7 @@ public class NetworkToolkitPanel extends ModulePanel {
 
     @Override
     public int contentLeft() {
-        return x + contentInsetX() + contentOffsetX;
+        return x + PAD + contentOffsetX;
     }
 
     @Override
@@ -155,14 +155,6 @@ public class NetworkToolkitPanel extends ModulePanel {
     @Override
     public int preferredContentRightInset() {
         return visible ? INSIDE_GUTTER : 0;
-    }
-
-    /**
-     * Left inset of the grid. With the custom borderless skin the art has no left frame, so the
-     * content sits 4px further left, flush with the panel's left edge.
-     */
-    private static int contentInsetX() {
-        return MestPanelSkin.isCustom() ? 0 : PAD;
     }
 
     @Override

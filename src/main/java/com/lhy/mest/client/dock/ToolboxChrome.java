@@ -24,11 +24,8 @@ import appeng.menu.slot.AppEngSlot;
 public class ToolboxChrome implements ICompositeWidget {
     /** Inset from the panel edge to the first slot: the AE2 window bevel is 4px wide. */
     public static final int PAD = 4;
-    /**
-     * Left inset when the custom borderless skin is installed: the art has no left frame, so the
-     * content sits flush with the panel's left edge (4px further left than the AE2 fallback).
-     */
-    private static final int CUSTOM_INSET_X = 0;
+    /** Extra left shift of the whole panel when the custom borderless skin is installed. */
+    private static final int CUSTOM_SHIFT_X = 4;
     private static final int SLOT = 18;
     private static final int COLS = 3;
     private static final int ROWS = 3;
@@ -38,6 +35,8 @@ public class ToolboxChrome implements ICompositeWidget {
     private static final int INSIDE_GUTTER = TRACK_GAP + TRACK_WIDTH + 2;
     private static final int TRACK_BORDER = 0xFFF2F2F2;
     private static final int TRACK_FILL = 0xFF9A9FB4;
+    public static final int WIDTH = 2 * PAD + COLS * SLOT + INSIDE_GUTTER;
+    public static final int HEIGHT = 2 * PAD + ROWS * SLOT;
 
     private final List<Slot> slots;
     private final Component toolName;
@@ -56,16 +55,9 @@ public class ToolboxChrome implements ICompositeWidget {
         return enabledCount(slots) > 0;
     }
 
-    private static int insetX() {
-        return MestPanelSkin.isCustom() ? CUSTOM_INSET_X : PAD;
-    }
-
-    public static int width() {
-        return insetX() + COLS * SLOT + INSIDE_GUTTER + PAD;
-    }
-
-    public static int height() {
-        return 2 * PAD + ROWS * SLOT;
+    /** Whole-panel left shift; the frame and its content move together. */
+    public static int shiftX() {
+        return MestPanelSkin.isCustom() ? CUSTOM_SHIFT_X : 0;
     }
 
     public boolean isVisible() {
@@ -79,14 +71,14 @@ public class ToolboxChrome implements ICompositeWidget {
 
     @Override
     public void setPosition(Point position) {
-        bounds = new Rect2i(position.getX(), position.getY(), width(), height());
+        bounds = new Rect2i(position.getX(), position.getY(), WIDTH, HEIGHT);
         layoutScrollbar();
         placeSlots();
     }
 
     @Override
     public void setSize(int width, int height) {
-        bounds = new Rect2i(bounds.getX(), bounds.getY(), width(), height());
+        bounds = new Rect2i(bounds.getX(), bounds.getY(), WIDTH, HEIGHT);
     }
 
     public boolean ownsSlot(Slot slot) {
@@ -127,7 +119,7 @@ public class ToolboxChrome implements ICompositeWidget {
                 slot.x = -9999;
                 slot.y = -9999;
             } else {
-                slot.x = bounds.getX() + insetX() + col * SLOT + 1;
+                slot.x = bounds.getX() + PAD + col * SLOT + 1;
                 slot.y = bounds.getY() + PAD + row * SLOT + 1;
             }
             index++;
@@ -145,10 +137,10 @@ public class ToolboxChrome implements ICompositeWidget {
             g.pose().translate(gui.getX(), gui.getY(), 0.0F);
             int x = bounds.getX();
             int y = bounds.getY();
-            MestPanelSkin.drawFrame(g, x, y, width(), height());
+            MestPanelSkin.drawFrame(g, x, y, WIDTH, HEIGHT);
             int visibleCells = Math.min(enabledCount(slots), ROWS * COLS);
             for (int cell = 0; cell < visibleCells; cell++) {
-                ModulePanel.drawSlot(g, x + insetX() + (cell % COLS) * SLOT, y + PAD + (cell / COLS) * SLOT);
+                ModulePanel.drawSlot(g, x + PAD + (cell % COLS) * SLOT, y + PAD + (cell / COLS) * SLOT);
             }
             if (scrollbar.isVisible()) {
                 drawTrack(g, trackLeft(), y + PAD, ROWS * SLOT - 1);
@@ -244,7 +236,7 @@ public class ToolboxChrome implements ICompositeWidget {
     }
 
     private int trackLeft() {
-        return bounds.getX() + insetX() + COLS * SLOT + TRACK_GAP;
+        return bounds.getX() + PAD + COLS * SLOT + TRACK_GAP;
     }
 
     private void layoutScrollbar() {

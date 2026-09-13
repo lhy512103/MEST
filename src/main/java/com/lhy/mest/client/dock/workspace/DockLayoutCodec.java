@@ -3,6 +3,7 @@ package com.lhy.mest.client.dock.workspace;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -22,6 +23,7 @@ import com.lhy.mest.client.dock.model.DockSize;
 import com.lhy.mest.client.dock.model.DockWorkspace;
 import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.dock.model.LayoutNode;
+import com.lhy.mest.client.dock.model.LayoutTrees;
 import com.lhy.mest.client.dock.model.LeafNode;
 import com.lhy.mest.client.dock.model.ModuleCatalog;
 import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
@@ -130,11 +132,34 @@ public final class DockLayoutCodec {
         return reconcile(fromDtoRaw(dto)).workspace();
     }
 
+    /**
+     * v4 placement tweak: an older document may hold the network-tool panel at the pre-shift spot.
+     */
+    private static void migrateNetworkToolkitPlacement(List<FloatingRoot> roots, int version) {
+        if (version >= DockLayoutDto.CURRENT_VERSION) {
+            return;
+        }
+        for (int index = 0; index < roots.size(); index++) {
+            FloatingRoot root = roots.get(index);
+            boolean holdsNetworkToolkit = false;
+            for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+                if (DockWorkspaceDefaults.NETWORK_TOOLKIT_MODULE.equals(leaf.moduleId())) {
+                    holdsNetworkToolkit = true;
+                    break;
+                }
+            }
+            if (holdsNetworkToolkit) {
+                roots.set(index, root.withBounds(DockWorkspaceDefaults.networkToolkitBounds(root.bounds())));
+            }
+        }
+    }
+
     private DockWorkspace fromDtoRaw(DockLayoutDto dto) throws DockLayoutFormatException {
         if (dto == null) {
             throw new DockLayoutFormatException("layout DTO must not be null");
         }
-        if (dto.version() != 2 && dto.version() != DockLayoutDto.CURRENT_VERSION) {
+        if (dto.version() < DockLayoutDto.MIN_SUPPORTED_VERSION
+                || dto.version() > DockLayoutDto.CURRENT_VERSION) {
             throw new DockLayoutFormatException("unsupported layout version: " + dto.version());
         }
         if (dto.roots() == null) {
@@ -153,6 +178,7 @@ public final class DockLayoutCodec {
                         root.bounds(),
                         fromDto(root.content(), budget, 1)));
             }
+            migrateNetworkToolkitPlacement(roots, dto.version());
             if (dto.version() == 2) {
                 DockWorkspace workspace = new DockWorkspace(roots);
                 WorkspaceValidator.validateStructure(workspace);
@@ -243,7 +269,9 @@ public final class DockLayoutCodec {
                     DockWorkspaceDefaults.defaultShowTerminalButton(moduleId)));
             retainedRoots.add(new FloatingRoot(
                     rootId,
-                    migrationContext.defaultRootBounds(catalog.metrics(moduleId), defaultIndex++),
+                    DockWorkspaceDefaults.defaultBounds(
+                            moduleId,
+                            migrationContext.defaultRootBounds(catalog.metrics(moduleId), defaultIndex++)),
                     new LeafNode(leafId, moduleId, visible)));
         }
 
@@ -427,7 +455,7 @@ public final class DockLayoutCodec {
 
     private DockLayoutDto readVersioned(JsonObject object) throws DockLayoutFormatException {
         int version = integer(object, "version", "document");
-        if (version != 2 && version != DockLayoutDto.CURRENT_VERSION) {
+        if (version < DockLayoutDto.MIN_SUPPORTED_VERSION || version > DockLayoutDto.CURRENT_VERSION) {
             throw new DockLayoutFormatException("unsupported layout version: " + version);
         }
         requireOnlyFields(object, version == 2 ? V2_FIELDS : V3_FIELDS, "document");
