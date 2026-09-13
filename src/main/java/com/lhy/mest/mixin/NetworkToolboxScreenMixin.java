@@ -115,12 +115,14 @@ public abstract class NetworkToolboxScreenMixin {
             if (grid != null) {
                 anchor = grid.getPosition(0, anchor.getX(), anchor.getY());
             }
+            // The frame stays on AE2's toolbox anchor; the content inset decides whether the wells
+            // sit inside a 4px bevel (AE2 fallback) or flush with the panel edge (custom skin).
             return new Point(
-                    anchor.getX() - ToolboxChrome.SLOT_ORIGIN,
-                    anchor.getY() - ToolboxChrome.SLOT_ORIGIN);
+                    anchor.getX() - ToolboxChrome.PAD - 1,
+                    anchor.getY() - ToolboxChrome.PAD - 1);
         }
         return new Point(
-                screen.getXSize() - 1 - ToolboxChrome.SLOT_ORIGIN,
-                screen.getYSize() - 84 - ToolboxChrome.SLOT_ORIGIN);
+                screen.getXSize() - 1 - ToolboxChrome.PAD - 1,
+                screen.getYSize() - 84 - ToolboxChrome.PAD - 1);
     }
 }
