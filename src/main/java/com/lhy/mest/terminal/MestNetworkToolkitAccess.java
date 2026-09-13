@@ -8,11 +8,13 @@ import net.minecraft.world.item.component.ItemContainerContents;
 
 import appeng.api.inventories.InternalInventory;
 import appeng.menu.locator.ItemMenuHostLocator;
+import appeng.menu.locator.MenuLocators;
 import appeng.util.inv.AppEngInternalInventory;
 import appeng.util.inv.InternalInventoryHost;
 
 import com.lhy.mest.compat.MestWtlibSupport;
 import com.lhy.mest.config.MestConfig;
+import com.lhy.mest.item.ItemMEST;
 import com.lhy.mest.registry.ModComponents;
 
 /** Live network-toolkit inventory stored on the spliced terminal the player is carrying. */
@@ -20,14 +22,27 @@ public final class MestNetworkToolkitAccess {
     private MestNetworkToolkitAccess() {
     }
 
+    /**
+     * The spliced terminal in the player's inventory (Curios first through the wtlib locator, then a
+     * plain inventory scan). Returns {@code null} when the player carries no terminal.
+     */
     @Nullable
     public static InternalInventory inventoryOf(Player player) {
         ItemMenuHostLocator locator = MestWtlibSupport.findMest(player);
-        if (locator == null) {
-            return null;
+        ItemStack stack = locator != null ? locator.locateItem(player) : ItemStack.EMPTY;
+        if (!(stack.getItem() instanceof ItemMEST)) {
+            locator = null;
+            stack = ItemStack.EMPTY;
+            for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+                ItemStack candidate = player.getInventory().getItem(slot);
+                if (candidate.getItem() instanceof ItemMEST) {
+                    locator = MenuLocators.forInventorySlot(slot);
+                    stack = candidate;
+                    break;
+                }
+            }
         }
-        ItemStack stack = locator.locateItem(player);
-        if (stack.isEmpty()) {
+        if (locator == null || stack.isEmpty()) {
             return null;
         }
         AppEngInternalInventory inventory = new AppEngInternalInventory(

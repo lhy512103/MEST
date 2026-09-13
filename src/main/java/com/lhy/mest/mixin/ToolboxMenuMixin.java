@@ -13,6 +13,7 @@ import appeng.menu.SlotSemantics;
 import appeng.menu.ToolboxMenu;
 import appeng.menu.slot.RestrictedInputSlot;
 
+import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.terminal.MESTMenu;
 import com.lhy.mest.terminal.MestNetworkToolkitAccess;
 
@@ -22,6 +23,9 @@ import com.lhy.mest.terminal.MestNetworkToolkitAccess;
  */
 @Mixin(ToolboxMenu.class)
 public abstract class ToolboxMenuMixin {
+    /** One-shot diagnostic: an empty machine toolbox with no terminal in reach. */
+    private static boolean mest$warnedNoTerminal;
+
     @Inject(method = "<init>", at = @At("RETURN"), remap = false)
     private void mest$attachTerminalNetworkToolkit(AEBaseMenu menu, CallbackInfo ci) {
         if (menu instanceof MESTMenu || !menu.getSlots(SlotSemantics.TOOLBOX).isEmpty()) {
@@ -30,6 +34,11 @@ public abstract class ToolboxMenuMixin {
         Player player = menu.getPlayer();
         InternalInventory inventory = MestNetworkToolkitAccess.inventoryOf(player);
         if (inventory == null) {
+            if (!mest$warnedNoTerminal && !menu.isClientSide()) {
+                mest$warnedNoTerminal = true;
+                MESplicedterminal.LOGGER.info(
+                        "MEST: no spliced terminal in the player's inventory, so machine toolboxes stay empty");
+            }
             return;
         }
         AEBaseMenuAccessor access = (AEBaseMenuAccessor) menu;
@@ -38,5 +47,8 @@ public abstract class ToolboxMenuMixin {
                     RestrictedInputSlot.PlacableItemType.UPGRADES, inventory, slot),
                     SlotSemantics.TOOLBOX);
         }
+        MESplicedterminal.LOGGER.info(
+                "MEST: attached the spliced terminal's network toolkit ({} slots) to {}",
+                inventory.size(), menu.getClass().getSimpleName());
     }
 }
