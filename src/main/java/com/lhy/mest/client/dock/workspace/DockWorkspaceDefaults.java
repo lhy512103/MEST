@@ -66,8 +66,7 @@ public final class DockWorkspaceDefaults {
         return !"provider_select".equals(moduleId)
                 && !"wireless_settings".equals(moduleId)
                 && !"trash".equals(moduleId)
-                && !"toolkit".equals(moduleId)
-                && !"network_toolkit".equals(moduleId);
+                && !"toolkit".equals(moduleId);
     }
 
     public static boolean defaultFloating(String moduleId) {
@@ -78,7 +77,7 @@ public final class DockWorkspaceDefaults {
     }
 
     public static boolean defaultPinned(String moduleId) {
-        return "trash".equals(moduleId);
+        return "trash".equals(moduleId) || "network_toolkit".equals(moduleId);
     }
 
     public static boolean defaultShowTerminalButton(String moduleId) {

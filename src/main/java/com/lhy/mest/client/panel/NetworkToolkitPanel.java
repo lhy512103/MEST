@@ -21,6 +21,8 @@ public class NetworkToolkitPanel extends ModulePanel {
     private static final int SLOT = 18;
     private static final int COLS = 3;
     private static final int MIN_ROWS = 3;
+    /** Tighter than {@link ModulePanel#CONTENT_PADDING}; matches the AE2 window bevel width. */
+    private static final int PAD = 4;
     private static final int TRACK_WIDTH = 5;
     private static final int TRACK_INNER = 3;
     private static final int INSIDE_TRACK_GAP = 2;
@@ -54,12 +56,64 @@ public class NetworkToolkitPanel extends ModulePanel {
 
     @Override
     public int defaultWidth() {
-        return 2 * CONTENT_PADDING + COLS * SLOT + INSIDE_GUTTER;
+        return 2 * PAD + COLS * SLOT + INSIDE_GUTTER;
     }
 
     @Override
     public int defaultHeight() {
-        return TITLE_BAR_HEIGHT + CONTENT_PADDING + MIN_ROWS * SLOT;
+        return 2 * PAD + MIN_ROWS * SLOT;
+    }
+
+    @Override
+    protected boolean drawsTitleBar() {
+        // No title strip: the panel is pinned by default, so there is nothing to drag or pin.
+        return false;
+    }
+
+    @Override
+    public boolean canSplice() {
+        return false;
+    }
+
+    /** Pinned window chrome without the title strip {@link #drawsTitleBar()} would suppress. */
+    @Override
+    public void renderFrame(
+            GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks, int sharedEdges) {
+        if (hosted) {
+            return;
+        }
+        if ((sharedEdges & EDGE_BOTTOM) == 0) {
+            g.fill(x + 2, y + height, x + width + 2, y + height + 2, 0x55000000);
+        }
+        if ((sharedEdges & EDGE_RIGHT) == 0 && outsideHitWidth() <= 0) {
+            g.fill(x + width, y + 2, x + width + 2, y + height + 2, 0x55000000);
+        }
+        drawGeneratedBackground(g, x, y, width, height, sharedEdges);
+    }
+
+    @Override
+    public void renderSectionHeader(GuiGraphics g, Font font, int mouseX, int mouseY) {
+        // Spliced sections keep their own header; this panel never has one.
+    }
+
+    @Override
+    public int contentLeft() {
+        return x + PAD + contentOffsetX;
+    }
+
+    @Override
+    public int contentTop() {
+        return y + PAD + contentOffsetY;
+    }
+
+    @Override
+    public int contentWidth() {
+        return Math.max(0, width - 2 * PAD - contentRightInset);
+    }
+
+    @Override
+    public int contentHeight() {
+        return Math.max(0, height - 2 * PAD);
     }
 
     @Override
@@ -75,6 +129,16 @@ public class NetworkToolkitPanel extends ModulePanel {
     @Override
     public boolean expandsVertically() {
         return true;
+    }
+
+    @Override
+    public int preferredContentWidth() {
+        return COLS * SLOT + INSIDE_GUTTER;
+    }
+
+    @Override
+    public int preferredContentHeight() {
+        return MIN_ROWS * SLOT;
     }
 
     @Override

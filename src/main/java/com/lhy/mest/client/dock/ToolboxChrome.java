@@ -11,31 +11,30 @@ import net.minecraft.world.inventory.Slot;
 import appeng.client.Point;
 import appeng.client.gui.ICompositeWidget;
 import appeng.client.gui.Tooltip;
-import appeng.client.gui.style.Blitter;
 import appeng.client.gui.widgets.Scrollbar;
 import appeng.core.localization.GuiText;
 import appeng.menu.slot.AppEngSlot;
 
 /**
- * Vanilla AE2 network-tool 3×3 panel for machine screens, plus a scrollbar for the extra rows.
- * The vanilla sprite already carries a 3px groove on its right edge, so the handle sits in it and
- * the panel keeps its original 59×66 size. Bounds are GUI-relative, like AE2's own
- * {@code ToolboxPanel}; the sprite and the handle are drawn inside a translated pose.
+ * MEST's own 3×3 network-tool panel for AE machine screens: the same compact chrome the terminal's
+ * network-tool module uses, with a scrollbar for the extra upgrade rows. The first slot sits at
+ * {@link #PAD}, so the caller anchors the panel at the vanilla slot position minus that inset.
+ * Bounds are GUI-relative, like AE2's own {@code ToolboxPanel}.
  */
 public class ToolboxChrome implements ICompositeWidget {
-    public static final int WIDTH = 59;
-    public static final int HEIGHT = 66;
+    /** Inset from the panel edge to the first slot: the AE2 window bevel is 4px wide. */
+    public static final int PAD = 4;
     private static final int SLOT = 18;
     private static final int COLS = 3;
     private static final int ROWS = 3;
-    private static final int SLOT_X = 1;
-    private static final int SLOT_Y = 6;
-    /** Vanilla sprite groove: x 54..56 inside the panel, i.e. centred on 55. */
-    private static final int GROOVE_CENTER_X = 55;
-    private static final int TRACK_TOP = SLOT_Y + 1;
-    private static final int TRACK_HEIGHT = ROWS * SLOT - 2;
-    private static final Blitter BACKGROUND = Blitter.texture("guis/extra_panels.png", 128, 128)
-            .src(69, 62, WIDTH, HEIGHT);
+    private static final int TRACK_WIDTH = 5;
+    private static final int TRACK_INNER = 3;
+    private static final int TRACK_GAP = 2;
+    private static final int INSIDE_GUTTER = TRACK_GAP + TRACK_WIDTH + 2;
+    private static final int TRACK_BORDER = 0xFFF2F2F2;
+    private static final int TRACK_FILL = 0xFF9A9FB4;
+    public static final int WIDTH = 2 * PAD + COLS * SLOT + INSIDE_GUTTER;
+    public static final int HEIGHT = 2 * PAD + ROWS * SLOT;
 
     private final List<Slot> slots;
     private final Component toolName;
@@ -55,10 +54,6 @@ public class ToolboxChrome implements ICompositeWidget {
 
     public boolean isVisible() {
         return bounds.getWidth() > 0 && bounds.getHeight() > 0;
-    }
-
-    public Rect2i bounds() {
-        return bounds;
     }
 
     @Override
@@ -116,8 +111,8 @@ public class ToolboxChrome implements ICompositeWidget {
                 slot.x = -9999;
                 slot.y = -9999;
             } else {
-                slot.x = bounds.getX() + SLOT_X + col * SLOT;
-                slot.y = bounds.getY() + SLOT_Y + row * SLOT;
+                slot.x = bounds.getX() + PAD + col * SLOT + 1;
+                slot.y = bounds.getY() + PAD + row * SLOT + 1;
             }
             index++;
         }
@@ -132,12 +127,31 @@ public class ToolboxChrome implements ICompositeWidget {
         g.pose().pushPose();
         try {
             g.pose().translate(gui.getX(), gui.getY(), 0.0F);
-            BACKGROUND.dest(bounds.getX(), bounds.getY(), WIDTH, HEIGHT).blit(g);
+            int x = bounds.getX();
+            int y = bounds.getY();
+            ModulePanel.drawGeneratedBackground(g, x, y, WIDTH, HEIGHT, 0);
+            int visibleCells = Math.min(enabledCount(slots), ROWS * COLS);
+            for (int cell = 0; cell < visibleCells; cell++) {
+                ModulePanel.drawSlot(g, x + PAD + (cell % COLS) * SLOT, y + PAD + (cell / COLS) * SLOT);
+            }
             if (scrollbar.isVisible()) {
+                drawTrack(g, trackLeft(), y + PAD, ROWS * SLOT - 1);
                 scrollbar.drawForegroundLayer(g, new Rect2i(0, 0, 0, 0), mouse);
             }
         } finally {
             g.pose().popPose();
+        }
+    }
+
+    private void drawTrack(GuiGraphics g, int x, int y, int height) {
+        int x1 = x + TRACK_WIDTH - 1;
+        int y1 = y + height - 1;
+        g.hLine(x, x1, y, TRACK_BORDER);
+        g.hLine(x, x1, y1, TRACK_BORDER);
+        g.vLine(x, y, y1, TRACK_BORDER);
+        g.vLine(x1, y, y1, TRACK_BORDER);
+        if (height > 2) {
+            g.fill(x + 1, y + 1, x + 1 + TRACK_INNER, y1, TRACK_FILL);
         }
     }
 
@@ -213,16 +227,19 @@ public class ToolboxChrome implements ICompositeWidget {
                 && my < bounds.getY() + bounds.getHeight();
     }
 
+    private int trackLeft() {
+        return bounds.getX() + PAD + COLS * SLOT + TRACK_GAP;
+    }
+
     private void layoutScrollbar() {
         int neededRows = Math.max(1, (enabledCount(slots) + COLS - 1) / COLS);
         int max = Math.max(0, neededRows - ROWS);
         scrollbar.setRange(0, max, 1);
         scrollbar.setVisible(max > 0 && isVisible());
-        scrollbar.setHeight(TRACK_HEIGHT);
-        // 7px handle centred on the sprite's 3px groove.
-        scrollbar.setPosition(new Point(
-                bounds.getX() + GROOVE_CENTER_X - Scrollbar.SMALL.handleWidth() / 2,
-                bounds.getY() + TRACK_TOP));
+        int height = ROWS * SLOT - 1;
+        scrollbar.setHeight(Math.max(1, height - 2));
+        // 7px handle centred on the 5px track, same inset as ToolkitPanel.
+        scrollbar.setPosition(new Point(trackLeft() - 1, bounds.getY() + PAD + 1));
     }
 
     private boolean overScrollbar(int mx, int my) {

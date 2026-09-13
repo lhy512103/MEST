@@ -18,7 +18,8 @@ import appeng.client.Point;
 import appeng.client.gui.AEBaseScreen;
 import appeng.client.gui.ICompositeWidget;
 import appeng.client.gui.WidgetContainer;
-import appeng.client.gui.style.WidgetStyle;
+import appeng.client.gui.layout.SlotGridLayout;
+import appeng.client.gui.style.SlotPosition;
 import appeng.core.localization.GuiText;
 import appeng.menu.AEBaseMenu;
 import appeng.menu.SlotSemantic;
@@ -54,10 +55,7 @@ public abstract class NetworkToolboxScreenMixin {
             return;
         }
         Map<String, ICompositeWidget> composites = ((WidgetContainerAccessor) widgets).mest$compositeWidgets();
-        ICompositeWidget vanilla = composites.get("toolbox");
-        Point position = vanilla != null
-                ? new Point(vanilla.getBounds().getX(), vanilla.getBounds().getY())
-                : mest$vanillaToolboxPosition(self);
+        Point position = mest$toolboxPosition(self);
         mest$toolbox = new ToolboxChrome(slots, GuiText.NetworkTool.text());
         mest$toolbox.setPosition(position);
         composites.put("toolbox", mest$toolbox);
@@ -71,14 +69,22 @@ public abstract class NetworkToolboxScreenMixin {
     }
 
     /**
-     * Same anchor AE2 resolves for its own toolbox widget: right/bottom against the GUI image.
+     * Anchor the panel so its first slot lands exactly where AE2 would have put the vanilla
+     * toolbox's first slot: the style's TOOLBOX position, resolved against the GUI image.
      */
     @Unique
-    private static Point mest$vanillaToolboxPosition(AEBaseScreen<?> screen) {
-        WidgetStyle style = screen.getStyle().getWidget("toolbox");
-        if (style != null) {
-            return style.resolve(new Rect2i(0, 0, screen.getXSize(), screen.getYSize()));
+    private static Point mest$toolboxPosition(AEBaseScreen<?> screen) {
+        SlotPosition slotPosition = screen.getStyle().getSlots().get(SlotSemantics.TOOLBOX.id());
+        if (slotPosition != null) {
+            Point anchor = slotPosition.resolve(new Rect2i(0, 0, screen.getXSize(), screen.getYSize()));
+            SlotGridLayout grid = slotPosition.getGrid();
+            if (grid != null) {
+                anchor = grid.getPosition(0, anchor.getX(), anchor.getY());
+            }
+            return new Point(anchor.getX() - ToolboxChrome.PAD, anchor.getY() - ToolboxChrome.PAD);
         }
-        return new Point(screen.getXSize() - 2, screen.getYSize() - 90);
+        return new Point(
+                screen.getXSize() - 1 - ToolboxChrome.PAD,
+                screen.getYSize() - 84 - ToolboxChrome.PAD);
     }
 }
