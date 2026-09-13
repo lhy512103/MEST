@@ -15,6 +15,7 @@ import net.minecraft.world.inventory.Slot;
 
 import appeng.client.Point;
 import appeng.client.gui.AEBaseScreen;
+import appeng.client.gui.ICompositeWidget;
 import appeng.client.gui.WidgetContainer;
 import appeng.client.gui.layout.SlotGridLayout;
 import appeng.client.gui.style.SlotPosition;
@@ -25,6 +26,7 @@ import appeng.menu.SlotSemantics;
 
 import com.lhy.mest.client.MESTScreen;
 import com.lhy.mest.client.dock.ToolboxChrome;
+import com.lhy.mest.terminal.MestNetworkToolkitAccess;
 
 /**
  * AE2's toolbox chrome is a fixed 3×3 panel that is only added to some screens, and it stacks any
@@ -40,6 +42,10 @@ public abstract class NetworkToolboxScreenMixin {
 
     @Unique
     private ToolboxChrome mest$toolbox;
+
+    /** The vanilla {@code ToolboxPanel} we displaced, restored when a vanilla tool takes over. */
+    @Unique
+    private ICompositeWidget mest$replaced;
 
     @Inject(method = "init", at = @At("RETURN"))
     private void mest$installToolbox(CallbackInfo ci) {
@@ -63,7 +69,10 @@ public abstract class NetworkToolboxScreenMixin {
             return;
         }
         List<Slot> slots = menu.getSlots(SlotSemantics.TOOLBOX);
-        if (slots.isEmpty() || !ToolboxChrome.hasVisibleSlots(slots)) {
+        // A carried vanilla network tool keeps AE2's own panel; only the spliced terminal's larger
+        // toolbox gets MEST's scrolling chrome.
+        if (slots.isEmpty() || !MestNetworkToolkitAccess.isTerminalToolbox(slots.get(0))
+                || !ToolboxChrome.hasVisibleSlots(slots)) {
             mest$removeToolbox();
             return;
         }
@@ -72,19 +81,25 @@ public abstract class NetworkToolboxScreenMixin {
         }
         mest$toolbox = new ToolboxChrome(slots, GuiText.NetworkTool.text());
         mest$toolbox.setPosition(mest$toolboxPosition(screen));
-        ((WidgetContainerAccessor) widgets).mest$compositeWidgets().put("toolbox", mest$toolbox);
+        mest$replaced = ((WidgetContainerAccessor) widgets).mest$compositeWidgets().put("toolbox", mest$toolbox);
     }
 
     @Unique
     private void mest$removeToolbox() {
-        if (mest$toolbox != null) {
-            var composites = ((WidgetContainerAccessor) widgets).mest$compositeWidgets();
-            if (composites.get("toolbox") == mest$toolbox) {
+        if (mest$toolbox == null) {
+            return;
+        }
+        var composites = ((WidgetContainerAccessor) widgets).mest$compositeWidgets();
+        if (composites.get("toolbox") == mest$toolbox) {
+            if (mest$replaced != null) {
+                composites.put("toolbox", mest$replaced);
+            } else {
                 composites.remove("toolbox");
             }
-            mest$toolbox.hide();
-            mest$toolbox = null;
         }
+        mest$toolbox.hide();
+        mest$toolbox = null;
+        mest$replaced = null;
     }
 
     /**

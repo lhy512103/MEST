@@ -3,12 +3,14 @@ package com.lhy.mest.terminal;
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemContainerContents;
 
 import appeng.api.inventories.InternalInventory;
 import appeng.menu.locator.ItemMenuHostLocator;
 import appeng.menu.locator.MenuLocators;
+import appeng.menu.slot.AppEngSlot;
 import appeng.util.inv.AppEngInternalInventory;
 import appeng.util.inv.InternalInventoryHost;
 
@@ -20,6 +22,22 @@ import com.lhy.mest.registry.ModComponents;
 /** Live network-toolkit inventory stored on the spliced terminal the player is carrying. */
 public final class MestNetworkToolkitAccess {
     private MestNetworkToolkitAccess() {
+    }
+
+    /**
+     * Marks the terminal's own toolbox inventory. Screens use this to tell the terminal's slots
+     * apart from a carried vanilla network tool's, which keeps AE2's own panel.
+     */
+    public static final class TerminalToolboxInventory extends AppEngInternalInventory {
+        private TerminalToolboxInventory(InternalInventoryHost host, int size) {
+            super(host, size);
+        }
+    }
+
+    /** True when this toolbox slot belongs to the spliced terminal rather than a vanilla tool. */
+    public static boolean isTerminalToolbox(Slot slot) {
+        return slot instanceof AppEngSlot appEngSlot
+                && appEngSlot.getInventory() instanceof TerminalToolboxInventory;
     }
 
     /**
@@ -45,7 +63,7 @@ public final class MestNetworkToolkitAccess {
         if (locator == null || stack.isEmpty()) {
             return null;
         }
-        AppEngInternalInventory inventory = new AppEngInternalInventory(
+        TerminalToolboxInventory inventory = new TerminalToolboxInventory(
                 new TerminalHost(player, locator), MestConfig.networkToolkitSlots());
         inventory.setEnableClientEvents(true);
         inventory.fromItemContainerContents(
