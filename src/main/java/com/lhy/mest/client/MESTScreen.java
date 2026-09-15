@@ -2385,9 +2385,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             getMenu().clearCraftingGrid();
             getMenu().clearPatternEncoding();
         }
-        if (meListPanel != null) {
-            meListPanel.rememberSearch();
-        }
         clearRecipeTransferContext();
         CursorHelper.resetCursor();
         super.onClose();
@@ -2395,6 +2392,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public void removed() {
+        if (meListPanel != null) {
+            // AE2 MEStorageScreen.removed() calls storeState() so the next constructor
+            // (craft-amount return, terminal reopen) sees the search that was on screen,
+            // not the value from the previous close.
+            meListPanel.storeSearch();
+        }
         closePatternAccessSubscription();
         if (PlusScreenSupport.loaded() && !keepPendingOnRemove) {
             PlusScreenSupport.cancelPending();

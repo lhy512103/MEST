@@ -46,6 +46,7 @@ import appeng.integration.abstraction.ItemListMod;
 import appeng.menu.me.common.GridInventoryEntry;
 
 import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.client.TerminalSearchRestore;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.terminal.MESTMenu;
 
@@ -77,12 +78,6 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     private static final Set<String> REPORTED_RENDER_FAILURES = new HashSet<>();
 
     private static String rememberedSearch = "";
-    /**
-     * Search text carried across a screen rebuild inside one session (sub-screens such as the craft
-     * amount screen close and reopen the terminal). AE2 keeps this in {@code MEStorageScreen}'s
-     * state, which this screen cannot inherit because it is a custom dock UI.
-     */
-    private static String sessionSearch = "";
 
     private final MESTMenu menu;
     private final IConfigManager configSrc;
@@ -122,17 +117,14 @@ public class MEListPanel extends ModulePanel implements ISortSource {
                 GuiText.SearchTooltipTag.text(),
                 GuiText.SearchTooltipToolTips.text(),
                 GuiText.SearchTooltipItemId.text()));
-        if (AEConfig.instance().isRememberLastSearch()
-                && rememberedSearch != null && !rememberedSearch.isEmpty()) {
-            field.setValue(rememberedSearch);
-            onSearchChanged(rememberedSearch);
-            field.setFocused(false);
-        } else if (!sessionSearch.isEmpty() && repo.getSearchString().isEmpty()) {
-            // Same session, fresh Repo (e.g. back from the craft amount screen): keep the filter.
-            field.setValue(sessionSearch);
-            onSearchChanged(sessionSearch);
+        String restore = TerminalSearchRestore.valueToRestore(
+                rememberedSearch,
+                menu.isReturnedFromSubScreen(),
+                AEConfig.instance().isRememberLastSearch());
+        if (!restore.isEmpty()) {
+            field.setValue(restore);
             field.selectAll();
-            field.setFocused(false);
+            onSearchChanged(restore);
         }
     }
 
@@ -275,22 +267,13 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         updateScrollbar();
     }
 
-    public void rememberSearch() {
-        if (searchField == null) {
-            return;
-        }
-        rememberedSearch = AEConfig.instance().isRememberLastSearch() ? searchField.getValue() : "";
-        sessionSearch = rememberedSearch;
-    }
-
     /**
-     * AE2's {@code MEStorageScreen.storeState()}: hand the current search to the next screen before
-     * switching terminals or opening a sub-screen. Unconditional, exactly like the vanilla method.
+     * AE2's {@code MEStorageScreen.storeState()}: always snapshot the current search so a later
+     * constructor can restore it (sub-screen return, or "remember last search").
      */
     public void storeSearch() {
         if (searchField != null) {
             rememberedSearch = searchField.getValue();
-            sessionSearch = rememberedSearch;
         }
     }
 
@@ -427,9 +410,6 @@ public class MEListPanel extends ModulePanel implements ISortSource {
         searchField.setValue(value);
         repo.setSearchString(value);
         repo.updateView();
-        if (AEConfig.instance().isRememberLastSearch()) {
-            rememberedSearch = value;
-        }
     }
 
     public void setSearchFocused(boolean focused) {
@@ -572,8 +552,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     private Set<AEKeyType> sortKeyTypesCache;
 
     private void onSearchChanged(String text) {
-        sessionSearch = text == null ? "" : text;
-        repo.setSearchString(sessionSearch);
+        repo.setSearchString(text == null ? "" : text);
         repo.updateView();
         updateScrollbar();
     }
