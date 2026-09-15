@@ -24,8 +24,13 @@ public class ToolkitSlot extends AppEngSlot {
     }
 
     @Override
+    public boolean isSlotEnabled() {
+        return menu.toolkitOpen && super.isSlotEnabled();
+    }
+
+    @Override
     public boolean mayPlace(ItemStack stack) {
-        if (!ToolkitBarState.mayStore(stack)) {
+        if (!menu.toolkitOpen || !ToolkitBarState.mayStore(stack)) {
             return false;
         }
         ItemStack memory = menu.getToolkitMemoryStack(toolkitIndex);

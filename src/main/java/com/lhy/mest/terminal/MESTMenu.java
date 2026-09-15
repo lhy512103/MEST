@@ -1281,7 +1281,7 @@ public class MESTMenu extends CraftingTermMenu {
     }
 
     private boolean prefersToolkitQuickMove() {
-        return host.getItemStack().getOrDefault(ModComponents.TOOLKIT_QUICK_MOVE.get(), true);
+        return toolkitOpen && host.getItemStack().getOrDefault(ModComponents.TOOLKIT_QUICK_MOVE.get(), true);
     }
 
     private ItemStack insertIntoToolkit(ItemStack input, boolean rememberedEmptyOnly) {

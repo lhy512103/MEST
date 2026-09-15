@@ -95,7 +95,7 @@
   "gui.mesplicedterminal.wireless_settings.mest": "MEST设置",
   "gui.mesplicedterminal.wireless_settings.pull_items": "JEI/EMI 显示拉取物品按钮",
   "gui.mesplicedterminal.wireless_settings.toolkit_bar": "显示工具包快捷栏",
-  "gui.mesplicedterminal.wireless_settings.toolkit_quick_move": "快速移动优先存入工具包",
+  "gui.mesplicedterminal.wireless_settings.toolkit_quick_move": "打开工具包时，快速移动优先存入工具包",
   "key.mesplicedterminal.category": "ME 拼接终端",
   "key.mesplicedterminal.toolkit_bar_left": "工具包快捷栏向左",
   "key.mesplicedterminal.toolkit_bar_right": "工具包快捷栏向右",
