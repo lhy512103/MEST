@@ -202,6 +202,15 @@ public final class ToolkitBarState {
             return;
         }
         if (!stack.isEmpty() && !mayStore(stack)) {
+            // Vanilla just wrote a stack the bar cannot hold, for example the armor it displaced
+            // when equipping something else. Empty the cell first so the old item cannot linger as
+            // a second copy next to the equipped one, then hand the stack back to the player
+            // instead of dropping it on the floor of this method.
+            inventory(player).setItemDirect(index, ItemStack.EMPTY);
+            ItemStack remainder = stack.copy();
+            if (!player.getInventory().add(remainder)) {
+                player.drop(remainder, false);
+            }
             return;
         }
         inventory(player).setItemDirect(index, stack);

@@ -25,6 +25,13 @@ public final class ToolkitInternalInventory extends BaseInternalInventory {
     private ItemStack boundTerminal = ItemStack.EMPTY;
     private ItemContainerContents boundContents = ItemContainerContents.EMPTY;
     private NonNullList<ItemStack> items = NonNullList.withSize(MestConfig.toolkitSlots(), ItemStack.EMPTY);
+    /**
+     * Set when the toolkit itself wrote a cell (the hand paths) and the component snapshot has not
+     * caught up yet. While set, {@link #syncFromTerminal()} must not restore the cell from that
+     * stale snapshot: vanilla empties the hand stack in place during an armor/tool swap, and
+     * resurrecting the pre-swap stack would leave a second copy of the equipped item in the bar.
+     */
+    private boolean localEdit;
 
     ToolkitInternalInventory(Player player) {
         this(player, () -> ToolkitBarState.findTerminal(player));
@@ -61,8 +68,11 @@ public final class ToolkitInternalInventory extends BaseInternalInventory {
             }
         }
         if (!resized && (terminal != boundTerminal || contents != boundContents)) {
-            if (!sameItems(contents)) {
+            boolean matchesItems = sameItems(contents);
+            if (ToolkitSyncPolicy.shouldAdoptFromComponent(localEdit, matchesItems)) {
                 adoptContents(contents);
+            } else if (ToolkitSyncPolicy.isLocalEditSettled(localEdit, matchesItems)) {
+                localEdit = false;
             }
             boundTerminal = terminal;
             boundContents = contents;
@@ -91,6 +101,7 @@ public final class ToolkitInternalInventory extends BaseInternalInventory {
         terminal.set(ModComponents.TOOLKIT_INV.get(), next);
         boundTerminal = terminal;
         boundContents = next;
+        localEdit = false;
         player.getInventory().setChanged();
         if (player instanceof ServerPlayer serverPlayer) {
             ToolkitBarSyncPacket.send(serverPlayer);
@@ -129,6 +140,8 @@ public final class ToolkitInternalInventory extends BaseInternalInventory {
             ItemStack incoming = i < stacks.size() ? stacks.get(i) : ItemStack.EMPTY;
             items.set(i, adopt(items.get(i), incoming));
         }
+        // A server push is authoritative for the visible bars, so it also settles pending edits.
+        localEdit = false;
     }
 
     private void adoptContents(ItemContainerContents contents) {
@@ -189,6 +202,9 @@ public final class ToolkitInternalInventory extends BaseInternalInventory {
             return;
         }
         items.set(slotIndex, stack);
+        // This write is newer than the component snapshot we are bound to. Mark it before saving
+        // so nothing can restore the previous stack while the component catches up.
+        localEdit = true;
         save();
     }
 
