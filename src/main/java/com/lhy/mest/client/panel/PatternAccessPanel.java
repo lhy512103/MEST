@@ -2,9 +2,12 @@ package com.lhy.mest.client.panel;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import com.google.gson.JsonObject;
 
@@ -114,6 +117,19 @@ public class PatternAccessPanel extends ModulePanel {
     private AETextField searchField;
     private String search = "";
     private boolean scrollbarDragging;
+    /**
+     * Search results are cached per input revision. Recomputed on every {@code render}/{@code tick}
+     * pass, the filter ran the full pattern decode plus ICU transliteration many times per frame,
+     * which is what made searching this panel drop frames.
+     */
+    private int searchRevision;
+    private int filteredRevision = -1;
+    private List<Entry> filteredCache = List.of();
+    private final Map<Long, boolean[]> slotMatchCache = new HashMap<>();
+    private int specsRevision = -1;
+    private int specsColumns = -1;
+    private boolean specsShowSlots;
+    private List<ProviderRows> specsCache = List.of();
 
     public PatternAccessPanel(ScreenStyle style) {
         this.style = style;
@@ -125,6 +141,7 @@ public class PatternAccessPanel extends ModulePanel {
         searchMode = rememberedSearchMode;
         showMode = rememberedShowMode;
         showSlots = rememberedShowSlots;
+        invalidateSearch();
     }
 
     @Override
@@ -207,6 +224,7 @@ public class PatternAccessPanel extends ModulePanel {
         }
         providers.clear();
         providers.addAll(entries);
+        invalidateSearch();
         clampScroll();
     }
 
@@ -266,6 +284,7 @@ public class PatternAccessPanel extends ModulePanel {
         subscribedContainerId = -1;
         subscribedMenu = null;
         providers.clear();
+        invalidateSearch();
         scrollRows = 0;
         scrollbar.setCurrentScroll(0);
     }
@@ -416,7 +435,8 @@ public class PatternAccessPanel extends ModulePanel {
                     StackSizeRenderer.renderSizeLabel(g, font, iconX, y + 1, amountText, false);
                 }
                 if (!search.isBlank()) {
-                    if (matchesSearch(pattern)) {
+                    boolean[] matches = slotMatchCache.get(provider.providerId());
+                    if (matches != null && providerSlot < matches.length && matches[providerSlot]) {
                         if (ModList.get().isLoaded("extendedae_plus")) {
                             PlusPatternAccess.drawSlotRainbowHighlight(g, iconX, y + 1);
                         } else {
@@ -562,6 +582,12 @@ public class PatternAccessPanel extends ModulePanel {
                 return true;
             }
         }
+        // AE2's MEStorageScreen clears its search field on right-click; AETextField itself does not.
+        if (searchField != null && searchField.visible && searchField.isMouseOver(mx, my) && button == 1) {
+            searchField.setValue("");
+            setSearchFocused(true);
+            return true;
+        }
         if (searchField != null && searchField.mouseClicked(mx, my, button)) {
             setSearchFocused(true);
             return true;
@@ -678,6 +704,19 @@ public class PatternAccessPanel extends ModulePanel {
 
     private List<ProviderRows> groupedSpecs() {
         var filtered = filteredProviders();
+        int columns = columns();
+        if (specsRevision == filteredRevision && specsColumns == columns && specsShowSlots == showSlots) {
+            return specsCache;
+        }
+        specsRevision = filteredRevision;
+        specsColumns = columns;
+        specsShowSlots = showSlots;
+
+        // Identity index instead of providers.indexOf(): that was a linear scan per provider.
+        var providerIndexes = new IdentityHashMap<Entry, Integer>();
+        for (int i = 0; i < providers.size(); i++) {
+            providerIndexes.put(providers.get(i), i);
+        }
         var byGroup = new LinkedHashMap<PatternContainerGroup, List<Integer>>();
         List<Integer> order = new ArrayList<>();
         for (int i = 0; i < filtered.size(); i++) {
@@ -690,19 +729,19 @@ public class PatternAccessPanel extends ModulePanel {
         for (int i : order) {
             byGroup.computeIfAbsent(filtered.get(i).group(), unused -> new ArrayList<>()).add(i);
         }
-        int columns = columns();
         var specs = new ArrayList<ProviderRows>();
         for (var indexes : byGroup.values()) {
             boolean header = true;
             for (int filteredIndex : indexes) {
                 Entry entry = filtered.get(filteredIndex);
-                int original = providers.indexOf(entry);
+                Integer original = providerIndexes.get(entry);
                 int slotRows = showSlots ? (entry.inventorySize() + columns - 1) / columns : 0;
-                specs.add(new ProviderRows(original, slotRows, header));
+                specs.add(new ProviderRows(original == null ? 0 : original, slotRows, header));
                 header = false;
             }
         }
-        return specs;
+        specsCache = List.copyOf(specs);
+        return specsCache;
     }
 
     private LinkedHashMap<PatternContainerGroup, Integer> groupSizes() {
@@ -713,21 +752,47 @@ public class PatternAccessPanel extends ModulePanel {
         return sizes;
     }
 
+    /** Call whenever the needle, the search mode or the provider list changes. */
+    private void invalidateSearch() {
+        searchRevision++;
+    }
+
     private List<Entry> filteredProviders() {
+        if (filteredRevision == searchRevision) {
+            return filteredCache;
+        }
+        filteredRevision = searchRevision;
+
         String needle = search.trim().toLowerCase(Locale.ROOT);
         var result = new ArrayList<Entry>();
+        slotMatchCache.clear();
         for (Entry entry : providers) {
             if (showMode == ShowPatternProviders.NOT_FULL && providerFull(entry)) {
                 continue;
             }
-            if (!needle.isEmpty()
-                    && !PinyinSearch.contains(entry.group().name().getString(), needle)
-                    && !matchesAnyPattern(entry, needle)) {
+            if (needle.isEmpty()) {
+                result.add(entry);
                 continue;
             }
-            result.add(entry);
+            boolean groupMatches = PinyinSearch.contains(entry.group().name().getString(), needle);
+            int size = entry.inventorySize();
+            boolean[] matches = new boolean[size];
+            boolean anySlotMatches = false;
+            for (int slot = 0; slot < size; slot++) {
+                ItemStack stack = entry.slots().get(slot);
+                if (stack != null && matchesSearch(stack, needle)) {
+                    matches[slot] = true;
+                    anySlotMatches = true;
+                }
+            }
+            // Kept so rendering can highlight/dim a visible slot without re-decoding its pattern.
+            slotMatchCache.put(entry.providerId(), matches);
+            if (groupMatches || anySlotMatches) {
+                result.add(entry);
+            }
         }
-        return result;
+        filteredCache = List.copyOf(result);
+        return filteredCache;
     }
 
     private static boolean providerFull(Entry entry) {
@@ -738,19 +803,6 @@ public class PatternAccessPanel extends ModulePanel {
             }
         }
         return entry.inventorySize() > 0;
-    }
-
-    private boolean matchesAnyPattern(Entry entry, String needle) {
-        for (ItemStack stack : entry.slots().values()) {
-            if (stack != null && matchesSearch(stack, needle)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean matchesSearch(ItemStack pattern) {
-        return matchesSearch(pattern, search.trim().toLowerCase(Locale.ROOT));
     }
 
     private boolean matchesSearch(ItemStack pattern, String needle) {
@@ -897,7 +949,10 @@ public class PatternAccessPanel extends ModulePanel {
         searchField = new AETextField(style, font, 0, 0, SEARCH_WIDTH, SEARCH_HEIGHT);
         searchField.setBordered(false);
         searchField.setMaxLength(64);
-        searchField.setResponder(value -> search = value);
+        searchField.setResponder(value -> {
+            search = value;
+            invalidateSearch();
+        });
         searchField.setPlaceholder(GuiText.SearchPlaceholder.text());
         if (Minecraft.getInstance().screen instanceof com.lhy.mest.client.MESTScreen screen) {
             screen.attachPatternSearchField(searchField);
@@ -943,12 +998,14 @@ public class PatternAccessPanel extends ModulePanel {
 
     private void cycleSearchMode() {
         searchMode = searchMode.next();
+        invalidateSearch();
         persistButtons();
     }
 
     private void cycleShowMode() {
         ShowPatternProviders[] values = ShowPatternProviders.values();
         showMode = values[(showMode.ordinal() + 1) % values.length];
+        invalidateSearch();
         persistButtons();
         var menu = currentMenu();
         if (menu != null && visible) {
@@ -958,6 +1015,7 @@ public class PatternAccessPanel extends ModulePanel {
 
     private void toggleShowSlots() {
         showSlots = !showSlots;
+        specsRevision = -1;
         persistButtons();
     }
 
