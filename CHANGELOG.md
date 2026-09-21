@@ -89,3 +89,9 @@
 - 补充布局、ME 交互、配方传输、供应器协议与物品转移相关测试。
 - 修正配方进度资源路径，并清理无用客户端文件与孤立翻译。
 - 增加依赖锁定、可复现归档与 Java 21 CI wrapper 校验。
+
+## v0.0.2.6
+
+- 新增：开发运行时加入 Some Useless Things 与 Sophisticated Backpacks。
+- 修复：将 Data Energistics 升到 3.2.2，避免 Useless Mod 合金炉配方预热崩溃。
+- 新增：补上 Data Energistics 3.2.2 所需的 LDLib2 运行时依赖。
