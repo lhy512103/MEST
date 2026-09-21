@@ -28,20 +28,27 @@ public final class ToolkitHand {
     }
 
     public static boolean isOverrideActive(Player player) {
-        if (VANILLA.get() > 0) {
-            return false;
-        }
-        // ServerPlayer.gameMode is assigned after Player.<init>. Other mods can call
-        // getSelected during that constructor via Entity.setPos mixins.
-        if (player instanceof ServerPlayer serverPlayer && serverPlayer.gameMode == null) {
-            return false;
-        }
-        if (player.isSpectator()) {
+        if (VANILLA.get() > 0 || isUnreadyOrSpectator(player)) {
             return false;
         }
         if (player.containerMenu != player.inventoryMenu) {
             return false;
         }
         return ToolkitBarState.isToolkitSelected(player);
+    }
+
+    /**
+     * {@code Player.<init>} calls {@code setPos} before game-mode / client connection exist.
+     * Other mods can then call {@code getSelected}, so spectator must not NPE.
+     */
+    private static boolean isUnreadyOrSpectator(Player player) {
+        if (player instanceof ServerPlayer serverPlayer && serverPlayer.gameMode == null) {
+            return true;
+        }
+        try {
+            return player.isSpectator();
+        } catch (NullPointerException ignored) {
+            return true;
+        }
     }
 }
