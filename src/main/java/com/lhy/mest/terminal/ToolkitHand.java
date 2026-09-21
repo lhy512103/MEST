@@ -1,5 +1,6 @@
 package com.lhy.mest.terminal;
 
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 
 /**
@@ -27,7 +28,15 @@ public final class ToolkitHand {
     }
 
     public static boolean isOverrideActive(Player player) {
-        if (VANILLA.get() > 0 || player.isSpectator()) {
+        if (VANILLA.get() > 0) {
+            return false;
+        }
+        // ServerPlayer.gameMode is assigned after Player.<init>. Other mods can call
+        // getSelected during that constructor via Entity.setPos mixins.
+        if (player instanceof ServerPlayer serverPlayer && serverPlayer.gameMode == null) {
+            return false;
+        }
+        if (player.isSpectator()) {
             return false;
         }
         if (player.containerMenu != player.inventoryMenu) {
