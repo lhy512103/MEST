@@ -1,7 +1,6 @@
 package com.lhy.mest.client;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
@@ -138,7 +137,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private AETextField searchField;
     private TabButton craftingStatusBtn;
     private final List<ItemStack> currentViewCells = new ArrayList<>();
-    private final Set<AEKey> craftableKeys = new HashSet<>();
     /** True while DockManager is drawing owned slots inside their root's ordered composite pass. */
     private boolean drawingRootSlots;
     private boolean hoverFrameReady;
@@ -174,7 +172,6 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         // AE2's MEStorageScreen. Doing this in init() would be too late: the server's first full
         // inventory update can arrive before init() runs and would be dropped (null client repo).
         this.meListPanel = new MEListPanel(getMenu());
-        this.meListPanel.repo().setUpdateViewListener(this::refreshCraftableKeys);
         getMenu().setGui(this::onMenuReceivedClientUpdate);
         recipeTransfer.beginMenu(menu);
 
@@ -1469,12 +1466,13 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (toolkitPanel != null && toolkitPanel.ownsSlot(s)) {
             toolkitPanel.renderMemoryGhost(g, s);
         }
-        if (getMenu().isPatternEncodingInputSlot(s)) {
-            GenericStack stack = GenericStack.fromItemStack(s.getItem());
-            var repo = getMenu().getClientRepo();
-            if (stack != null && repo != null && isCraftable(stack.what())) {
-                StackSizeRenderer.renderSizeLabel(g, font, ModulePanel.slotScreenX(s) - 11,
-                        ModulePanel.slotScreenY(s) - 11, "+", false);
+        if (shouldShowCraftableIndicatorForSlot(s)) {
+            g.pose().pushPose();
+            try {
+                g.pose().translate(0.0F, 0.0F, 100.0F);
+                StackSizeRenderer.renderSizeLabel(g, font, s.x - 11, s.y - 11, "+", false);
+            } finally {
+                g.pose().popPose();
             }
         }
     }
@@ -1548,17 +1546,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         return null;
     }
 
-    private boolean isCraftable(AEKey key) {
-        return craftableKeys.contains(key);
-    }
-
-    private void refreshCraftableKeys() {
-        craftableKeys.clear();
-        for (GridInventoryEntry entry : meListPanel.repo().getAllEntries()) {
-            if (entry.isCraftable()) {
-                craftableKeys.add(entry.getWhat());
-            }
+    private boolean shouldShowCraftableIndicatorForSlot(Slot slot) {
+        if (!getMenu().isPatternEncodingInputSlot(slot) || meListPanel == null) {
+            return false;
         }
+        GenericStack contents = GenericStack.fromItemStack(slot.getItem());
+        return contents != null && meListPanel.repo().isCraftable(contents.what());
     }
 
     @Override
@@ -2105,13 +2098,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             return List.of();
         }
         List<Component> lines = super.getTooltipFromContainerItem(stack);
-        if (hoveredSlot != null && getMenu().isPatternEncodingInputSlot(hoveredSlot)) {
-            GenericStack genericStack = GenericStack.fromItemStack(hoveredSlot.getItem());
-            var repo = getMenu().getClientRepo();
-            if (genericStack != null && repo != null && isCraftable(genericStack.what())) {
-                lines = new ArrayList<>(lines);
-                lines.add(ButtonToolTips.Craftable.text().withStyle(ChatFormatting.DARK_GRAY));
-            }
+        if (hoveredSlot != null && shouldShowCraftableIndicatorForSlot(hoveredSlot)) {
+            lines = new ArrayList<>(lines);
+            lines.add(ButtonToolTips.Craftable.text().withStyle(ChatFormatting.DARK_GRAY));
         }
         return lines;
     }

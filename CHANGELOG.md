@@ -11,6 +11,7 @@
 5. Fixed: Skip toolkit hand override while ServerPlayer is still constructing, so Useless Mod can no longer NPE join with invalid player data.
 6. Fixed: Same join-time spectator NPE on the client LocalPlayer, which crashed Camera.setup after login.
 7. Fixed: Extra-bar right-click equip is applied only on the server, so swapping diamond leggings onto Advanced AE quantum leggings no longer leaves quantum pieces in both slots.
+8. Fixed: Pattern-encoding slots now use AE2's craftable query and raise the "+" overlay in z, so 3D block ingredients no longer hide the marker.
 
 ### 中文
 
@@ -21,3 +22,4 @@
 5. 修复：ServerPlayer 构造未完成时不再覆盖主手，避免 Useless Mod 进档空指针并提示无效的玩家数据。
 6. 修复：客户端 LocalPlayer 构造时同样的旁观检查空指针，进档后 Camera.setup 崩溃。
 7. 修复：扩展栏右键装备不再客户端预测，避免钻石护腿换上量子胫甲后手上和身上都变成量子胫甲。
+8. 修复：样板编码槽改用 AE2 原版可合成查询，并把 “+” 抬到物品模型之上，避免方块类材料挡住角标。
