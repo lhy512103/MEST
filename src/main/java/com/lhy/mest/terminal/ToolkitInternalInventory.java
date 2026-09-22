@@ -5,6 +5,7 @@ import java.util.function.Supplier;
 
 import net.minecraft.core.NonNullList;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemContainerContents;
@@ -201,7 +202,10 @@ public final class ToolkitInternalInventory extends BaseInternalInventory {
         if (!stack.isEmpty() && !isItemValid(slotIndex, stack)) {
             return;
         }
-        items.set(slotIndex, stack);
+        // A returned armor piece must not be the same object still sitting in the equipment slot.
+        // In-place edits (count, components) would then change both, which is how an equip swap
+        // left quantum leggings in the hand and on the body.
+        items.set(slotIndex, detachIfShared(slotIndex, stack));
         // This write is newer than the component snapshot we are bound to. Mark it before saving
         // so nothing can restore the previous stack while the component catches up.
         localEdit = true;
@@ -216,5 +220,41 @@ public final class ToolkitInternalInventory extends BaseInternalInventory {
     @Override
     public int getSlotLimit(int slot) {
         return 1;
+    }
+
+    /**
+     * Copy only when {@code stack} is already stored in another slot. Held tools must keep their
+     * identity so charging and drawing are not cancelled; an armor return must not alias the piece
+     * still equipped.
+     */
+    private ItemStack detachIfShared(int slotIndex, ItemStack stack) {
+        if (stack.isEmpty() || !sharesReference(slotIndex, stack)) {
+            return stack;
+        }
+        return stack.copy();
+    }
+
+    private boolean sharesReference(int slotIndex, ItemStack stack) {
+        Inventory inventory = player.getInventory();
+        if (containsReference(inventory.armor, stack)
+                || containsReference(inventory.offhand, stack)
+                || containsReference(inventory.items, stack)) {
+            return true;
+        }
+        for (int i = 0; i < items.size(); i++) {
+            if (i != slotIndex && items.get(i) == stack) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsReference(List<ItemStack> slots, ItemStack stack) {
+        for (int i = 0; i < slots.size(); i++) {
+            if (slots.get(i) == stack) {
+                return true;
+            }
+        }
+        return false;
     }
 }

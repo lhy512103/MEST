@@ -51,10 +51,21 @@ public record ToolkitBarSyncPacket(List<ItemStack> stacks) implements CustomPack
     }
 
     public static void send(ServerPlayer player) {
+        send(player, false);
+    }
+
+    /**
+     * @param force when true, send even if this snapshot matches the last one. A client equip
+     *              prediction can change the toolkit cell without the server snapshot changing, and
+     *              the dedupe would otherwise leave that prediction in place.
+     */
+    public static void send(ServerPlayer player, boolean force) {
         List<ItemStack> stacks = snapshot(player);
-        List<ItemStack> previous = LAST_SENT.get(player);
-        if (previous != null && same(previous, stacks)) {
-            return;
+        if (!force) {
+            List<ItemStack> previous = LAST_SENT.get(player);
+            if (previous != null && same(previous, stacks)) {
+                return;
+            }
         }
         LAST_SENT.put(player, stacks);
         PacketDistributor.sendToPlayer(player, new ToolkitBarSyncPacket(stacks));
