@@ -8,6 +8,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemContainerContents;
 
 import appeng.api.inventories.InternalInventory;
+import appeng.items.contents.NetworkToolMenuHost;
 import appeng.menu.locator.ItemMenuHostLocator;
 import appeng.menu.locator.MenuLocators;
 import appeng.menu.slot.AppEngSlot;
@@ -69,6 +70,15 @@ public final class MestNetworkToolkitAccess {
         inventory.fromItemContainerContents(
                 stack.getOrDefault(ModComponents.NETWORK_TOOLKIT_INV.get(), ItemContainerContents.EMPTY));
         return inventory;
+    }
+
+    /**
+     * Network-tool host wrapping {@link #inventoryOf} so memory-card restore and
+     * {@code findNetworkToolInv} can use the terminal toolkit when no vanilla tool is carried.
+     */
+    @Nullable
+    public static NetworkToolMenuHost<?> menuHostOf(Player player) {
+        return MestTerminalNetworkToolHost.create(player);
     }
 
     private record TerminalHost(Player player, ItemMenuHostLocator locator) implements InternalInventoryHost {

@@ -13,6 +13,7 @@
 7. Fixed: Extra-bar right-click equip is applied only on the server, so swapping diamond leggings onto Advanced AE quantum leggings no longer leaves quantum pieces in both slots.
 8. Fixed: Pattern-encoding slots now use AE2's craftable query and raise the "+" overlay in z, so 3D block ingredients no longer hide the marker.
 9. Fixed: Dev client now uses JEI 19.51 and skips AE2 Utility, so ExtendedAE Plus and AE2 Utility JEI mixins no longer crash on enter-world.
+10. Fixed: Memory cards now pull and return upgrade cards from the spliced terminal's built-in network toolkit when no vanilla network tool is carried.
 
 ### 中文
 
@@ -25,3 +26,4 @@
 7. 修复：扩展栏右键装备不再客户端预测，避免钻石护腿换上量子胫甲后手上和身上都变成量子胫甲。
 8. 修复：样板编码槽改用 AE2 原版可合成查询，并把 “+” 抬到物品模型之上，避免方块类材料挡住角标。
 9. 修复：开发客户端改用 JEI 19.51 并暂时去掉 AE2 Utility，避免 Plus 与 Utility 的 JEI mixin 进档即崩。
+10. 修复：没有手持原版网络工具时，内存卡会从终端自带网络工具面板的升级槽取放升级卡。
