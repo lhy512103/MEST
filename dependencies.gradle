@@ -73,7 +73,9 @@ dependencies {
     // Local runtime AE2 addons
     localRuntime "curse.maven:advancedae-1084104:${advancedae_file}"
     localRuntime "curse.maven:ae2-crystal-science-1435174:${ae2_crystal_science_file}"
-    localRuntime "curse.maven:ae2-utility-1521605:${ae2_utility_file}"
+    // AE2 Utility 1.7.2+ mixins RecipeSlot.displayOverrides (JEI 19.57). Plus 1.6.x still
+    // constructs mezz.jei.gui.input.handlers.CombinedInputHandler (JEI ≤19.51). Cannot load both.
+    // localRuntime "curse.maven:ae2-utility-1521605:${ae2_utility_file}"
     localRuntime "curse.maven:ex-pattern-provider-892005:${extendedae_file}"
     localRuntime "curse.maven:extendedae-plus-1337639:${extendedae_plus_file}"
     localRuntime "curse.maven:applied-energistics-2-wireless-terminals-459929:${ae2wt_terminals_file}"
@@ -85,7 +87,7 @@ dependencies {
     localRuntime "curse.maven:ae2-import-export-card-982512:${ae2_import_export_card_file}"
     localRuntime "curse.maven:thunderbolt-core-1631756:${thunderbolt_core_file}"
     localRuntime "curse.maven:ae2-lightning-tech-1527395:${ae2_lightning_tech_file}"
-    localRuntime "curse.maven:data-energistics-1565514:${data_energistics_file}"
+    // localRuntime "curse.maven:data-energistics-1565514:${data_energistics_file}"
     localRuntime "curse.maven:ldlib-626676:${ldlib_file}"
     localRuntime "curse.maven:aeinfinitybooster-559313:${aeinfinitybooster_file}"
     localRuntime "curse.maven:clientsort-1049891:${clientsort_file}"
