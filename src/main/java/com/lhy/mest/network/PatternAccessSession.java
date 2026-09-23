@@ -20,11 +20,14 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.common.CommonHooks;
+import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.connection.ConnectionType;
 
@@ -308,7 +311,8 @@ public final class PatternAccessSession {
      * <p>The menu-provider route is tried first because it only opens a container. Falling back to
      * {@code useWithoutItem} simulates a real right-click, which would fire every other interaction
      * the target block has (buttons, levers, machines with a use action) on a block the player may
-     * be thousands of blocks away from.
+     * be thousands of blocks away from. It is therefore limited to block entities in the player's
+     * own dimension, where protection mods can veto it through {@code RightClickBlock}.
      */
     private boolean tryOpenTarget(ServerPlayer player, PatternContainer patternProvider,
             ServerLevel level, BlockPos pos, Direction face) {
@@ -316,9 +320,7 @@ public final class PatternAccessSession {
             var targets = logicHost.getTargets();
             if (targets != null) {
                 for (Direction direction : targets) {
-                    BlockPos targetPos = pos.relative(direction);
-                    if (tryOpenAt(player, level, targetPos)
-                            || tryUseTargetBlock(player, level, targetPos, direction)) {
+                    if (tryTarget(player, level, pos.relative(direction), direction)) {
                         return true;
                     }
                 }
@@ -326,24 +328,43 @@ public final class PatternAccessSession {
             return false;
         }
         if (face != null) {
-            BlockPos targetPos = pos.relative(face);
-            return tryOpenAt(player, level, targetPos)
-                    || tryUseTargetBlock(player, level, targetPos, face);
+            return tryTarget(player, level, pos.relative(face), face);
         }
         for (Direction direction : Direction.values()) {
-            BlockPos targetPos = pos.relative(direction);
-            if (tryOpenAt(player, level, targetPos)
-                    || tryUseTargetBlock(player, level, targetPos, direction)) {
+            if (tryTarget(player, level, pos.relative(direction), direction)) {
                 return true;
             }
         }
         return false;
     }
 
-    private boolean tryOpenAt(ServerPlayer player, ServerLevel level, BlockPos pos) {
-        if (!level.isLoaded(pos)) {
+    private boolean tryTarget(ServerPlayer player, ServerLevel level, BlockPos targetPos,
+            Direction providerToTarget) {
+        if (!level.isLoaded(targetPos) || level.getBlockState(targetPos).isAir()) {
             return false;
         }
+        // Spawn protection and world border, as for any other block interaction.
+        if (!level.mayInteract(player, targetPos)) {
+            return false;
+        }
+        var hit = new BlockHitResult(Vec3.atCenterOf(targetPos), providerToTarget.getOpposite(), targetPos, false);
+        // The event reads the player's level, so it can only vouch for targets in that dimension.
+        boolean sameLevel = level == player.level();
+        if (sameLevel) {
+            var event = CommonHooks.onRightClickBlock(player, InteractionHand.MAIN_HAND, targetPos, hit);
+            if (event.isCanceled() || event.getUseBlock() == TriState.FALSE) {
+                return false;
+            }
+        }
+        if (tryOpenAt(player, level, targetPos)) {
+            return true;
+        }
+        return sameLevel
+                && level.getBlockEntity(targetPos) != null
+                && tryUseTargetBlock(player, level, targetPos, hit);
+    }
+
+    private boolean tryOpenAt(ServerPlayer player, ServerLevel level, BlockPos pos) {
         BlockEntity be = level.getBlockEntity(pos);
         if (be instanceof MenuProvider menuProvider) {
             return RemoteMenuAccess.open(player, menuProvider, level, pos, getCurrentGrid());
@@ -353,17 +374,9 @@ public final class PatternAccessSession {
     }
 
     private boolean tryUseTargetBlock(ServerPlayer player, ServerLevel level, BlockPos targetPos,
-            Direction providerToTarget) {
-        if (!level.isLoaded(targetPos)) {
-            return false;
-        }
-        var state = level.getBlockState(targetPos);
-        if (state.isAir()) {
-            return false;
-        }
+            BlockHitResult hit) {
         var previousMenu = player.containerMenu;
-        var hit = new BlockHitResult(Vec3.atCenterOf(targetPos), providerToTarget.getOpposite(), targetPos, false);
-        state.useWithoutItem(level, player, hit);
+        level.getBlockState(targetPos).useWithoutItem(level, player, hit);
         return RemoteMenuAccess.trackOpenedMenu(player, previousMenu, level, targetPos, getCurrentGrid());
     }
 
