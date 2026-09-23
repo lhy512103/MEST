@@ -168,5 +168,16 @@
   "gui.expatternprovider.show_slots": "显示槽位",
   "extendedae_plus.tooltip.provider.open_ui": "打开该供应器目标容器的界面",
   "gui.mesplicedterminal.pattern_access.open_ui_failed": "无法打开该供应器目标容器的界面",
-  "gui.mesplicedterminal.pattern_access.click_hint": "左键取放/交换，右键取出"
+  "gui.mesplicedterminal.pattern_access.click_hint": "左键取放/交换，右键取出",
+  "key.ae2.wireless_spliced_terminal": "打开 ME 拼接终端",
+  "gui.mesplicedterminal.hotkeys": "面板快捷键",
+  "gui.mesplicedterminal.hotkeys.module": "面板",
+  "gui.mesplicedterminal.hotkeys.key": "快捷键",
+  "gui.mesplicedterminal.hotkeys.terminal_only": "仅终端",
+  "gui.mesplicedterminal.hotkeys.terminal_only.hint": "开启：只在终端界面内生效。关闭：在世界中按下也会打开终端并显示该面板",
+  "gui.mesplicedterminal.hotkeys.unbound": "未绑定",
+  "gui.mesplicedterminal.hotkeys.press": "> 按下组合键 <",
+  "gui.mesplicedterminal.hotkeys.hint": "左键设置  右键清除  Esc 取消",
+  "gui.mesplicedterminal.hotkeys.cycle_preset": "切换布局预设",
+  "gui.mesplicedterminal.hotkeys.select_preset": "切换到预设：%s"
 }

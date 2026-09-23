@@ -31,6 +31,8 @@ public final class MestTerminal {
 
     /** Internal terminal name used by AE2WTLib's registry/hotkey/universal-terminal systems. */
     public static final String TERMINAL_NAME = "spliced";
+    /** AE2WTLib's default hotkey id for {@link #TERMINAL_NAME}; its key mapping is {@code key.ae2.<id>}. */
+    public static final String HOTKEY_NAME = "wireless_" + TERMINAL_NAME + "_terminal";
     private static final Icon SPLICED_TERMINAL_ICON = new Icon(
             0,
             0,
@@ -50,6 +52,7 @@ public final class MestTerminal {
     public static void registerTerminal() {
         AddTerminalEvent.register(event -> event
                 .builder(TERMINAL_NAME, MESTMenuHost::new, MESTMenu.TYPE, ModItems.splicedTerminalItem(), SPLICED_TERMINAL_ICON)
+                .hotkeyName(HOTKEY_NAME)
                 .upgradeCount(3)
                 .addTerminal());
     }

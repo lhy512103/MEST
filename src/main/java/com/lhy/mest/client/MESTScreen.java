@@ -93,6 +93,9 @@ import com.lhy.mest.client.panel.NetworkToolkitPanel;
 import com.lhy.mest.client.panel.TrashPanel;
 import com.lhy.mest.client.panel.ToolkitPanel;
 import com.lhy.mest.client.panel.WirelessSettingsPanel;
+import com.lhy.mest.client.panel.HotkeysPanel;
+import com.lhy.mest.client.hotkey.HotkeyActions;
+import com.lhy.mest.client.hotkey.PanelHotkeys;
 import net.neoforged.fml.ModList;
 import com.lhy.mest.integration.MestRecipeTransferContext;
 import com.lhy.mest.compat.plus.PlusScreenSupport;
@@ -157,6 +160,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private WirelessSettingsPanel wirelessSettingsPanel;
     private TrashPanel trashPanel;
     private ToolkitPanel toolkitPanel;
+    private HotkeysPanel hotkeysPanel;
     private NetworkToolkitPanel networkToolkitPanel;
     private boolean keepPendingOnRemove;
     private final MestRecipeTransferController recipeTransfer = new MestRecipeTransferController();
@@ -417,6 +421,8 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             panels.add(toolkitPanel);
             networkToolkitPanel = new NetworkToolkitPanel(getMenu());
             panels.add(networkToolkitPanel);
+            hotkeysPanel = new HotkeysPanel(style, dock);
+            panels.add(hotkeysPanel);
             if (ModList.get().isLoaded("extendedae_plus")) {
                 providerSelectPanel = new ProviderSelectPanel(style);
                 panels.add(providerSelectPanel);
@@ -457,6 +463,15 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         syncUtilityHost();
         dock.layoutAll();
         dock.applyPendingCenter();
+        String pendingHotkey = PanelHotkeys.takePendingOpen();
+        if (pendingHotkey != null) {
+            ModulePanel requested = panelById(pendingHotkey);
+            if (requested == null) {
+                runHotkey(pendingHotkey);
+            } else if (!dock.policyFor(requested).visible()) {
+                toggleModuleFromHotkey(requested);
+            }
+        }
         if (trashPanel != null && dock.isEffectivelyVisible(trashPanel) && !getMenu().isTrashOpen()) {
             getMenu().openTrashMenu();
         }
@@ -1218,6 +1233,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             case "trash" -> Icon.BACKGROUND_TRASH;
             case "toolkit" -> Icon.S_STORAGE;
             case "inventory" -> Icon.S_STORAGE;
+            case HotkeysPanel.ID -> Icon.TYPE_FILTER_ALL;
             default -> Icon.COG;
         };
     }
@@ -1401,6 +1417,45 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             int ix = getX();
             int iy = getY() + 1 + yOffset;
             blitPanelIcon(guiGraphics, panel, ix, iy, 16, 16, shown ? 1.0F : 0.5F);
+        }
+    }
+
+    /** Toggles the bound panel, or runs a layout action such as a preset switch. */
+    private boolean runHotkey(String id) {
+        ModulePanel panel = panelById(id);
+        if (panel != null) {
+            toggleModuleFromHotkey(panel);
+            return true;
+        }
+        if (HotkeyActions.CYCLE_PRESET.equals(id)) {
+            dock.cyclePreset();
+            return true;
+        }
+        int preset = HotkeyActions.presetIndex(id);
+        if (preset >= 0 && preset < dock.presetCount()) {
+            dock.selectPreset(preset);
+            return true;
+        }
+        return false;
+    }
+
+    /** Panel hotkeys follow the side-bar buttons, plus the trash and settings panels' own open paths. */
+    private void toggleModuleFromHotkey(ModulePanel panel) {
+        boolean shown = dock.policyFor(panel).visible();
+        if (panel == trashPanel) {
+            if (shown) {
+                closeTrash();
+            } else {
+                openTrash();
+            }
+            dock.save();
+            attachMeSideBar();
+            attachExtraSlotColumns();
+            return;
+        }
+        toggleModule(panel);
+        if (!shown && panel == wirelessSettingsPanel) {
+            wirelessSettingsPanel.reloadFromStack();
         }
     }
 
@@ -1589,6 +1644,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     private boolean mouseClickedInWorkspace(double mx, double my, int button) {
         ModulePanel target = dock.topLeafAt(mx, my);
+        if (target != hotkeysPanel && hotkeysPanel != null) {
+            hotkeysPanel.cancelCapture();
+        }
 
         if (target != providerSelectPanel) {
             dismissProviderPicker(true);
@@ -1887,13 +1945,18 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (extra != null && extra.mouseScrolled(mx, my, scrollY)) {
             return true;
         }
-        if (patternAccessPanel != null && patternAccessPanel.mouseScrolled(mx, my, scrollY)) {
+        // These three also scroll from their edge scrollers just outside the leaf, but only when no
+        // other window covers the pointer; a raised panel's wheel must not reach the one beneath.
+        if (patternAccessPanel != null && dock.isPointReachable(patternAccessPanel, mx, my)
+                && patternAccessPanel.mouseScrolled(mx, my, scrollY)) {
             return true;
         }
-        if (patternCachePanel != null && patternCachePanel.mouseScrolled(mx, my, scrollY)) {
+        if (patternCachePanel != null && dock.isPointReachable(patternCachePanel, mx, my)
+                && patternCachePanel.mouseScrolled(mx, my, scrollY)) {
             return true;
         }
-        if (providerSelectPanel != null && providerSelectPanel.mouseScrolled(mx, my, scrollY)) {
+        if (providerSelectPanel != null && dock.isPointReachable(providerSelectPanel, mx, my)
+                && providerSelectPanel.mouseScrolled(mx, my, scrollY)) {
             return true;
         }
         ModulePanel target = dock.topLeafAt(mx, my);
@@ -2126,6 +2189,13 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             }
             return;
         }
+        if (target == hotkeysPanel && hotkeysPanel != null) {
+            ITooltip hotkeyTip = hotkeysPanel.hoveredTooltip(x, y);
+            if (hotkeyTip != null) {
+                drawAeWidgetTooltip(g, x, y, hotkeyTip);
+                return;
+            }
+        }
         if (target == toolkitPanel && toolkitPanel != null) {
             ITooltip lockTip = toolkitPanel.hoveredTooltip(x, y);
             if (lockTip != null && lockTip.isTooltipAreaVisible() && !lockTip.getTooltipMessage().isEmpty()) {
@@ -2239,6 +2309,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (hotkeysPanel != null && hotkeysPanel.isCapturing()) {
+            return hotkeysPanel.captureKey(keyCode, modifiers);
+        }
         boolean meSearch = meListPanel != null && meListPanel.isSearchFocused();
         boolean patSearch = patternAccessPanel != null
                 && (getFocused() == patternAccessPanel.searchField() || patternAccessPanel.isSearchFocused());
@@ -2310,6 +2383,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                         minecraft.mouseHandler.ypos()
                                 * this.height / Math.max(1, minecraft.getWindow().getScreenHeight()),
                         hasControlDown())) {
+            return true;
+        }
+        String hotkey = PanelHotkeys.match(keyCode, modifiers);
+        if (hotkey != null && runHotkey(hotkey)) {
             return true;
         }
         boolean handled = super.keyPressed(keyCode, scanCode, modifiers);

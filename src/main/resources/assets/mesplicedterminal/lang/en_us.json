@@ -168,5 +168,16 @@
   "gui.expatternprovider.show_slots": "Show Slots",
   "extendedae_plus.tooltip.provider.open_ui": "Open the target machine GUI of this provider",
   "gui.mesplicedterminal.pattern_access.open_ui_failed": "Failed to open the provider target container UI",
-  "gui.mesplicedterminal.pattern_access.click_hint": "Left-click to take/place/swap, right-click to extract"
+  "gui.mesplicedterminal.pattern_access.click_hint": "Left-click to take/place/swap, right-click to extract",
+  "key.ae2.wireless_spliced_terminal": "Open ME Spliced Terminal",
+  "gui.mesplicedterminal.hotkeys": "Panel Hotkeys",
+  "gui.mesplicedterminal.hotkeys.module": "Panel",
+  "gui.mesplicedterminal.hotkeys.key": "Hotkey",
+  "gui.mesplicedterminal.hotkeys.terminal_only": "Terminal only",
+  "gui.mesplicedterminal.hotkeys.terminal_only.hint": "On: works only while the terminal is open. Off: also opens the terminal from the world with this panel shown",
+  "gui.mesplicedterminal.hotkeys.unbound": "Not bound",
+  "gui.mesplicedterminal.hotkeys.press": "> Press a combo <",
+  "gui.mesplicedterminal.hotkeys.hint": "Left: set  Right: clear  Esc: cancel",
+  "gui.mesplicedterminal.hotkeys.cycle_preset": "Cycle layout preset",
+  "gui.mesplicedterminal.hotkeys.select_preset": "Switch to preset: %s"
 }

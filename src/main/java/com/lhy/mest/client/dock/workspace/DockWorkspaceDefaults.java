@@ -114,13 +114,15 @@ public final class DockWorkspaceDefaults {
         return !"provider_select".equals(moduleId)
                 && !"wireless_settings".equals(moduleId)
                 && !"trash".equals(moduleId)
-                && !"toolkit".equals(moduleId);
+                && !"toolkit".equals(moduleId)
+                && !"hotkeys".equals(moduleId);
     }
 
     public static boolean defaultFloating(String moduleId) {
         return "wireless_settings".equals(moduleId)
                 || "trash".equals(moduleId)
                 || "toolkit".equals(moduleId)
+                || "hotkeys".equals(moduleId)
                 || "network_toolkit".equals(moduleId);
     }
 
