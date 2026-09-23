@@ -23,6 +23,7 @@
 17. Fixed: Network tool upgrade slots now follow the tool stack itself, so cards can no longer be duplicated after moving the tool away.
 18. Fixed: The terminal screen and the extra hotbar now share one toolkit inventory, so two diverging copies can no longer duplicate items.
 19. Changed: The toolkit, its remembered slots and the extra-bar settings now belong to the player and are kept on death; toolkit data stored on existing terminals is merged into the player automatically.
+20. Fixed: The pattern provider list no longer stays empty forever after overflowing during a snapshot rebuild.
 
 ### 中文
 
@@ -45,3 +46,4 @@
 17. 修复：工具包里网络工具的升级槽改为跟随工具本身，移走工具后不能再取出升级卡刷物品。
 18. 修复：终端界面与扩展快捷栏共用同一份工具包库存，两份副本不再分叉刷物品。
 19. 调整：工具包、记忆槽和扩展栏设置改为跟随玩家，死亡不掉落；已有终端上的工具包数据会自动合并到玩家身上。
+20. 修复：样板供应器列表在重建快照时溢出后不再永久停在空列表。

@@ -422,7 +422,8 @@ public final class PatternAccessSession {
             trackersById.put(tracker.id, tracker);
             queueFull(tracker);
         }
-        snapshotRequired = false;
+        // An overflow during the rebuild already queued a RESET and asked for a new snapshot.
+        snapshotRequired = queueInvalid;
         lastSnapshotTick = ticks;
     }
 
