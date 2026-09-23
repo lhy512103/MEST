@@ -65,6 +65,7 @@ import de.mari_023.ae2wtlib.wct.magnet_card.MagnetMode;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.registry.ModComponents;
+import com.lhy.mest.compat.MestCraftingPatternAutoUpload;
 import com.lhy.mest.compat.plus.PlusEncodingUpload;
 import com.lhy.mest.network.PatternAccessSession;
 import com.lhy.mest.network.PatternCacheActionPacket;
@@ -449,7 +450,7 @@ public class MESTMenu extends CraftingTermMenu {
                     && getPlayer() instanceof ServerPlayer player) {
                 var node = getGridNode();
                 if (node != null) {
-                    PlusEncodingUpload.uploadEncodedToMatrix(player, encodedPatternSlot, node.getGrid());
+                    MestCraftingPatternAutoUpload.tryUpload(player, encodedPatternSlot, node.getGrid());
                 }
             }
         } else {

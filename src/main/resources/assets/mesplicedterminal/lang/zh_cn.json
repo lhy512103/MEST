@@ -119,6 +119,7 @@
   "gui.mesplicedterminal.pattern_upload": "上传编码样板到供应器",
   "gui.mesplicedterminal.pattern_upload.return": "取回上次上传的样板",
   "gui.mesplicedterminal.pattern_upload.no_provider": "没有可用的空闲样板供应器",
+  "gui.mesplicedterminal.pattern_upload.duplicate": "该样板已存在于合成装配、ECO 或闪电科技存储中",
   "gui.mesplicedterminal.config.pattern_cache_slots": "样板缓存槽位数",
   "gui.mesplicedterminal.config.pattern_cache_slots.tooltip": "最少 18，之后按 9 的倍数增加（一行 9 格）。下次打开终端生效。",
   "gui.mesplicedterminal.config.trash_slots": "垃圾桶槽位数",

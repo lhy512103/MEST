@@ -119,6 +119,7 @@
   "gui.mesplicedterminal.pattern_upload": "Upload encoded pattern to a provider",
   "gui.mesplicedterminal.pattern_upload.return": "Return the last uploaded pattern",
   "gui.mesplicedterminal.pattern_upload.no_provider": "No pattern provider with a free slot",
+  "gui.mesplicedterminal.pattern_upload.duplicate": "This pattern is already in a crafting assembler or ECO / Lightning Tech storage",
   "gui.mesplicedterminal.config.pattern_cache_slots": "Pattern cache slots",
   "gui.mesplicedterminal.config.pattern_cache_slots.tooltip": "Minimum 18, then in steps of 9 (one extra row). Applies the next time the terminal is opened.",
   "gui.mesplicedterminal.config.trash_slots": "Trash slots",

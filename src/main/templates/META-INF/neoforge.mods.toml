@@ -84,3 +84,17 @@ A spliceable, drag-and-drop ME terminal that unifies AE2 wireless terminal modul
     type="optional"
     ordering="AFTER"
     side="CLIENT"
+
+# Neo ECO AE — optional. Non-processing encode auto-upload targets ECO pattern storage.
+[[dependencies.${mod_id}]]
+    modId="neoecoae"
+    type="optional"
+    ordering="AFTER"
+    side="BOTH"
+
+# AE2 Lightning Tech — optional. Crafting-assembler group routing and duplicate filter for auto-upload.
+[[dependencies.${mod_id}]]
+    modId="ae2lt"
+    type="optional"
+    ordering="AFTER"
+    side="BOTH"
