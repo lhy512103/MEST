@@ -55,13 +55,23 @@ public final class ToolkitBarEvents {
     @SubscribeEvent
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            ToolkitBarSyncPacket.send(player);
+            ToolkitBarSyncPacket.sendFull(player);
+        }
+    }
+
+    /** Respawn and dimension travel give the client a fresh player with an empty toolkit copy. */
+    @SubscribeEvent
+    public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            ToolkitBarSyncPacket.sendFull(player);
         }
     }
 
     @SubscribeEvent
-    public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
-        ToolkitBarState.clear(event.getEntity());
+    public static void onChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            ToolkitBarSyncPacket.sendFull(player);
+        }
     }
 
     @SubscribeEvent
@@ -72,7 +82,7 @@ public final class ToolkitBarEvents {
                 ToolkitBarState.setSelection(
                         player, ToolkitBarState.Bar.CENTER, player.getInventory().selected);
             }
-            ToolkitBarState.persistIfDirty(player);
+            ToolkitBarState.tick(player);
         }
     }
 }

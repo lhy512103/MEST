@@ -50,14 +50,10 @@ public class MESTMenuHost extends WCTMenuHost
                 new StackDependentSupplier<>(
                         this::getItemStack,
                         stack -> createInv(player, stack, ModComponents.TRASH_INV.get(), MestConfig.trashSlots())));
-        // One live toolkit per player: a second menu-local copy let in-place tool edits (cards
-        // taken from a network tool) and slot moves diverge, duplicating whatever was in the tool.
+        // Hand over a legacy terminal before its slots are built, so they show the merged toolkit.
+        ToolkitBarState.migrateNow(player, getItemStack());
         this.toolkit = new SupplierInternalInventory<>(() -> ToolkitBarState.asInventory(player));
-        this.toolkitMemory = new SupplierInternalInventory<>(
-                new StackDependentSupplier<>(
-                        this::getItemStack,
-                        stack -> createInv(player, stack, ModComponents.TOOLKIT_MEMORY.get(),
-                                MestConfig.toolkitSlots())));
+        this.toolkitMemory = new SupplierInternalInventory<>(() -> ToolkitBarState.memoryInventory(player));
         this.networkToolkit = new SupplierInternalInventory<>(
                 new StackDependentSupplier<>(
                         this::getItemStack,

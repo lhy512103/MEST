@@ -10,7 +10,6 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import io.netty.buffer.ByteBuf;
 
 import com.lhy.mest.MESplicedterminal;
-import com.lhy.mest.registry.ModComponents;
 import com.lhy.mest.terminal.ToolkitBarState;
 
 public record ToolkitQuickMovePacket(boolean enabled) implements CustomPacketPayload {
@@ -30,9 +29,8 @@ public record ToolkitQuickMovePacket(boolean enabled) implements CustomPacketPay
             if (!(context.player() instanceof ServerPlayer player) || !BUDGETS.tryAcquire(player)) {
                 return;
             }
-            var terminal = ToolkitBarState.findTerminal(player);
-            if (!terminal.isEmpty()) {
-                terminal.set(ModComponents.TOOLKIT_QUICK_MOVE.get(), packet.enabled());
+            if (ToolkitBarState.hasTerminal(player)) {
+                ToolkitBarState.setQuickMove(player, packet.enabled());
             }
         });
     }

@@ -54,8 +54,7 @@ public final class ToolkitBarHud {
         if (player == null || minecraft.options.hideGui || minecraft.screen != null) {
             return;
         }
-        ItemStack terminal = ToolkitBarState.findTerminal(player);
-        if (!ToolkitBarState.isBarEnabled(terminal)) {
+        if (!ToolkitBarState.isBarEnabled(player)) {
             return;
         }
         int guiWidth = g.guiWidth();

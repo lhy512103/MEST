@@ -11,6 +11,7 @@ import net.neoforged.fml.config.ModConfig;
 
 import com.lhy.mest.config.MestConfig;
 import com.lhy.mest.network.MestPackets;
+import com.lhy.mest.registry.ModAttachments;
 import com.lhy.mest.registry.ModComponents;
 import com.lhy.mest.registry.ModItems;
 import com.lhy.mest.registry.ModMenus;
@@ -33,6 +34,7 @@ public class MESplicedterminal {
         ModMenus.MENUS.register(modEventBus);
         ModItems.CREATIVE_TABS.register(modEventBus);
         ModComponents.DATA_COMPONENTS.register(modEventBus);
+        ModAttachments.ATTACHMENT_TYPES.register(modEventBus);
         ModRecipes.SERIALIZERS.register(modEventBus);
         container.registerConfig(ModConfig.Type.COMMON, MestConfig.SPEC);
 

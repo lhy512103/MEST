@@ -38,31 +38,31 @@ public final class ModComponents {
                     .persistent(ItemContainerContents.CODEC)
                     .networkSynchronized(ItemContainerContents.STREAM_CODEC));
 
-    /** Toolkit inventory: an extension of the player inventory that only holds unstackable items. */
+    /** Legacy: the toolkit now lives on the player. Kept so old terminals decode and can be migrated. */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> TOOLKIT_INV =
             register("toolkit_inv", builder -> builder
                     .persistent(ItemContainerContents.CODEC)
                     .networkSynchronized(ItemContainerContents.STREAM_CODEC));
 
-    /** Remembered item type per toolkit slot; empty remembered slots prefer matching tools. */
+    /** Legacy toolkit memory, migrated to the player. */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> TOOLKIT_MEMORY =
             register("toolkit_memory", builder -> builder
                     .persistent(ItemContainerContents.CODEC)
                     .networkSynchronized(ItemContainerContents.STREAM_CODEC));
 
-    /** Whether the toolkit quick bars are drawn beside the player's hotbar. */
+    /** Legacy extra-bar toggle, migrated to the player. */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> TOOLKIT_BAR =
             register("toolkit_bar", builder -> builder
                     .persistent(Codec.BOOL)
                     .networkSynchronized(ByteBufCodecs.BOOL));
 
-    /** Shift-click / ME transfer tries toolkit (memory slots first) before other destinations. */
+    /** Legacy toolkit quick-move toggle, migrated to the player. */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> TOOLKIT_QUICK_MOVE =
             register("toolkit_quick_move", builder -> builder
                     .persistent(Codec.BOOL)
                     .networkSynchronized(ByteBufCodecs.BOOL));
 
-    /** Extra-bar page: 0=left, 1=vanilla hotbar, 2=right. Slot inside the page is Inventory.selected. */
+    /** Legacy extra-bar page, dropped on migration. */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Integer>> TOOLKIT_BAR_PAGE =
             register("toolkit_bar_page", builder -> builder
                     .persistent(Codec.INT)

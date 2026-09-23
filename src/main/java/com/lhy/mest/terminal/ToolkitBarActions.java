@@ -7,7 +7,6 @@ import net.minecraft.stats.Stats;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Equipable;
 import net.minecraft.world.item.ItemStack;
@@ -15,26 +14,21 @@ import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 
 import com.lhy.mest.network.ToolkitBarSyncPacket;
-import com.lhy.mest.registry.ModComponents;
 
 /**
  * Toolkit quick-bar actions.
  *
- * <p>The toolkit inventory lives in the terminal item's {@code TOOLKIT_INV} component. Extra bars
- * only change the selected page; {@code Inventory.selected} is the slot inside that page.
+ * <p>The toolkit belongs to the player (see {@link ToolkitBarState}). Extra bars only change the
+ * selected page; {@code Inventory.selected} is the slot inside that page.
  */
 public final class ToolkitBarActions {
     private ToolkitBarActions() {}
 
     public static void setBarEnabled(ServerPlayer player, boolean enabled) {
-        ItemStack terminal = terminalFromOpenMenu(player);
-        if (terminal.isEmpty()) {
-            terminal = findTerminal(player);
-        }
-        if (terminal.isEmpty()) {
+        if (!ToolkitBarState.hasTerminal(player)) {
             return;
         }
-        terminal.set(ModComponents.TOOLKIT_BAR.get(), enabled);
+        ToolkitBarState.setBarEnabled(player, enabled);
         if (!enabled) {
             ToolkitBarState.setSelection(
                     player, ToolkitBarState.Bar.CENTER, player.getInventory().selected);
@@ -123,7 +117,7 @@ public final class ToolkitBarActions {
         if (!ToolkitBarState.isBarEnabled(player) || index < 0 || index >= ToolkitBarState.VISIBLE_CELLS) {
             return;
         }
-        ToolkitBarState.setSelection(player, ToolkitBarState.barOf(index), ToolkitBarState.slotOf(index));
+        ToolkitBarState.applyClientSelection(player, ToolkitBarState.barOf(index), ToolkitBarState.slotOf(index));
     }
 
     /**
@@ -138,34 +132,5 @@ public final class ToolkitBarActions {
                 ? toolkitIndex
                 : toolkitIndex + ToolkitBarState.BAR_SLOTS;
         selectVisibleCell(player, visible);
-    }
-
-    private static ItemStack terminalFromOpenMenu(ServerPlayer player) {
-        if (player.containerMenu instanceof MESTMenu menu) {
-            ItemStack stack = menu.getMestHost().getItemStack();
-            if (ToolkitBarState.isTerminalCarrier(stack)) {
-                return stack;
-            }
-        }
-        return ItemStack.EMPTY;
-    }
-
-    /** Prefer a terminal with bars enabled so HUD clicks hit the same stack the HUD is drawing. */
-    public static ItemStack findTerminal(ServerPlayer player) {
-        Inventory inventory = player.getInventory();
-        ItemStack first = ItemStack.EMPTY;
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
-            ItemStack stack = inventory.getItem(i);
-            if (!ToolkitBarState.isTerminalCarrier(stack)) {
-                continue;
-            }
-            if (stack.getOrDefault(ModComponents.TOOLKIT_BAR.get(), false)) {
-                return stack;
-            }
-            if (first.isEmpty()) {
-                first = stack;
-            }
-        }
-        return first;
     }
 }

@@ -29,8 +29,8 @@ import com.lhy.mest.client.dock.DockManager;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.network.ToolkitBarTogglePacket;
 import com.lhy.mest.network.ToolkitQuickMovePacket;
-import com.lhy.mest.registry.ModComponents;
 import com.lhy.mest.terminal.MESTMenu;
+import com.lhy.mest.terminal.ToolkitBarState;
 
 /**
  * Wireless-terminal settings as a dock module. Saves through wtlib's
@@ -145,8 +145,8 @@ public class WirelessSettingsPanel extends ModulePanel {
                 && MagnetHandler.getMagnetMode(stack) != MagnetMode.INVALID;
         magnet.active = hasCard;
         pickupToME.active = hasCard;
-        toolkitBar.setSelected(stack.getOrDefault(ModComponents.TOOLKIT_BAR.get(), false));
-        toolkitQuickMove.setSelected(stack.getOrDefault(ModComponents.TOOLKIT_QUICK_MOVE.get(), true));
+        toolkitBar.setSelected(ToolkitBarState.isBarToggleOn(menu.getPlayer()));
+        toolkitQuickMove.setSelected(ToolkitBarState.isQuickMoveEnabled(menu.getPlayer()));
     }
 
     private void onPickBlockChanged() {
@@ -159,14 +159,12 @@ public class WirelessSettingsPanel extends ModulePanel {
     }
 
     private void saveToolkitBar() {
-        ItemStack stack = menu.getMestHost().getItemStack();
-        stack.set(ModComponents.TOOLKIT_BAR.get(), toolkitBar.isSelected());
+        ToolkitBarState.setBarEnabled(menu.getPlayer(), toolkitBar.isSelected());
         PacketDistributor.sendToServer(new ToolkitBarTogglePacket(toolkitBar.isSelected()));
     }
 
     private void saveToolkitQuickMove() {
-        ItemStack stack = menu.getMestHost().getItemStack();
-        stack.set(ModComponents.TOOLKIT_QUICK_MOVE.get(), toolkitQuickMove.isSelected());
+        ToolkitBarState.setQuickMove(menu.getPlayer(), toolkitQuickMove.isSelected());
         PacketDistributor.sendToServer(new ToolkitQuickMovePacket(toolkitQuickMove.isSelected()));
     }
 

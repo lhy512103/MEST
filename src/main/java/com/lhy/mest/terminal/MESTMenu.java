@@ -65,7 +65,6 @@ import de.mari_023.ae2wtlib.wct.magnet_card.MagnetHandler;
 import de.mari_023.ae2wtlib.wct.magnet_card.MagnetMode;
 
 import com.lhy.mest.MESplicedterminal;
-import com.lhy.mest.registry.ModComponents;
 import com.lhy.mest.compat.MestCraftingPatternAutoUpload;
 import com.lhy.mest.compat.plus.PlusEncodingUpload;
 import com.lhy.mest.network.PatternAccessSession;
@@ -1321,7 +1320,7 @@ public class MESTMenu extends CraftingTermMenu {
     }
 
     private boolean prefersToolkitQuickMove() {
-        return toolkitOpen && host.getItemStack().getOrDefault(ModComponents.TOOLKIT_QUICK_MOVE.get(), true);
+        return toolkitOpen && ToolkitBarState.isQuickMoveEnabled(getPlayer());
     }
 
     private ItemStack insertIntoToolkit(ItemStack input, boolean rememberedEmptyOnly) {
