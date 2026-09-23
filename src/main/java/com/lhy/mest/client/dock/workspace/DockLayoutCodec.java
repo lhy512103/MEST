@@ -134,7 +134,8 @@ public final class DockLayoutCodec {
 
     /**
      * Placement tweaks: an older document may hold the network-tool panel further right than the
-     * current default.
+     * current default. Only a window holding nothing but that panel is moved; one it was spliced
+     * into was arranged by the player, and shifting it would drag every other module along.
      */
     private static void migrateNetworkToolkitPlacement(List<FloatingRoot> roots, int version) {
         int shift = DockWorkspaceDefaults.networkToolkitShiftFrom(version);
@@ -143,14 +144,8 @@ public final class DockLayoutCodec {
         }
         for (int index = 0; index < roots.size(); index++) {
             FloatingRoot root = roots.get(index);
-            boolean holdsNetworkToolkit = false;
-            for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
-                if (DockWorkspaceDefaults.NETWORK_TOOLKIT_MODULE.equals(leaf.moduleId())) {
-                    holdsNetworkToolkit = true;
-                    break;
-                }
-            }
-            if (holdsNetworkToolkit) {
+            if (root.content() instanceof LeafNode leaf
+                    && DockWorkspaceDefaults.NETWORK_TOOLKIT_MODULE.equals(leaf.moduleId())) {
                 roots.set(index, root.withBounds(
                         DockWorkspaceDefaults.networkToolkitBounds(root.bounds(), shift)));
             }

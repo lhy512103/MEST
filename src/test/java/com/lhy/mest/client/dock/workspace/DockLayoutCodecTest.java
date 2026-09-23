@@ -211,6 +211,37 @@ class DockLayoutCodecTest {
     }
 
     @Test
+    void leavesASplicedNetworkToolkitWindowWhereThePlayerPutIt() throws Exception {
+        String persisted = """
+                {
+                  "version": 3,
+                  "roots": [{
+                    "rootId": "root-mixed",
+                    "bounds": {"x": 501, "y": 284, "width": 160, "height": 66},
+                    "content": {
+                      "type": "split", "nodeId": "split-mixed", "axis": "HORIZONTAL", "ratio": 0.5,
+                      "first": {"type": "leaf", "nodeId": "leaf-nt", "moduleId": "network_toolkit", "visible": true},
+                      "second": {"type": "leaf", "nodeId": "leaf-a", "moduleId": "a", "visible": true}
+                    }
+                  }],
+                  "policies": {
+                    "network_toolkit": {"visible": true, "movable": true, "resizable": true,
+                                        "floating": false, "pinned": false, "showTerminalButton": true},
+                    "a": {"visible": true, "movable": true, "resizable": true,
+                          "floating": false, "pinned": false, "showTerminalButton": true}
+                  }
+                }
+                """;
+        DockLayoutCodec codec = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog("network_toolkit", "a"),
+                WorkspacePersistenceFixtures.migrationContext());
+
+        DockRect bounds = codec.decode(persisted).workspace().roots().getFirst().bounds();
+
+        assertEquals(501, bounds.x());
+    }
+
+    @Test
     void v3PolicyIsTheSingleVisibilitySource() throws Exception {
         String persisted = """
                 {
