@@ -46,7 +46,6 @@ dependencies {
     compileOnly "curse.maven:applied-mekanistics-574300:${applied_mekanistics_file}"
     compileOnly "curse.maven:ae2-import-export-card-982512:${ae2_import_export_card_file}"
     compileOnly "curse.maven:ae2-lightning-tech-1527395:${ae2_lightning_tech_file}"
-    compileOnly "curse.maven:neo-eco-ae-extension-1460639:${neoecoae_file}"
     compileOnly "curse.maven:clientsort-1049891:${clientsort_file}"
 
     // Cross-mod APIs used by optional compatibility code

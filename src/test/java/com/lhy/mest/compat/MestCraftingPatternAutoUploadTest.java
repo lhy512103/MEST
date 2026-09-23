@@ -19,4 +19,9 @@ class MestCraftingPatternAutoUploadTest {
         assertFalse(MestCraftingPatternAutoUpload.FALLBACK_CRAFTING_GROUP_IDS.contains(
                 "ae2:pattern_provider"));
     }
+
+    @Test
+    void ecoGroupFilterRejectsNull() {
+        assertFalse(MestCraftingPatternAutoUpload.isEcoCraftingGroup(null));
+    }
 }

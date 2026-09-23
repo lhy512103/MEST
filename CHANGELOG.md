@@ -16,6 +16,7 @@
 10. Fixed: Memory cards now pull and return upgrade cards from the spliced terminal's built-in network toolkit when no vanilla network tool is carried.
 11. Fixed: Crafting pins now prune on close like AE2, the ME list scrollbar reserves the pin row, and the pin cap follows the visible column count.
 12. Added: Non-processing encode auto-upload now targets ECO pattern storage and Lightning Tech crafting assemblers, with duplicate detection before insert.
+13. Fixed: ECO auto-upload now uses PatternContainer group routing instead of compile-time neoecoae APIs.
 
 ### 中文
 
@@ -31,3 +32,4 @@
 10. 修复：没有手持原版网络工具时，内存卡会从终端自带网络工具面板的升级槽取放升级卡。
 11. 修复：合成置顶按原版在关界面后回收，滚动为置顶行预留一页，上限随 ME 列表当前列数变化。
 12. 新增：非处理样板编码后自动上传到 ECO 样板库和闪电科技合成装配，插入前做去重。
+13. 修复：ECO 自动上传改为走 PatternContainer 分组，不再编译依赖 neoecoae API。

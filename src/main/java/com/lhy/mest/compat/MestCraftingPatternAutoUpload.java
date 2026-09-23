@@ -1,6 +1,7 @@
 package com.lhy.mest.compat;
 
 import java.util.Set;
+import java.util.function.Predicate;
 
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -23,9 +24,10 @@ import appeng.menu.slot.RestrictedInputSlot;
 import com.lhy.mest.compat.plus.PlusEncodingUpload;
 
 /**
- * Auto-uploads non-processing encoded patterns after encode (no Shift): ECO storage,
- * EAEP assembler matrix, then other crafting-assembler PatternContainers (Lightning Tech
- * matter-warping matrix, etc.). Duplicate checks run before any insert.
+ * Auto-uploads non-processing encoded patterns after encode (no Shift): ECO
+ * PatternContainers first, then EAEP assembler matrix, then other crafting-assembler
+ * PatternContainers (Lightning Tech matter-warping matrix, etc.). Duplicate checks run
+ * before any insert.
  */
 public final class MestCraftingPatternAutoUpload {
     static final Set<String> FALLBACK_CRAFTING_GROUP_IDS = Set.of(
@@ -59,14 +61,14 @@ public final class MestCraftingPatternAutoUpload {
                     Component.translatable("gui.mesplicedterminal.pattern_upload.duplicate"), true);
             return false;
         }
-        if (ModList.get().isLoaded("neoecoae") && EcoPatternAutoUpload.insert(grid, stack)) {
+        if (insertIntoCraftingContainer(grid, stack, MestCraftingPatternAutoUpload::isEcoCraftingGroup)) {
             clearEncoded(encodedSlot);
             return true;
         }
         if (PlusEncodingUpload.uploadEncodedToMatrix(player, encodedSlot, grid)) {
             return true;
         }
-        if (insertIntoCraftingContainer(grid, stack)) {
+        if (insertIntoCraftingContainer(grid, stack, group -> !isEcoCraftingGroup(group))) {
             clearEncoded(encodedSlot);
             return true;
         }
@@ -89,9 +91,13 @@ public final class MestCraftingPatternAutoUpload {
         return false;
     }
 
-    private static boolean insertIntoCraftingContainer(IGrid grid, ItemStack stack) {
+    private static boolean insertIntoCraftingContainer(
+            IGrid grid, ItemStack stack, Predicate<PatternContainerGroup> groupFilter) {
         ItemStack toInsert = stack.copy();
         for (PatternContainer container : craftingContainers(grid)) {
+            if (!groupFilter.test(container.getTerminalGroup())) {
+                continue;
+            }
             InternalInventory inventory = container.getTerminalPatternInventory();
             if (inventory == null) {
                 continue;
@@ -102,6 +108,14 @@ public final class MestCraftingPatternAutoUpload {
             }
         }
         return false;
+    }
+
+    static boolean isEcoCraftingGroup(PatternContainerGroup group) {
+        if (group == null) {
+            return false;
+        }
+        AEItemKey icon = group.icon();
+        return icon != null && "neoecoae".equals(icon.getId().getNamespace());
     }
 
     private static Iterable<PatternContainer> craftingContainers(IGrid grid) {
