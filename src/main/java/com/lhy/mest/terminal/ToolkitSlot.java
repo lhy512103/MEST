@@ -28,6 +28,25 @@ public class ToolkitSlot extends AppEngSlot {
         return menu.toolkitOpen && super.isSlotEnabled();
     }
 
+    // AppEngSlot reports a disabled slot as empty and lets a full content sync write that empty
+    // back. This inventory is the player's live toolkit, also drawn by the extra hotbar, so a closed
+    // panel must only block interaction, never make the menu sync clear the cells.
+    @Override
+    public ItemStack getItem() {
+        return getInventory().getStackInSlot(toolkitIndex);
+    }
+
+    @Override
+    public void set(ItemStack stack) {
+        getInventory().setItemDirect(toolkitIndex, stack);
+        setChanged();
+    }
+
+    @Override
+    public void initialize(ItemStack stack) {
+        getInventory().setItemDirect(toolkitIndex, stack);
+    }
+
     @Override
     public boolean mayPlace(ItemStack stack) {
         if (!menu.toolkitOpen || !ToolkitBarState.mayStore(stack)) {

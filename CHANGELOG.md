@@ -31,6 +31,7 @@
 25. Fixed: Scrollbars of panels covered by a higher window can no longer be dragged through it.
 26. Fixed: The legacy network tool panel placement migration only moves a standalone panel window, no longer dragging spliced modules along.
 27. Changed: Removed the stretch and compact splice modes; spliced windows now always use the outer-shell style. Layouts saved in the old modes are resized to fit their content once on load.
+28. Fixed: Items in the extra hotbar no longer disappear after leaving the layout editor or any other menu sync while the toolkit panel is closed.
 
 ### 中文
 
@@ -61,3 +62,4 @@
 25. 修复：被上层窗口挡住的面板不能再被隔着拖动滚动条。
 26. 修复：网络工具面板的旧版位置迁移只移动单独成窗的面板，不再带着拼接在一起的其他模块一起平移。
 27. 调整：移除拉伸拼接和紧凑拼接两种模式，拼接窗口统一使用外壳拼接；旧模式保存的布局会在加载时按内容自动调整一次窗口大小。
+28. 修复：工具包面板关闭时，保存退出布局编辑器等菜单同步不再清空扩展快捷栏里的物品图标。
