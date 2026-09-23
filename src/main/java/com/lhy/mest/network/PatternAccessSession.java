@@ -91,8 +91,10 @@ public final class PatternAccessSession {
     private boolean snapshotRequired;
     private boolean queueInvalid;
     private ShowPatternProviders showMode = ShowPatternProviders.VISIBLE;
-    private long lastUploadId = -1;
+    // Tracked by provider object, not id: ids are reassigned from 1 on every snapshot rebuild.
+    private PatternContainer lastUploadContainer;
     private int lastUploadSlot = -1;
+    private ItemStack lastUploadPattern = ItemStack.EMPTY;
 
     public PatternAccessSession(MESTMenu menu) {
         this.menu = Objects.requireNonNull(menu);
@@ -679,8 +681,9 @@ public final class PatternAccessSession {
                 }
                 encodedSlot.remove(1);
                 encodedSlot.setChanged();
-                lastUploadId = tracker.id;
+                lastUploadContainer = tracker.container;
                 lastUploadSlot = slot;
+                lastUploadPattern = inserting.copy();
                 return true;
             }
         }
@@ -688,22 +691,25 @@ public final class PatternAccessSession {
     }
 
     public void returnLastUpload(ServerPlayer player) {
-        if (lastUploadId <= 0 || lastUploadSlot < 0) {
+        if (lastUploadContainer == null || lastUploadSlot < 0) {
             return;
         }
-        Tracker tracker = trackersById.get(lastUploadId);
-        if (tracker == null || tracker.inventory == null) {
+        Tracker tracker = trackers.get(lastUploadContainer);
+        if (tracker == null || tracker.inventory == null || lastUploadSlot >= tracker.inventory.size()) {
+            return;
+        }
+        // Only take back the pattern that was uploaded; the slot may have been emptied or reused.
+        ItemStack present = tracker.inventory.extractItem(lastUploadSlot, 1, true);
+        if (!ItemStack.isSameItemSameComponents(present, lastUploadPattern)) {
             return;
         }
         ItemStack extracted = tracker.inventory.extractItem(lastUploadSlot, 1, false);
-        if (extracted.isEmpty() || !PatternDetailsHelper.isEncodedPattern(extracted)) {
-            return;
-        }
         if (!player.getInventory().add(extracted)) {
             player.drop(extracted, false);
         }
-        lastUploadId = -1;
+        lastUploadContainer = null;
         lastUploadSlot = -1;
+        lastUploadPattern = ItemStack.EMPTY;
     }
 
     private IGrid getCurrentGrid() {
