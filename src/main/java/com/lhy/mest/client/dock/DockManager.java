@@ -248,6 +248,7 @@ public final class DockManager {
         persistence = new AtomicFileDockLayoutStore(path, codec);
 
         boolean loadedCurrentLayout = false;
+        boolean loadedFromFile = false;
         boolean rewriteMigratedLayout = false;
         persistenceBlockedAfterLoadFailure = false;
         try {
@@ -261,6 +262,7 @@ public final class DockManager {
             if (loaded.isPresent()) {
                 DockLayoutCodec.DecodedLayout decoded = loaded.get();
                 workspace = decoded.workspace();
+                loadedFromFile = true;
                 rewriteMigratedLayout = decoded.needsRewrite();
                 loadedCurrentLayout = !decoded.needsRewrite();
             } else {
@@ -279,7 +281,13 @@ public final class DockManager {
 
         loadPresetBank(workspace);
         if (presets != null) {
-            workspace = presets.workspaces()[presets.active()];
+            if (loadedFromFile && !persistenceBlockedAfterLoadFailure) {
+                // layout.json is written first on every save, so it is never older than the
+                // active preset slot; keep the slot in step instead of letting it win.
+                presets = presets.withWorkspace(presets.active(), workspace);
+            } else {
+                workspace = presets.workspaces()[presets.active()];
+            }
         }
         viewportWorkspace = clampWorkspaceToViewport(workspace);
         workspaceRevision = 1;
