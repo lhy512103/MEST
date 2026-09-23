@@ -838,11 +838,49 @@ public class MESTMenu extends CraftingTermMenu {
             }
             InternalInventory upgrades = toolHost.getInventory();
             for (int slot = 0; slot < upgrades.size(); slot++) {
-                addSlot(new RestrictedInputSlot(
-                        RestrictedInputSlot.PlacableItemType.UPGRADES, upgrades, slot),
-                        SlotSemantics.TOOLBOX);
+                addSlot(new ToolkitToolboxSlot(upgrades, slot, toolHost), SlotSemantics.TOOLBOX);
             }
             return;
+        }
+    }
+
+    /**
+     * AE2's {@code ToolboxMenu.tick} closes the menu once the tool is gone; these slots live in our
+     * menu instead, so they freeze rather than touch whatever stack now sits at that index.
+     */
+    private static final class ToolkitToolboxSlot extends RestrictedInputSlot {
+        private final NetworkToolMenuHost<?> toolHost;
+
+        ToolkitToolboxSlot(InternalInventory upgrades, int slot, NetworkToolMenuHost<?> toolHost) {
+            super(RestrictedInputSlot.PlacableItemType.UPGRADES, upgrades, slot);
+            this.toolHost = toolHost;
+        }
+
+        @Override
+        public ItemStack getItem() {
+            return toolHost.isValid() ? super.getItem() : ItemStack.EMPTY;
+        }
+
+        @Override
+        public boolean mayPlace(ItemStack stack) {
+            return toolHost.isValid() && super.mayPlace(stack);
+        }
+
+        @Override
+        public boolean mayPickup(Player player) {
+            return toolHost.isValid() && super.mayPickup(player);
+        }
+
+        @Override
+        public void set(ItemStack stack) {
+            if (toolHost.isValid()) {
+                super.set(stack);
+            }
+        }
+
+        @Override
+        public ItemStack remove(int amount) {
+            return toolHost.isValid() ? super.remove(amount) : ItemStack.EMPTY;
         }
     }
 

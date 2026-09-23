@@ -20,6 +20,7 @@
 14. Fixed: Requesting the provider list no longer crashes servers without ExtendedAE Plus.
 15. Fixed: Moving items from the network into the toolkit or trash now uses AE power and only hands out what was actually extracted.
 16. Fixed: Remotely opening machines next to pattern providers now respects spawn protection and claim mods, and no longer toggles levers, doors or buttons.
+17. Fixed: Network tool upgrade slots now follow the tool stack itself, so cards can no longer be duplicated after moving the tool away.
 
 ### 中文
 
@@ -39,3 +40,4 @@
 14. 修复：服务端没装 ExtendedAE Plus 时，请求供应器列表不再崩服。
 15. 修复：从网络取物放入工具包或垃圾桶改为扣能量，并按实际取出数量放入，不再多给。
 16. 修复：远程打开供应器旁的机器时遵守出生点保护和领地模组，不再触发拉杆、门和按钮。
+17. 修复：工具包里网络工具的升级槽改为跟随工具本身，移走工具后不能再取出升级卡刷物品。
