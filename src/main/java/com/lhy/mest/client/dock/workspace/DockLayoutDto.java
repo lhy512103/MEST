@@ -8,7 +8,6 @@ import com.lhy.mest.client.dock.model.ContentOffset;
 import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.DockSize;
-import com.lhy.mest.client.dock.model.SpliceMode;
 
 /** Versioned persistence DTO, deliberately separate from the runtime tree. */
 public record DockLayoutDto(
@@ -16,19 +15,21 @@ public record DockLayoutDto(
         List<RootDto> roots,
         Map<String, PolicyDto> policies,
         Map<String, DockSize> restoreSizes,
-        SpliceMode spliceMode,
         Map<String, ContentOffset> contentOffsets) {
-    /** v4 tightened the network-tool panel's placement; v5 tightened it by another 2px. */
-    public static final int CURRENT_VERSION = 5;
+    /**
+     * v4 tightened the network-tool panel's placement; v5 tightened it by another 2px; v6 dropped
+     * the stretch and compact splice modes, so every window is an outer shell.
+     */
+    public static final int CURRENT_VERSION = 6;
     /** Oldest version this codec still decodes. */
     public static final int MIN_SUPPORTED_VERSION = 2;
 
     public DockLayoutDto(int version, List<RootDto> roots) {
-        this(version, roots, Map.of(), Map.of(), SpliceMode.DEFAULT, Map.of());
+        this(version, roots, Map.of(), Map.of(), Map.of());
     }
 
     public DockLayoutDto(int version, List<RootDto> roots, Map<String, PolicyDto> policies) {
-        this(version, roots, policies, Map.of(), SpliceMode.DEFAULT, Map.of());
+        this(version, roots, policies, Map.of(), Map.of());
     }
 
     public DockLayoutDto(
@@ -36,16 +37,7 @@ public record DockLayoutDto(
             List<RootDto> roots,
             Map<String, PolicyDto> policies,
             Map<String, DockSize> restoreSizes) {
-        this(version, roots, policies, restoreSizes, SpliceMode.DEFAULT, Map.of());
-    }
-
-    public DockLayoutDto(
-            int version,
-            List<RootDto> roots,
-            Map<String, PolicyDto> policies,
-            Map<String, DockSize> restoreSizes,
-            SpliceMode spliceMode) {
-        this(version, roots, policies, restoreSizes, spliceMode, Map.of());
+        this(version, roots, policies, restoreSizes, Map.of());
     }
 
     public DockLayoutDto {
@@ -53,9 +45,6 @@ public record DockLayoutDto(
         policies = policies == null ? null : Map.copyOf(new LinkedHashMap<>(policies));
         restoreSizes = restoreSizes == null ? Map.of() : Map.copyOf(new LinkedHashMap<>(restoreSizes));
         contentOffsets = contentOffsets == null ? Map.of() : Map.copyOf(new LinkedHashMap<>(contentOffsets));
-        if (spliceMode == null) {
-            spliceMode = SpliceMode.DEFAULT;
-        }
     }
 
     public record RootDto(String rootId, DockRect bounds, NodeDto content) {

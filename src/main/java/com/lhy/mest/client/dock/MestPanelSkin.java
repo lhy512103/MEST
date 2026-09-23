@@ -42,7 +42,7 @@ public final class MestPanelSkin {
             return;
         }
         if (!isCustom()) {
-            ModulePanel.drawGeneratedBackground(g, x, y, width, height, 0);
+            ModulePanel.drawGeneratedBackground(g, x, y, width, height);
             return;
         }
         int right = x + width;

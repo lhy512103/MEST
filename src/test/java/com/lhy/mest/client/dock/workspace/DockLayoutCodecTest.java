@@ -61,31 +61,12 @@ class DockLayoutCodecTest {
     }
 
     @Test
-    void roundTripsCompactSpliceMode() throws Exception {
-        var original = WorkspacePersistenceFixtures.workspace().withSpliceMode(
-                com.lhy.mest.client.dock.model.SpliceMode.COMPACT);
+    void noLongerWritesASpliceMode() throws Exception {
+        String encoded = codec().encode(WorkspacePersistenceFixtures.workspace());
 
-        String encoded = codec().encode(original);
-        var decoded = codec().decode(encoded).workspace();
-
-        assertEquals(com.lhy.mest.client.dock.model.SpliceMode.COMPACT, decoded.spliceMode());
-        assertTrue(encoded.contains("\"spliceMode\": \"compact\""));
+        assertFalse(encoded.contains("spliceMode"));
         assertFalse(encoded.contains("compactSplice"));
-        assertEquals(original, decoded);
         assertFalse(codec().decode(encoded).needsRewrite());
-    }
-
-    @Test
-    void roundTripsShellSpliceMode() throws Exception {
-        var original = WorkspacePersistenceFixtures.workspace().withSpliceMode(
-                com.lhy.mest.client.dock.model.SpliceMode.SHELL);
-
-        String encoded = codec().encode(original);
-        var decoded = codec().decode(encoded).workspace();
-
-        assertEquals(com.lhy.mest.client.dock.model.SpliceMode.SHELL, decoded.spliceMode());
-        assertTrue(encoded.contains("\"spliceMode\": \"shell\""));
-        assertEquals(original, decoded);
     }
 
     @Test
@@ -112,10 +93,34 @@ class DockLayoutCodecTest {
     }
 
     @Test
-    void mapsLegacyCompactSpliceBooleanOntoCompactMode() throws Exception {
-        String persisted = """
+    void fitsOnlyLayoutsSavedOutsideTheShellMode() throws Exception {
+        String stretch = legacySplicedDocument("");
+        String compact = legacySplicedDocument(", \"compactSplice\": true");
+        String shell = legacySplicedDocument(", \"spliceMode\": \"shell\"");
+        var fitted = new java.util.ArrayList<com.lhy.mest.client.dock.model.DockWorkspace>();
+        var codec = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog(),
+                WorkspacePersistenceFixtures.migrationContext(),
+                workspace -> {
+                    fitted.add(workspace);
+                    return workspace;
+                });
+
+        codec.decode(stretch);
+        codec.decode(compact);
+        assertEquals(2, fitted.size());
+
+        codec.decode(shell);
+        var current = codec.decode(codec.encode(fitted.getFirst()));
+        assertEquals(2, fitted.size(), "shell and current-version documents keep their window sizes");
+        assertFalse(current.needsRewrite());
+        assertTrue(codec.decode(stretch).needsRewrite(), "legacy documents are rewritten as v6");
+    }
+
+    private static String legacySplicedDocument(String modeField) {
+        return """
                 {
-                  "version": 3,
+                  "version": 5,
                   "roots": [{
                     "rootId": "root-a",
                     "bounds": {"x": 0, "y": 0, "width": 100, "height": 80},
@@ -132,17 +137,12 @@ class DockLayoutCodecTest {
                     }
                   }],
                   "policies": {
-                    "a": {"visible": false, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true},
+                    "a": {"visible": true, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true},
                     "b": {"visible": true, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true},
                     "c": {"visible": true, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true}
-                  },
-                  "compactSplice": true
+                  }%s
                 }
-                """;
-
-        var decoded = codec().decode(persisted).workspace();
-
-        assertEquals(com.lhy.mest.client.dock.model.SpliceMode.COMPACT, decoded.spliceMode());
+                """.formatted(modeField);
     }
 
     @Test

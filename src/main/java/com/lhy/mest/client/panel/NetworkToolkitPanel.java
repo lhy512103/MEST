@@ -88,17 +88,11 @@ public class NetworkToolkitPanel extends ModulePanel {
 
     /** Pinned window chrome without the title strip {@link #drawsTitleBar()} would suppress. */
     @Override
-    public void renderFrame(
-            GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks, int sharedEdges) {
+    public void renderFrame(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
         if (hosted) {
             return;
         }
-        if ((sharedEdges & EDGE_BOTTOM) == 0) {
-            g.fill(x + 2, y + height, x + width + 2, y + height + 2, 0x55000000);
-        }
-        if ((sharedEdges & EDGE_RIGHT) == 0 && outsideHitWidth() <= 0) {
-            g.fill(x + width, y + 2, x + width + 2, y + height + 2, 0x55000000);
-        }
+        renderDropShadow(g);
         MestPanelSkin.drawFrame(g, x, y, width, height);
     }
 

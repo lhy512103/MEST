@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.function.UnaryOperator;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.client.dock.model.DockRect;
@@ -61,7 +62,13 @@ public final class DockWorkspaceDefaults {
     }
 
     public static DockWorkspace create(ModuleCatalog catalog, LegacyMigrationContext geometry) {
-        DockWorkspace bundled = loadBundled(catalog, geometry);
+        return create(catalog, geometry, UnaryOperator.identity());
+    }
+
+    /** @param shellFit see {@link DockLayoutCodec}; the bundled layout predates the shell-only format */
+    public static DockWorkspace create(ModuleCatalog catalog, LegacyMigrationContext geometry,
+            UnaryOperator<DockWorkspace> shellFit) {
+        DockWorkspace bundled = loadBundled(catalog, geometry, shellFit);
         if (bundled != null) {
             return bundled;
         }
@@ -89,13 +96,14 @@ public final class DockWorkspaceDefaults {
         return workspace.withPolicies(policies);
     }
 
-    private static DockWorkspace loadBundled(ModuleCatalog catalog, LegacyMigrationContext geometry) {
+    private static DockWorkspace loadBundled(ModuleCatalog catalog, LegacyMigrationContext geometry,
+            UnaryOperator<DockWorkspace> shellFit) {
         try (InputStream in = DockWorkspaceDefaults.class.getResourceAsStream(BUNDLED_LAYOUT)) {
             if (in == null) {
                 return null;
             }
             String json = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            return new DockLayoutCodec(catalog, geometry).decode(json).workspace();
+            return new DockLayoutCodec(catalog, geometry, shellFit).decode(json).workspace();
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn("Failed to load bundled default layout", e);
             return null;

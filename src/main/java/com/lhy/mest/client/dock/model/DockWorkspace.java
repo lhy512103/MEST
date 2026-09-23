@@ -11,29 +11,20 @@ public record DockWorkspace(
         List<FloatingRoot> roots,
         Map<String, ModuleLayoutPolicy> policies,
         Map<String, DockSize> restoreSizes,
-        SpliceMode spliceMode,
         Map<String, ContentOffset> contentOffsets) {
     public DockWorkspace(List<FloatingRoot> roots) {
-        this(roots, defaultPolicies(roots), Map.of(), SpliceMode.DEFAULT, Map.of());
+        this(roots, defaultPolicies(roots), Map.of(), Map.of());
     }
 
     public DockWorkspace(List<FloatingRoot> roots, Map<String, ModuleLayoutPolicy> policies) {
-        this(roots, policies, Map.of(), SpliceMode.DEFAULT, Map.of());
+        this(roots, policies, Map.of(), Map.of());
     }
 
     public DockWorkspace(
             List<FloatingRoot> roots,
             Map<String, ModuleLayoutPolicy> policies,
             Map<String, DockSize> restoreSizes) {
-        this(roots, policies, restoreSizes, SpliceMode.DEFAULT, Map.of());
-    }
-
-    public DockWorkspace(
-            List<FloatingRoot> roots,
-            Map<String, ModuleLayoutPolicy> policies,
-            Map<String, DockSize> restoreSizes,
-            SpliceMode spliceMode) {
-        this(roots, policies, restoreSizes, spliceMode, Map.of());
+        this(roots, policies, restoreSizes, Map.of());
     }
 
     private static Map<String, ModuleLayoutPolicy> defaultPolicies(List<FloatingRoot> roots) {
@@ -65,9 +56,6 @@ public record DockWorkspace(
         policies = Map.copyOf(new LinkedHashMap<>(policies));
         restoreSizes = Map.copyOf(new LinkedHashMap<>(restoreSizes));
         contentOffsets = Map.copyOf(new LinkedHashMap<>(contentOffsets));
-        if (spliceMode == null) {
-            spliceMode = SpliceMode.DEFAULT;
-        }
     }
 
     public ModuleLayoutPolicy policyFor(String moduleId) {
@@ -75,51 +63,27 @@ public record DockWorkspace(
     }
 
     public DockWorkspace withRoots(List<FloatingRoot> newRoots) {
-        return new DockWorkspace(newRoots, policies, restoreSizes, spliceMode, contentOffsets);
+        return new DockWorkspace(newRoots, policies, restoreSizes, contentOffsets);
     }
 
     public DockWorkspace withPolicies(Map<String, ModuleLayoutPolicy> newPolicies) {
-        return new DockWorkspace(roots, newPolicies, restoreSizes, spliceMode, contentOffsets);
+        return new DockWorkspace(roots, newPolicies, restoreSizes, contentOffsets);
     }
 
     public DockWorkspace withRestoreSizes(Map<String, DockSize> newRestoreSizes) {
-        return new DockWorkspace(roots, policies, newRestoreSizes, spliceMode, contentOffsets);
-    }
-
-    public DockWorkspace withSpliceMode(SpliceMode newSpliceMode) {
-        return new DockWorkspace(roots, policies, restoreSizes, newSpliceMode, contentOffsets);
+        return new DockWorkspace(roots, policies, newRestoreSizes, contentOffsets);
     }
 
     public DockWorkspace withContentOffsets(Map<String, ContentOffset> newContentOffsets) {
-        return new DockWorkspace(roots, policies, restoreSizes, spliceMode, newContentOffsets);
+        return new DockWorkspace(roots, policies, restoreSizes, newContentOffsets);
     }
 
     public ContentOffset contentOffset(String moduleId) {
         return contentOffsets.getOrDefault(moduleId, ContentOffset.ZERO);
     }
 
-    /** True when the root bounds follow the leaves instead of stretching them to a fixed frame. */
-    public boolean prefersCompactBounds() {
-        return spliceMode.prefersCompactBounds();
-    }
-
-    /** True for the only mode that lets a nested split tuck into an L-shaped hole. */
-    public boolean packsContour() {
-        return spliceMode.packsContour();
-    }
-
-    /** True for the only mode where each leaf paints its own 9-slice frame. */
-    public boolean drawsPerLeafFrames() {
-        return spliceMode.drawsPerLeafFrames();
-    }
-
-    /** True when one background is drawn over the whole shell plus 1px section rules. */
-    public boolean drawsOuterShell() {
-        return spliceMode.drawsOuterShell();
-    }
-
     public DockWorkspace rebuilt(List<FloatingRoot> newRoots, Map<String, DockSize> newRestoreSizes) {
-        return new DockWorkspace(newRoots, policies, newRestoreSizes, spliceMode, contentOffsets);
+        return new DockWorkspace(newRoots, policies, newRestoreSizes, contentOffsets);
     }
 
     /**

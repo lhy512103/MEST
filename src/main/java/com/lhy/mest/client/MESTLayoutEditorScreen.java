@@ -30,7 +30,6 @@ import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.client.dock.DockManager;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
-import com.lhy.mest.client.dock.model.SpliceMode;
 
 /**
  * AE2-styled, full-canvas layout authoring screen.
@@ -66,12 +65,11 @@ public final class MESTLayoutEditorScreen extends Screen {
     private static final int TEXT_BUTTON_PAD = 12;
     private static final int NAME_FIELD_WIDTH = 80;
     private static final int NAME_FIELD_HEIGHT = 16;
-    private static final int TOOLBAR_ICON_COUNT = 5;
-    private static final int TOOLBAR_ICON_COMPACT = 0;
-    private static final int TOOLBAR_ICON_UNDO = 1;
-    private static final int TOOLBAR_ICON_RESET = 2;
-    private static final int TOOLBAR_ICON_IMPORT = 3;
-    private static final int TOOLBAR_ICON_EXPORT = 4;
+    private static final int TOOLBAR_ICON_COUNT = 4;
+    private static final int TOOLBAR_ICON_UNDO = 0;
+    private static final int TOOLBAR_ICON_RESET = 1;
+    private static final int TOOLBAR_ICON_IMPORT = 2;
+    private static final int TOOLBAR_ICON_EXPORT = 3;
     /** Above every dock root layer so editor chrome is never punched through by item icons. */
     private static final float CHROME_Z = 4000.0F;
 
@@ -513,10 +511,6 @@ public final class MESTLayoutEditorScreen extends Screen {
         }
         if (mouseY < TOOLBAR_HEIGHT) {
             if (button == 0) {
-                if (toolbarIconRect(TOOLBAR_ICON_COMPACT).contains(mouseX, mouseY)) {
-                    dock.cycleSpliceMode();
-                    return true;
-                }
                 if (toolbarIconRect(TOOLBAR_ICON_UNDO).contains(mouseX, mouseY) && dock.canUndoLayout()) {
                     dock.undoLayout();
                     return true;
@@ -747,14 +741,6 @@ public final class MESTLayoutEditorScreen extends Screen {
     }
 
     private void renderChromeTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
-        if (toolbarIconRect(TOOLBAR_ICON_COMPACT).contains(mouseX, mouseY)) {
-            SpliceMode mode = dock.spliceMode();
-            graphics.renderComponentTooltip(font, List.of(
-                    Component.translatable("gui.mesplicedterminal.splice_mode." + mode.id()),
-                    Component.translatable("gui.mesplicedterminal.splice_mode." + mode.id() + ".hint")),
-                    mouseX, mouseY);
-            return;
-        }
         if (toolbarIconRect(TOOLBAR_ICON_UNDO).contains(mouseX, mouseY)) {
             graphics.renderComponentTooltip(font, List.of(Component.translatable("gui.mesplicedterminal.undo_layout")),
                     mouseX, mouseY);
@@ -1060,14 +1046,6 @@ public final class MESTLayoutEditorScreen extends Screen {
         blitIcon(graphics, icon, bx + (background.width - ICON_SIZE) / 2, by + (background.height - ICON_SIZE) / 2);
     }
 
-    private static Icon spliceModeIcon(SpliceMode mode) {
-        return switch (mode) {
-            case UNIFIED -> Icon.TERMINAL_STYLE_FULL;
-            case COMPACT -> Icon.TERMINAL_STYLE_SMALL;
-            case SHELL -> Icon.COG;
-        };
-    }
-
     private static void blitIcon(GuiGraphics graphics, Icon icon, int x, int y) {
         icon.getBlitter().dest(x + (ICON_SIZE - icon.width) / 2, y + (ICON_SIZE - icon.height) / 2).blit(graphics);
     }
@@ -1078,11 +1056,6 @@ public final class MESTLayoutEditorScreen extends Screen {
         graphics.fill(0, TOOLBAR_HEIGHT - 1, width, TOOLBAR_HEIGHT, ModulePanel.COLOR_LIGHT);
 
         boolean canUndo = dock.canUndoLayout();
-        SpliceMode spliceMode = dock.spliceMode();
-        drawToolbarIconButton(graphics, toolbarIconRect(TOOLBAR_ICON_COMPACT),
-                spliceModeIcon(spliceMode),
-                toolbarIconRect(TOOLBAR_ICON_COMPACT).contains(mouseX, mouseY),
-                spliceMode != SpliceMode.UNIFIED);
         drawToolbarIconButton(graphics, toolbarIconRect(TOOLBAR_ICON_UNDO),
                 Icon.BACK,
                 canUndo && toolbarIconRect(TOOLBAR_ICON_UNDO).contains(mouseX, mouseY), false);

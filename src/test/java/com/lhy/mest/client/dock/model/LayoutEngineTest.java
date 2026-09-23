@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -36,8 +35,9 @@ class LayoutEngineTest {
                 catalog,
                 new LayoutStyle(DockInsets.NONE, 4)).project(workspace);
 
-        assertEquals(new DockRect(0, 0, 78, 100), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
-        assertEquals(new DockRect(82, 0, 118, 100), projection.visibleLeaf("leaf-c").orElseThrow().bounds());
+        // Both sides get their 80px preferred width; the 36px of slack is split 0.4 / 0.6.
+        assertEquals(new DockRect(0, 0, 94, 100), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
+        assertEquals(new DockRect(98, 0, 102, 100), projection.visibleLeaf("leaf-c").orElseThrow().bounds());
         assertTrue(projection.visibleLeaf("leaf-b").isEmpty());
         assertTrue(projection.isEffectivelyVisible("split-inner"));
         assertFalse(projection.isEffectivelyVisible("leaf-b"));
@@ -45,7 +45,7 @@ class LayoutEngineTest {
     }
 
     @Test
-    void clampsBothChildrenToTheirMinimumWhenSpaceIsSufficient() {
+    void preferredWidthsComeFirstAndOnlySlackFollowsTheRatio() {
         var metrics = new LinkedHashMap<String, ModuleMetrics>();
         metrics.put("wide", new ModuleMetrics(new DockSize(70, 20), new DockSize(70, 20)));
         metrics.put("narrow", new ModuleMetrics(new DockSize(20, 20), new DockSize(20, 20)));
@@ -63,9 +63,10 @@ class LayoutEngineTest {
                 catalog,
                 new LayoutStyle(DockInsets.NONE, 4)).project(workspace);
 
-        assertEquals(70, projection.visibleLeaf("leaf-wide").orElseThrow().bounds().width());
-        assertEquals(26, projection.visibleLeaf("leaf-narrow").orElseThrow().bounds().width());
-        assertEquals(new DockRect(70, 0, 4, 40), projection.dividers().getFirst().bounds());
+        // A 0.1 ratio cannot squeeze "wide" below its preferred 70px; it only gets 10% of the slack.
+        assertEquals(71, projection.visibleLeaf("leaf-wide").orElseThrow().bounds().width());
+        assertEquals(25, projection.visibleLeaf("leaf-narrow").orElseThrow().bounds().width());
+        assertEquals(new DockRect(71, 0, 4, 40), projection.dividers().getFirst().bounds());
     }
 
     @Test
@@ -91,7 +92,7 @@ class LayoutEngineTest {
     }
 
     @Test
-    void compactSpliceKeepsFixedLeavesAtPreferredCrossSize() {
+    void splicedWindowFillsTheRootAsARectangleAndGivesLeftoverToTheExpandingLeaf() {
         var metrics = new LinkedHashMap<String, ModuleMetrics>();
         metrics.put("fixed", new ModuleMetrics(new DockSize(50, 40), new DockSize(80, 60)));
         metrics.put("flex", new ModuleMetrics(new DockSize(40, 30), new DockSize(90, 80), true));
@@ -103,155 +104,7 @@ class LayoutEngineTest {
                 new LeafNode("leaf-fixed", "fixed", true),
                 new LeafNode("leaf-flex", "flex", true));
         DockWorkspace workspace = new DockWorkspace(List.of(
-                new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)))
-                .withSpliceMode(SpliceMode.COMPACT);
-
-        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
-                .project(workspace);
-
-        assertEquals(new DockRect(0, 0, 80, 60), projection.visibleLeaf("leaf-fixed").orElseThrow().bounds());
-        assertEquals(new DockRect(0, 60, 90, 80), projection.visibleLeaf("leaf-flex").orElseThrow().bounds());
-    }
-
-    @Test
-    void compactSpliceUsesRestoredStandaloneSizeInsteadOfDefault() {
-        var metrics = new LinkedHashMap<String, ModuleMetrics>();
-        metrics.put("a", new ModuleMetrics(new DockSize(50, 40), new DockSize(80, 60)));
-        metrics.put("b", new ModuleMetrics(new DockSize(40, 30), new DockSize(90, 80), true));
-        ModuleCatalog catalog = new ModuleCatalog(metrics);
-        LayoutNode split = new SplitNode(
-                "split-main",
-                DockAxis.VERTICAL,
-                0.4,
-                new LeafNode("leaf-a", "a", true),
-                new LeafNode("leaf-b", "b", true));
-        var restore = new LinkedHashMap<String, DockSize>();
-        restore.put("leaf-a", new DockSize(160, 70));
-        restore.put("leaf-b", new DockSize(110, 90));
-        DockWorkspace workspace = new DockWorkspace(
-                List.of(new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)),
-                Map.of(),
-                restore,
-                SpliceMode.COMPACT);
-
-        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
-                .project(workspace);
-
-        assertEquals(new DockRect(0, 0, 160, 70), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
-        assertEquals(new DockRect(0, 70, 110, 90), projection.visibleLeaf("leaf-b").orElseThrow().bounds());
-    }
-
-    @Test
-    void compactSplicePacksTwoFixedLeavesWithoutStretchingTheGap() {
-        var metrics = new LinkedHashMap<String, ModuleMetrics>();
-        metrics.put("a", new ModuleMetrics(new DockSize(50, 40), new DockSize(80, 60)));
-        metrics.put("b", new ModuleMetrics(new DockSize(50, 40), new DockSize(70, 50)));
-        ModuleCatalog catalog = new ModuleCatalog(metrics);
-        LayoutNode split = new SplitNode(
-                "split-main",
-                DockAxis.VERTICAL,
-                0.5,
-                new LeafNode("leaf-a", "a", true),
-                new LeafNode("leaf-b", "b", true));
-        DockWorkspace workspace = new DockWorkspace(List.of(
-                new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)))
-                .withSpliceMode(SpliceMode.COMPACT);
-
-        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
-                .project(workspace);
-
-        assertEquals(new DockRect(0, 0, 80, 60), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
-        assertEquals(new DockRect(0, 60, 70, 50), projection.visibleLeaf("leaf-b").orElseThrow().bounds());
-    }
-
-    @Test
-    void compactNestedSplitsKeepEverySiblingAdjacent() {
-        var metrics = new LinkedHashMap<String, ModuleMetrics>();
-        metrics.put("top", new ModuleMetrics(new DockSize(80, 40), new DockSize(300, 100), true));
-        metrics.put("left", new ModuleMetrics(new DockSize(60, 40), new DockSize(200, 80)));
-        metrics.put("right", new ModuleMetrics(new DockSize(60, 40), new DockSize(100, 90)));
-        ModuleCatalog catalog = new ModuleCatalog(metrics);
-        LayoutNode bottom = new SplitNode(
-                "split-bottom",
-                DockAxis.HORIZONTAL,
-                0.5,
-                new LeafNode("leaf-left", "left", true),
-                new LeafNode("leaf-right", "right", true));
-        LayoutNode rootNode = new SplitNode(
-                "split-root",
-                DockAxis.VERTICAL,
-                0.5,
-                new LeafNode("leaf-top", "top", true),
-                bottom);
-        DockWorkspace workspace = new DockWorkspace(List.of(
-                new FloatingRoot("root-main", new DockRect(0, 0, 300, 190), rootNode)))
-                .withSpliceMode(SpliceMode.COMPACT);
-
-        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
-                .project(workspace);
-
-        assertEquals(new DockRect(0, 0, 300, 100), projection.visibleLeaf("leaf-top").orElseThrow().bounds());
-        assertEquals(new DockRect(0, 100, 200, 80), projection.visibleLeaf("leaf-left").orElseThrow().bounds());
-        assertEquals(new DockRect(200, 100, 100, 90), projection.visibleLeaf("leaf-right").orElseThrow().bounds());
-    }
-
-    @Test
-    void compactContourLetsNestedRowOccupySpaceBelowAShortSibling() {
-        var metrics = new LinkedHashMap<String, ModuleMetrics>();
-        metrics.put("crafting", new ModuleMetrics(new DockSize(100, 60), new DockSize(200, 80)));
-        metrics.put("inventory", new ModuleMetrics(new DockSize(80, 60), new DockSize(100, 100)));
-        metrics.put("access", new ModuleMetrics(new DockSize(60, 60), new DockSize(150, 100)));
-        metrics.put("encoding", new ModuleMetrics(new DockSize(80, 60), new DockSize(120, 80)));
-        ModuleCatalog catalog = new ModuleCatalog(metrics);
-        LayoutNode left = new SplitNode(
-                "split-left",
-                DockAxis.VERTICAL,
-                0.5,
-                new LeafNode("leaf-crafting", "crafting", true),
-                new SplitNode(
-                        "split-lower",
-                        DockAxis.HORIZONTAL,
-                        0.5,
-                        new LeafNode("leaf-inventory", "inventory", true),
-                        new LeafNode("leaf-access", "access", true)));
-        LayoutNode rootNode = new SplitNode(
-                "split-root",
-                DockAxis.HORIZONTAL,
-                0.5,
-                left,
-                new LeafNode("leaf-encoding", "encoding", true));
-        DockWorkspace workspace = new DockWorkspace(List.of(
-                new FloatingRoot("root-main", new DockRect(0, 0, 400, 200), rootNode)))
-                .withSpliceMode(SpliceMode.COMPACT);
-
-        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
-                .project(workspace);
-
-        assertEquals(new DockRect(0, 0, 200, 80),
-                projection.visibleLeaf("leaf-crafting").orElseThrow().bounds());
-        assertEquals(new DockRect(0, 80, 100, 100),
-                projection.visibleLeaf("leaf-inventory").orElseThrow().bounds());
-        assertEquals(new DockRect(100, 80, 150, 100),
-                projection.visibleLeaf("leaf-access").orElseThrow().bounds());
-        assertEquals(new DockRect(200, 0, 120, 80),
-                projection.visibleLeaf("leaf-encoding").orElseThrow().bounds());
-    }
-
-    @Test
-    void shellSpliceFillsTheRootAsARectangleAndGivesLeftoverToTheExpandingLeaf() {
-        var metrics = new LinkedHashMap<String, ModuleMetrics>();
-        metrics.put("fixed", new ModuleMetrics(new DockSize(50, 40), new DockSize(80, 60)));
-        metrics.put("flex", new ModuleMetrics(new DockSize(40, 30), new DockSize(90, 80), true));
-        ModuleCatalog catalog = new ModuleCatalog(metrics);
-        LayoutNode split = new SplitNode(
-                "split-main",
-                DockAxis.VERTICAL,
-                0.5,
-                new LeafNode("leaf-fixed", "fixed", true),
-                new LeafNode("leaf-flex", "flex", true));
-        DockWorkspace workspace = new DockWorkspace(List.of(
-                new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)))
-                .withSpliceMode(SpliceMode.SHELL);
+                new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)));
 
         LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
                 .project(workspace);
@@ -267,7 +120,7 @@ class LayoutEngineTest {
     }
 
     @Test
-    void shellSpliceKeepsANestedRowRectangularInsteadOfLShaped() {
+    void splicedWindowKeepsANestedRowRectangularInsteadOfLShaped() {
         var metrics = new LinkedHashMap<String, ModuleMetrics>();
         metrics.put("crafting", new ModuleMetrics(new DockSize(100, 60), new DockSize(200, 80)));
         metrics.put("inventory", new ModuleMetrics(new DockSize(80, 60), new DockSize(100, 100)));
@@ -292,8 +145,7 @@ class LayoutEngineTest {
                 left,
                 new LeafNode("leaf-encoding", "encoding", true));
         DockWorkspace workspace = new DockWorkspace(List.of(
-                new FloatingRoot("root-main", new DockRect(0, 0, 450, 180), rootNode)))
-                .withSpliceMode(SpliceMode.SHELL);
+                new FloatingRoot("root-main", new DockRect(0, 0, 450, 180), rootNode)));
 
         LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
                 .project(workspace);

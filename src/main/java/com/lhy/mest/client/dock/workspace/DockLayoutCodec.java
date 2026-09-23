@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -23,13 +24,11 @@ import com.lhy.mest.client.dock.model.DockSize;
 import com.lhy.mest.client.dock.model.DockWorkspace;
 import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.dock.model.LayoutNode;
-import com.lhy.mest.client.dock.model.LayoutTrees;
 import com.lhy.mest.client.dock.model.LeafNode;
 import com.lhy.mest.client.dock.model.ModuleCatalog;
 import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
 import com.lhy.mest.client.dock.model.NodeIds;
 import com.lhy.mest.client.dock.model.SplitNode;
-import com.lhy.mest.client.dock.model.SpliceMode;
 import com.lhy.mest.client.dock.model.WorkspaceValidationException;
 import com.lhy.mest.client.dock.model.WorkspaceValidator;
 import com.lhy.mest.client.dock.workspace.DockLayoutDto.LeafDto;
@@ -43,8 +42,8 @@ public final class DockLayoutCodec {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Set<String> V2_FIELDS = Set.of("version", "roots");
     /**
-     * {@code spliceMode} supersedes the v3 {@code compactSplice} boolean. The old key stays in
-     * {@link #V3_FIELDS} so documents written before the third mode still decode.
+     * {@code spliceMode} and the older {@code compactSplice} are no longer written; they are still
+     * accepted so pre-v6 documents decode and can tell whether they were already a shell.
      */
     private static final Set<String> V3_FIELDS =
             Set.of("version", "roots", "policies", "restoreSizes", "name", "spliceMode", "compactSplice",
@@ -62,10 +61,21 @@ public final class DockLayoutCodec {
 
     private final ModuleCatalog catalog;
     private final LegacyMigrationContext migrationContext;
+    private final UnaryOperator<DockWorkspace> shellFit;
 
     public DockLayoutCodec(ModuleCatalog catalog, LegacyMigrationContext migrationContext) {
+        this(catalog, migrationContext, UnaryOperator.identity());
+    }
+
+    /**
+     * @param shellFit applied to documents saved in the removed stretch or compact splice modes,
+     *                 whose windows were sized for those modes rather than for their content
+     */
+    public DockLayoutCodec(ModuleCatalog catalog, LegacyMigrationContext migrationContext,
+            UnaryOperator<DockWorkspace> shellFit) {
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.migrationContext = Objects.requireNonNull(migrationContext, "migrationContext");
+        this.shellFit = Objects.requireNonNull(shellFit, "shellFit");
     }
 
     public String encode(DockWorkspace workspace) {
@@ -85,14 +95,18 @@ public final class DockLayoutCodec {
             if (object.has("version")) {
                 DockLayoutDto dto = readVersioned(object);
                 Reconciliation reconciliation = reconcile(fromDtoRaw(dto));
+                DockWorkspace workspace = wasShell(object, dto.version())
+                        ? reconciliation.workspace()
+                        : shellFit.apply(reconciliation.workspace());
                 return new DecodedLayout(
-                        reconciliation.workspace(),
+                        workspace,
                         dto.version(),
                         false,
                         dto.version() != DockLayoutDto.CURRENT_VERSION || reconciliation.changed());
             }
             Reconciliation reconciliation = reconcile(migrateV1(object));
-            return new DecodedLayout(reconciliation.workspace(), 1, true, reconciliation.changed());
+            return new DecodedLayout(
+                    shellFit.apply(reconciliation.workspace()), 1, true, reconciliation.changed());
         } catch (DockLayoutFormatException e) {
             throw e;
         } catch (JsonParseException | ArithmeticException | ClassCastException e) {
@@ -124,7 +138,6 @@ public final class DockLayoutCodec {
                 roots,
                 policies,
                 workspace.restoreSizes(),
-                workspace.spliceMode(),
                 workspace.contentOffsets());
     }
 
@@ -200,7 +213,6 @@ public final class DockLayoutCodec {
                     roots,
                     policies,
                     DockWorkspace.retainRestoreSizes(dto.restoreSizes(), roots),
-                    dto.spliceMode(),
                     dto.contentOffsets());
             WorkspaceValidator.validateStructure(workspace);
             return workspace;
@@ -245,7 +257,6 @@ public final class DockLayoutCodec {
                 retainedRoots,
                 retainedPolicies,
                 DockWorkspace.retainRestoreSizes(source.restoreSizes(), retainedRoots),
-                source.spliceMode(),
                 source.contentOffsets());
         var usedModules = WorkspaceValidator.validateStructure(result);
         var usedIdentifiers = collectIdentifiers(result);
@@ -277,7 +288,6 @@ public final class DockLayoutCodec {
                 retainedRoots,
                 retainedPolicies,
                 DockWorkspace.retainRestoreSizes(source.restoreSizes(), retainedRoots),
-                source.spliceMode(),
                 source.contentOffsets());
         try {
             WorkspaceValidator.validateStrict(result, catalog);
@@ -392,9 +402,6 @@ public final class DockLayoutCodec {
             }
             object.add("restoreSizes", restoreSizes);
         }
-        if (dto.spliceMode() != SpliceMode.DEFAULT) {
-            object.addProperty("spliceMode", dto.spliceMode().id());
-        }
         if (dto.contentOffsets() != null && !dto.contentOffsets().isEmpty()) {
             var offsets = new JsonObject();
             for (var entry : dto.contentOffsets().entrySet()) {
@@ -493,25 +500,20 @@ public final class DockLayoutCodec {
                 roots,
                 policies,
                 readRestoreSizes(object),
-                readSpliceMode(object),
                 readContentOffsets(object));
     }
 
     /**
-     * Reads the splice mode, mapping the legacy {@code compactSplice} boolean onto
-     * {@link SpliceMode#COMPACT}. Unknown ids fall back to {@link SpliceMode#DEFAULT} so a
-     * hand-edited document still opens.
+     * Whether the document already laid its windows out as shells. Before v6 that was only true
+     * for {@code "spliceMode": "shell"}; the stretch and compact modes (including the older
+     * {@code compactSplice} flag) sized windows differently.
      */
-    private SpliceMode readSpliceMode(JsonObject document) throws DockLayoutFormatException {
-        if (document.has("spliceMode")) {
-            return SpliceMode.fromId(string(document, "spliceMode", "document"));
+    private static boolean wasShell(JsonObject document, int version) {
+        if (version >= 6) {
+            return true;
         }
-        if (document.has("compactSplice")) {
-            return optionalBoolean(document, "compactSplice", false, "document")
-                    ? SpliceMode.COMPACT
-                    : SpliceMode.UNIFIED;
-        }
-        return SpliceMode.DEFAULT;
+        JsonElement mode = document.get("spliceMode");
+        return mode != null && mode.isJsonPrimitive() && "shell".equalsIgnoreCase(mode.getAsString().trim());
     }
 
     private DockRect readBounds(JsonObject object, String path) throws DockLayoutFormatException {
