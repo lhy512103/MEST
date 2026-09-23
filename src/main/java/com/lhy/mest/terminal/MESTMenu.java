@@ -551,7 +551,7 @@ public class MESTMenu extends CraftingTermMenu {
             sendClientAction(ACTION_REQUEST_PROVIDERS);
             return;
         }
-        if (getPlayer() instanceof ServerPlayer player) {
+        if (PlusEncodingUpload.available() && getPlayer() instanceof ServerPlayer player) {
             PlusEncodingUpload.sendPickerList(player);
         }
     }

@@ -17,6 +17,7 @@
 11. Fixed: Crafting pins now prune on close like AE2, the ME list scrollbar reserves the pin row, and the pin cap follows the visible column count.
 12. Added: Non-processing encode auto-upload now targets ECO pattern storage and Lightning Tech crafting assemblers, with duplicate detection before insert.
 13. Fixed: ECO auto-upload now uses PatternContainer group routing instead of compile-time neoecoae APIs.
+14. Fixed: Requesting the provider list no longer crashes servers without ExtendedAE Plus.
 
 ### 中文
 
@@ -33,3 +34,4 @@
 11. 修复：合成置顶按原版在关界面后回收，滚动为置顶行预留一页，上限随 ME 列表当前列数变化。
 12. 新增：非处理样板编码后自动上传到 ECO 样板库和闪电科技合成装配，插入前做去重。
 13. 修复：ECO 自动上传改为走 PatternContainer 分组，不再编译依赖 neoecoae API。
+14. 修复：服务端没装 ExtendedAE Plus 时，请求供应器列表不再崩服。
