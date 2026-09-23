@@ -28,6 +28,7 @@
 22. Fixed: Slot-count settings are now a server config synced to clients, so menus no longer misalign on dedicated servers.
 23. Fixed: A readable layout.json now wins over the active preset slot instead of being replaced by an older copy.
 24. Fixed: Cancelling the layout editor also drops the undo steps made inside it, so undo in the terminal cannot bring back discarded edits.
+25. Fixed: Scrollbars of panels covered by a higher window can no longer be dragged through it.
 
 ### 中文
 
@@ -55,3 +56,4 @@
 22. 修复：槽位数配置改为服务端配置并同步给客户端，专用服上两端的菜单槽位不再错位。
 23. 修复：layout.json 能正常读取时以它为准，不再被较旧的当前预设覆盖。
 24. 修复：取消布局编辑时一并撤掉编辑器里产生的撤销记录，回到终端后撤销不会恢复已放弃的编辑。
+25. 修复：被上层窗口挡住的面板不能再被隔着拖动滚动条。

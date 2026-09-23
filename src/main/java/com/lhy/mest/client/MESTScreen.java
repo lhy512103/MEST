@@ -1773,7 +1773,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             return true;
         }
         for (ModulePanel panel : dock.panels()) {
-            if (panel != target && panel.scrollbarPressed(mx, my)) {
+            if (panel != target && dock.isPointReachable(panel, mx, my) && panel.scrollbarPressed(mx, my)) {
                 return true;
             }
         }

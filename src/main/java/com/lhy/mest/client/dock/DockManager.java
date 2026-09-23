@@ -1400,6 +1400,20 @@ public final class DockManager {
     }
 
     /**
+     * Whether a press at the point may reach {@code panel}: no root at all covers the point (chrome
+     * hanging just outside the leaf, like an edge scrollbar), or the topmost one is the panel's own.
+     */
+    public boolean isPointReachable(ModulePanel panel, double mouseX, double mouseY) {
+        ensureProjection();
+        FloatingRoot top = topRootAt(mouseX, mouseY, null);
+        if (top == null) {
+            return true;
+        }
+        LeafNode leaf = leafForPanel(panel);
+        return leaf != null && top.rootId().equals(rootContainingNode(viewportWorkspace, leaf.nodeId()).rootId());
+    }
+
+    /**
      * Raises the visible root under the pointer before the screen dispatches the click to controls
      * owned by that panel.
      *
