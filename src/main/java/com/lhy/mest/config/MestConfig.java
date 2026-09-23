@@ -2,7 +2,10 @@ package com.lhy.mest.config;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
 
-/** Common config. Pattern-cache slot count is applied the next time the terminal is opened. */
+/**
+ * Server config, synced to clients on join: every slot count here shapes menus, so both sides must
+ * agree. Changes apply the next time the terminal is opened.
+ */
 public final class MestConfig {
     public static final int PATTERN_CACHE_MIN = 18;
     public static final int PATTERN_CACHE_MAX = 9 * 64;

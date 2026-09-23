@@ -36,7 +36,7 @@ public class MESplicedterminal {
         ModComponents.DATA_COMPONENTS.register(modEventBus);
         ModAttachments.ATTACHMENT_TYPES.register(modEventBus);
         ModRecipes.SERIALIZERS.register(modEventBus);
-        container.registerConfig(ModConfig.Type.COMMON, MestConfig.SPEC);
+        container.registerConfig(ModConfig.Type.SERVER, MestConfig.SPEC);
 
         // Hook into AE2/AE2WTLib lifecycle (terminal registration, capabilities, ...).
         // AddTerminalEvent.register only enqueues a callback; it must run before AE2WTLib fires

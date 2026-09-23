@@ -25,6 +25,7 @@
 19. Changed: The toolkit, its remembered slots and the extra-bar settings now belong to the player and are kept on death; toolkit data stored on existing terminals is merged into the player automatically.
 20. Fixed: The pattern provider list no longer stays empty forever after overflowing during a snapshot rebuild.
 21. Fixed: Returning the last upload now locates the provider itself and checks the pattern, so a snapshot rebuild can no longer make it take a pattern from another provider.
+22. Fixed: Slot-count settings are now a server config synced to clients, so menus no longer misalign on dedicated servers.
 
 ### 中文
 
@@ -49,3 +50,4 @@
 19. 调整：工具包、记忆槽和扩展栏设置改为跟随玩家，死亡不掉落；已有终端上的工具包数据会自动合并到玩家身上。
 20. 修复：样板供应器列表在重建快照时溢出后不再永久停在空列表。
 21. 修复：撤回上次上传改为按供应器本身定位并核对样板，快照重建后不会再从别的供应器取错样板。
+22. 修复：槽位数配置改为服务端配置并同步给客户端，专用服上两端的菜单槽位不再错位。
