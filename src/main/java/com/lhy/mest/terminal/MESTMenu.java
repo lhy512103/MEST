@@ -3,6 +3,7 @@ package com.lhy.mest.terminal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.Nullable;
@@ -28,7 +29,7 @@ import net.minecraft.world.item.crafting.StonecutterRecipe;
 
 import it.unimi.dsi.fastutil.ints.IntArraySet;
 import it.unimi.dsi.fastutil.ints.IntSet;
-import appeng.api.config.Actionable;
+import appeng.api.storage.StorageHelper;
 import appeng.api.inventories.InternalInventory;
 import appeng.api.networking.IGridNode;
 import appeng.api.stacks.AEItemKey;
@@ -1305,52 +1306,49 @@ public class MESTMenu extends CraftingTermMenu {
     }
 
     private boolean insertFromNetworkToToolkit(AEItemKey itemKey) {
-        IGridNode node = getGridNode();
-        if (node == null || node.getGrid() == null || node.getGrid().getStorageService() == null) {
-            return false;
-        }
-        MEStorage storage = node.getGrid().getStorageService().getInventory();
-        long available = storage.extract(itemKey, 1, Actionable.SIMULATE, getActionSource());
-        if (available <= 0L) {
-            return false;
-        }
-        ItemStack stack = itemKey.toStack((int) available);
-        stack = insertIntoToolkit(stack, true);
-        stack = insertIntoToolkit(stack, false);
-        int inserted = (int) available - stack.getCount();
-        if (inserted <= 0) {
-            return false;
-        }
-        storage.extract(itemKey, inserted, Actionable.MODULATE, getActionSource());
-        return true;
+        return moveFromNetwork(itemKey, 1, stack -> insertIntoToolkit(insertIntoToolkit(stack, true), false));
     }
 
     private boolean insertFromNetworkToTrash(AEItemKey itemKey) {
+        return moveFromNetwork(itemKey, itemKey.getMaxStackSize(), stack -> {
+            for (Slot trashSlot : getTrashSlots()) {
+                if (stack.isEmpty()) {
+                    break;
+                }
+                if (trashSlot.mayPlace(stack)) {
+                    stack = trashSlot.safeInsert(stack);
+                }
+            }
+            return stack;
+        });
+    }
+
+    /**
+     * Extracts first (with power) and only then places the items, so the amount handed out can
+     * never exceed what the network actually gave up. Whatever does not fit goes back.
+     */
+    private boolean moveFromNetwork(AEItemKey itemKey, int amount, UnaryOperator<ItemStack> placer) {
         IGridNode node = getGridNode();
-        if (node == null || node.getGrid() == null || node.getGrid().getStorageService() == null) {
+        if (node == null || node.getGrid() == null) {
             return false;
         }
         MEStorage storage = node.getGrid().getStorageService().getInventory();
-        int max = itemKey.getMaxStackSize();
-        long available = storage.extract(itemKey, max, Actionable.SIMULATE, getActionSource());
-        if (available <= 0L) {
+        var energy = node.getGrid().getEnergyService();
+        long extracted = StorageHelper.poweredExtraction(energy, storage, itemKey, amount, getActionSource());
+        if (extracted <= 0L) {
             return false;
         }
-        ItemStack stack = itemKey.toStack((int) available);
-        for (Slot trashSlot : getTrashSlots()) {
-            if (stack.isEmpty()) {
-                break;
-            }
-            if (trashSlot.mayPlace(stack)) {
-                stack = trashSlot.safeInsert(stack);
+        ItemStack remainder = placer.apply(itemKey.toStack((int) extracted));
+        long placed = extracted - remainder.getCount();
+        if (!remainder.isEmpty()) {
+            long returned = StorageHelper.poweredInsert(
+                    energy, storage, itemKey, remainder.getCount(), getActionSource());
+            remainder.shrink((int) returned);
+            if (!remainder.isEmpty()) {
+                getPlayer().getInventory().placeItemBackInInventory(remainder);
             }
         }
-        int inserted = (int) available - stack.getCount();
-        if (inserted <= 0) {
-            return false;
-        }
-        storage.extract(itemKey, inserted, Actionable.MODULATE, getActionSource());
-        return true;
+        return placed > 0L;
     }
 
     public void handlePatternCacheAction(PatternCacheActionPacket.Action action, boolean value) {
