@@ -274,7 +274,7 @@ public final class ToolkitBarState {
             }
         }
         ItemStack located = MestWtlibSupport.mestStack(player);
-        if (isBarEnabled(located)) {
+        if (isBarEnabled(located) || first.isEmpty()) {
             return located;
         }
         return first;

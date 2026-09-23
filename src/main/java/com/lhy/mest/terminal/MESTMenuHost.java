@@ -37,7 +37,6 @@ public class MESTMenuHost extends WCTMenuHost
     private final SupplierInternalInventory<InternalInventory> toolkit;
     private final SupplierInternalInventory<InternalInventory> toolkitMemory;
     private final SupplierInternalInventory<InternalInventory> networkToolkit;
-    private final ToolkitInternalInventory toolkitInventory;
     private final PatternEncodingLogic patternEncodingLogic = new PatternEncodingLogic(this);
 
     public MESTMenuHost(ItemWT item, Player player, ItemMenuHostLocator locator,
@@ -51,8 +50,9 @@ public class MESTMenuHost extends WCTMenuHost
                 new StackDependentSupplier<>(
                         this::getItemStack,
                         stack -> createInv(player, stack, ModComponents.TRASH_INV.get(), MestConfig.trashSlots())));
-        this.toolkitInventory = new ToolkitInternalInventory(player, this::getItemStack);
-        this.toolkit = new SupplierInternalInventory<>(() -> toolkitInventory);
+        // One live toolkit per player: a second menu-local copy let in-place tool edits (cards
+        // taken from a network tool) and slot moves diverge, duplicating whatever was in the tool.
+        this.toolkit = new SupplierInternalInventory<>(() -> ToolkitBarState.asInventory(player));
         this.toolkitMemory = new SupplierInternalInventory<>(
                 new StackDependentSupplier<>(
                         this::getItemStack,

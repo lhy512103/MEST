@@ -38,7 +38,7 @@ public final class ToolkitInternalInventory extends BaseInternalInventory {
         this(player, () -> ToolkitBarState.findTerminal(player));
     }
 
-    public ToolkitInternalInventory(Player player, Supplier<ItemStack> terminalSupplier) {
+    private ToolkitInternalInventory(Player player, Supplier<ItemStack> terminalSupplier) {
         this.player = player;
         this.terminalSupplier = terminalSupplier;
     }
@@ -214,7 +214,8 @@ public final class ToolkitInternalInventory extends BaseInternalInventory {
 
     @Override
     public boolean isItemValid(int slot, ItemStack stack) {
-        return stack.isEmpty() || ToolkitBarState.mayStore(stack);
+        // Without a terminal nothing can be saved, so an accepted stack would silently vanish.
+        return stack.isEmpty() || (ToolkitBarState.mayStore(stack) && !terminalSupplier.get().isEmpty());
     }
 
     @Override
