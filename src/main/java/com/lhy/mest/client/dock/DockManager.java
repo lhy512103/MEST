@@ -172,6 +172,7 @@ public final class DockManager {
     private DockLayoutCodec layoutCodec;
     private LayoutPresetBank.Data presets;
     private LayoutPresetBank.Data editingPresets;
+    private List<DockWorkspace> editingUndoMark;
     private int editorInsetLeft;
     private int editorInsetTop;
     private int editorInsetRight;
@@ -370,6 +371,7 @@ public final class DockManager {
         editingLayout = true;
         exitContentEdit();
         editingOriginal = workspace;
+        editingUndoMark = undoHistory.snapshot();
         captureActivePreset();
         editingPresets = presets == null ? null : presets.copy();
         return workspace;
@@ -384,6 +386,11 @@ public final class DockManager {
         } else if (editingLayout && editingOriginal != null && !editingOriginal.equals(workspace)) {
             replaceWorkspace(editingOriginal, true);
         }
+        // Undo points made inside the editor describe edits that were just thrown away.
+        if (editingLayout && editingUndoMark != null) {
+            undoHistory.restore(editingUndoMark);
+        }
+        editingUndoMark = null;
         clearEditorCanvasInsets();
         editingLayout = false;
         editingOriginal = null;
@@ -400,6 +407,7 @@ public final class DockManager {
         editingLayout = false;
         editingOriginal = null;
         editingPresets = null;
+        editingUndoMark = null;
         resetGestureState();
         if (centerOnReturn) {
             centerVisibleWorkspace();

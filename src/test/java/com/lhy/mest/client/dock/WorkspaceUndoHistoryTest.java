@@ -83,4 +83,19 @@ class WorkspaceUndoHistoryTest {
         assertThrows(IllegalArgumentException.class, () -> new WorkspaceUndoHistory(0));
         assertThrows(IllegalArgumentException.class, () -> new WorkspaceUndoHistory(-1));
     }
+
+    @Test
+    void restoreDropsEntriesRememberedAfterTheSnapshot() {
+        var history = new WorkspaceUndoHistory(4);
+        var before = workspace("a");
+        history.remember(before);
+        var snapshot = history.snapshot();
+
+        history.remember(workspace("editor-1"));
+        history.remember(workspace("editor-2"));
+        history.restore(snapshot);
+
+        assertEquals(1, history.size());
+        assertEquals(before, history.pop());
+    }
 }

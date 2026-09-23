@@ -1,6 +1,7 @@
 package com.lhy.mest.client.dock;
 
 import java.util.ArrayDeque;
+import java.util.List;
 
 import com.lhy.mest.client.dock.model.DockWorkspace;
 
@@ -58,5 +59,16 @@ public final class WorkspaceUndoHistory {
 
     public void clear() {
         stack.clear();
+    }
+
+    /** Copy of the current history, for {@link #restore}. */
+    public List<DockWorkspace> snapshot() {
+        return List.copyOf(stack);
+    }
+
+    /** Puts back a history taken with {@link #snapshot}, dropping everything remembered since. */
+    public void restore(List<DockWorkspace> snapshot) {
+        stack.clear();
+        stack.addAll(snapshot);
     }
 }
