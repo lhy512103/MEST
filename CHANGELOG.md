@@ -25,7 +25,7 @@
 19. Changed: The toolkit, its remembered slots and the extra-bar settings now belong to the player and are kept on death; toolkit data stored on existing terminals is merged into the player automatically.
 20. Fixed: The pattern provider list no longer stays empty forever after overflowing during a snapshot rebuild.
 21. Fixed: Returning the last upload now locates the provider itself and checks the pattern, so a snapshot rebuild can no longer make it take a pattern from another provider.
-22. Fixed: Slot-count settings are now a server config synced to clients, so menus no longer misalign on dedicated servers.
+22. Fixed: Slot-count settings are now a server config synced to clients, so menus no longer misalign on dedicated servers. Note: values now live per world in `serverconfig/mesplicedterminal-server.toml` and old `config/` values are not carried over; put a copy in `defaultconfigs/` to preset new worlds.
 23. Fixed: A readable layout.json now wins over the active preset slot instead of being replaced by an older copy.
 24. Fixed: Cancelling the layout editor also drops the undo steps made inside it, so undo in the terminal cannot bring back discarded edits.
 25. Fixed: Scrollbars of panels covered by a higher window can no longer be dragged through it.
@@ -54,7 +54,7 @@
 19. 调整：工具包、记忆槽和扩展栏设置改为跟随玩家，死亡不掉落；已有终端上的工具包数据会自动合并到玩家身上。
 20. 修复：样板供应器列表在重建快照时溢出后不再永久停在空列表。
 21. 修复：撤回上次上传改为按供应器本身定位并核对样板，快照重建后不会再从别的供应器取错样板。
-22. 修复：槽位数配置改为服务端配置并同步给客户端，专用服上两端的菜单槽位不再错位。
+22. 修复：槽位数配置改为服务端配置并同步给客户端，专用服上两端的菜单槽位不再错位。注意：配置改为按存档保存在 `serverconfig/mesplicedterminal-server.toml`，原 `config/` 下的旧值不会自动迁移；放一份到 `defaultconfigs/` 可作为新存档的默认值。
 23. 修复：layout.json 能正常读取时以它为准，不再被较旧的当前预设覆盖。
 24. 修复：取消布局编辑时一并撤掉编辑器里产生的撤销记录，回到终端后撤销不会恢复已放弃的编辑。
 25. 修复：被上层窗口挡住的面板不能再被隔着拖动滚动条。
