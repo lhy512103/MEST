@@ -2386,7 +2386,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             // (craft-amount return, terminal reopen) sees the search that was on screen,
             // not the value from the previous close.
             meListPanel.storeSearch();
+            meListPanel.markFinishedCraftingPinsPrunable();
         }
+        MestPinnedKeysCap.resetToVanilla();
         closePatternAccessSubscription();
         if (PlusScreenSupport.loaded() && !keepPendingOnRemove) {
             PlusScreenSupport.cancelPending();

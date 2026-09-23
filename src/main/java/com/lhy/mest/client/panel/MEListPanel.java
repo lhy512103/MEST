@@ -31,6 +31,7 @@ import appeng.api.util.IConfigManager;
 import appeng.client.Point;
 import appeng.client.gui.me.common.Repo;
 import appeng.client.gui.me.common.PendingCraftingJobs;
+import appeng.client.gui.me.common.PinnedKeys;
 import appeng.client.gui.me.common.RepoSlot;
 import appeng.client.gui.me.common.StackSizeRenderer;
 import appeng.client.gui.style.Blitter;
@@ -46,6 +47,7 @@ import appeng.integration.abstraction.ItemListMod;
 import appeng.menu.me.common.GridInventoryEntry;
 
 import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.client.MestPinnedKeysCap;
 import com.lhy.mest.client.TerminalSearchRestore;
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.terminal.MESTMenu;
@@ -218,9 +220,14 @@ public class MEListPanel extends ModulePanel implements ISortSource {
 
         int gridWidth = contentWidth();
         int gridHeight = contentHeight();
+        int previousCols = this.cols;
         this.cols = Math.max(1, gridWidth / SLOT);
         this.rows = Math.max(1, gridHeight / SLOT);
         this.repo.setRowSize(cols);
+        MestPinnedKeysCap.setVisibleColumns(cols);
+        if (previousCols != this.cols) {
+            this.repo.updateView();
+        }
 
         int requiredSlots = rows * cols;
         if (repoSlots.size() != requiredSlots) {
@@ -565,7 +572,24 @@ public class MEListPanel extends ModulePanel implements ISortSource {
     }
 
     private int totalRows() {
-        return cols == 0 ? 0 : (repo.size() + cols - 1) / cols;
+        if (cols == 0) {
+            return 0;
+        }
+        int total = (repo.size() + cols - 1) / cols;
+        if (repo.hasPinnedRow()) {
+            total++;
+        }
+        return total;
+    }
+
+    public void markFinishedCraftingPinsPrunable() {
+        for (GridInventoryEntry entry : repo.getPinnedEntries()) {
+            PinnedKeys.PinInfo info = PinnedKeys.getPinInfo(entry.getWhat());
+            if (info != null && info.reason == PinnedKeys.PinReason.CRAFTING
+                    && !PendingCraftingJobs.hasPendingJob(entry.getWhat())) {
+                info.canPrune = true;
+            }
+        }
     }
 
     private boolean scrollerOutside() {

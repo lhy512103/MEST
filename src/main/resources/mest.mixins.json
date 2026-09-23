@@ -17,7 +17,8 @@
     "GuiRestockMixin",
     "ToolkitHotbarGuiMixin",
     "WidgetContainerAccessor",
-    "NetworkToolboxScreenMixin"
+    "NetworkToolboxScreenMixin",
+    "PinnedKeysMixin"
   ],
   "injectors": {
     "defaultRequire": 1
