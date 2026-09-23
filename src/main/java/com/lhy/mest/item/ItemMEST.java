@@ -22,6 +22,17 @@ import com.lhy.mest.registry.ModMenus;
  * hotkey locating and universal-terminal merging for free.
  */
 public class ItemMEST extends ItemWT {
+    private static final String DESCRIPTION_ID = "item.mesplicedterminal.spliced_terminal";
+
+    /**
+     * Fixed instead of derived from the registry name: AE2WTLib reads it while registering the
+     * terminal, before this item is registered, and vanilla would cache "item.minecraft.air" then.
+     */
+    @Override
+    public String getDescriptionId() {
+        return DESCRIPTION_ID;
+    }
+
     @Override
     public MenuType<?> getMenuType(ItemMenuHostLocator locator, Player player) {
         return ModMenus.SPLICED_TERMINAL_MENU.get();

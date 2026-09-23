@@ -7,12 +7,14 @@
 1. Fixed: The open-terminal hotkey in the controls screen now shows its name instead of the raw translation key.
 2. Added: Panel Hotkeys module. Bind a key combo (Ctrl / Shift / Alt + key) to open or close each terminal panel, cycle layout presets or switch straight to preset 1, 2 or 3; bindings that are not terminal-only also work from the world by opening the terminal first.
 3. Fixed: Scrolling over a raised window no longer also scrolls the pattern access, pattern cache or provider picker panels beneath it.
+4. Fixed: The spliced terminal no longer shows as item.minecraft.air in the back button of sub-screens such as crafting amount, or anywhere AE2WTLib uses the terminal's name.
 
 ### 中文
 
 1. 修复：按键设置里打开终端的快捷键显示为中文名称，不再显示原始键名。
 2. 新增：面板快捷键模块。可绑定组合键（Ctrl / Shift / Alt + 按键）来打开或关闭各个终端面板、轮换布局预设或直接切换到预设 1、2、3；未勾选“仅终端”的快捷键在世界中按下会先打开终端再执行。
 3. 修复：在上层窗口上滚动时，下方的样板管理、样板缓存和供应器选择面板不再跟着滚动。
+4. 修复：拼接终端的名称不再显示为 item.minecraft.air（例如合成数量界面的返回按钮，以及 AE2WTLib 用到终端名称的地方）。
 
 ## v0.0.2.6
 
