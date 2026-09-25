@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.2.8
+
+### English
+
+1. Added: Direct encoding of Some Useless Things Omniversal patterns from the pattern panel.
+2. Added: Some Useless Things file 8962878 as a compile-time and runtime dependency.
+
+### 中文
+
+1. 新增：样板编码面板可直接编码无用之物的万象样板。
+2. 新增：无用之物文件 8962878 加入编译与运行时依赖。
+
 ## v0.0.2.7
 
 ### English

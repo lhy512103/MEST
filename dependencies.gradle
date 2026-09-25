@@ -47,6 +47,7 @@ dependencies {
     compileOnly "curse.maven:ae2-import-export-card-982512:${ae2_import_export_card_file}"
     compileOnly "curse.maven:ae2-lightning-tech-1527395:${ae2_lightning_tech_file}"
     compileOnly "curse.maven:clientsort-1049891:${clientsort_file}"
+    compileOnly "curse.maven:some-useless-things-1401600:${some_useless_things_file}"
 
     // Cross-mod APIs used by optional compatibility code
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"

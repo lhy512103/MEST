@@ -59,6 +59,7 @@ import appeng.menu.me.items.CraftingTermMenu;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.client.MESTScreen;
+import com.lhy.mest.compat.UselessPatternBridge;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -282,10 +283,18 @@ public class MestJeiPlugin implements IModPlugin {
 
             RecipeHolder<?> holder = rawRecipe instanceof RecipeHolder<?> recipeHolder ? recipeHolder : null;
             Recipe<?> recipe = holder != null ? holder.value() : null;
-            var kind = MestEncodingHelper.classifyRecipe(recipe, false);
-
             var inputs = genericInputs(slotsView);
             var outputs = genericOutputs(slotsView);
+
+            if (UselessPatternBridge.isUselessEntry(rawRecipe)) {
+                if (doTransfer) {
+                    com.lhy.mest.compat.plus.PlusEncodingUpload.captureRecipeSearchKey(rawRecipe);
+                    return UselessPatternBridge.encode(menu, rawRecipe, inputs, outputs) ? null : helper.createInternalError();
+                }
+                return new EncodingTransferError(findCraftableSlots(menu, slotsView));
+            }
+
+            var kind = MestEncodingHelper.classifyRecipe(recipe, false);
             switch (MestEncodingHelper.validate(kind, recipe, !inputs.isEmpty(), !outputs.isEmpty())) {
                 case RECIPE_TOO_LARGE -> {
                     return helper.createUserErrorWithTooltip(ItemModText.RECIPE_TOO_LARGE.text());

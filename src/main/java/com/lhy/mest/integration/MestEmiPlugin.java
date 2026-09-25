@@ -55,6 +55,7 @@ import appeng.menu.me.common.GridInventoryEntry;
 import appeng.menu.me.items.CraftingTermMenu;
 
 import com.lhy.mest.client.MESTScreen;
+import com.lhy.mest.compat.UselessPatternBridge;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
@@ -231,6 +232,11 @@ public class MestEmiPlugin implements EmiPlugin {
             RecipeHolder<?> holder = getRecipeHolder(context, recipe);
             Recipe<?> backing = holder != null ? holder.value() : null;
             var inputs = EmiStackHelper.ofInputs(recipe);
+            if (UselessPatternBridge.isUselessEntry(recipe.getBackingRecipe())
+                    && UselessPatternBridge.encode(menu, recipe.getBackingRecipe(), inputs, EmiStackHelper.ofOutputs(recipe))) {
+                Minecraft.getInstance().setScreen(context.getScreen());
+                return true;
+            }
             MestEncodingHelper.encode(
                     menu,
                     classifyRecipe(recipe, backing),
