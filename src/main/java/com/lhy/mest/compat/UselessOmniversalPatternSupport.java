@@ -7,21 +7,18 @@ import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 import appeng.api.stacks.GenericStack;
 
 import com.sorrowmist.useless.content.recipe.AdvancedAlloyFurnaceRecipe;
 import com.sorrowmist.useless.content.recipe.AlloyFurnaceRecipeCatalog;
 import com.sorrowmist.useless.content.recipe.AlloyFurnaceRecipeFingerprint;
-import com.sorrowmist.useless.network.SelectOmniversalPatternRecipePacket;
 
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
- * Starts Useless Mod's Omniversal-pattern conversion from MEST's menu. The actual pending-recipe
- * fields and encoded-pattern rewrite live in Useless Mod's PatternEncodingLogic integration, so
- * this bridge only needs to select the recipe before filling the processing slots.
+ * Selects the Useless Mod recipe for MEST and lets the server convert the encoded processing
+ * pattern through Useless Mod's public encoding API.
  */
 public final class UselessOmniversalPatternSupport {
     private UselessOmniversalPatternSupport() {
@@ -47,11 +44,7 @@ public final class UselessOmniversalPatternSupport {
         }
 
         String fingerprint = AlloyFurnaceRecipeFingerprint.create(recipe, level.registryAccess());
-        PacketDistributor.sendToServer(new SelectOmniversalPatternRecipePacket(
-                menu.containerId,
-                recipe.id(),
-                fingerprint,
-                entry.sourceId()));
+        menu.selectUselessPattern(recipe.id(), fingerprint, entry.sourceId());
         com.lhy.mest.integration.MestEncodingHelper.encode(
                 menu,
                 com.lhy.mest.integration.MestEncodingHelper.RecipeKind.PROCESSING,

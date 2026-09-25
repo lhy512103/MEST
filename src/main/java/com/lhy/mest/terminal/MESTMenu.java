@@ -67,6 +67,7 @@ import de.mari_023.ae2wtlib.wct.magnet_card.MagnetMode;
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.compat.MestCraftingPatternAutoUpload;
 import com.lhy.mest.compat.plus.PlusEncodingUpload;
+import com.lhy.mest.compat.UselessPatternBridge;
 import com.lhy.mest.network.PatternAccessSession;
 import com.lhy.mest.network.PatternCacheActionPacket;
 
@@ -98,6 +99,7 @@ public class MESTMenu extends CraftingTermMenu {
     private static final String ACTION_TRASH_MENU = "trash";
     private static final String ACTION_CLOSE_TRASH = "closeTrash";
     private static final String ACTION_SET_TOOLKIT_OPEN = "mestSetToolkitOpen";
+    private static final String ACTION_SET_USELESS_PATTERN = "mestSetUselessPattern";
 
     private final MESTMenuHost host;
     private final PatternAccessSession patternAccessSession;
@@ -130,6 +132,12 @@ public class MESTMenu extends CraftingTermMenu {
     // lookup runs once at the end of the batch instead of once per slot.
     private boolean patternCraftingOutputDirty;
     private boolean batchingSlotUpdates;
+    @Nullable
+    private ResourceLocation uselessPatternRecipeId;
+    @Nullable
+    private String uselessPatternFingerprint;
+    @Nullable
+    private String uselessPatternSourceId;
 
     @GuiSync(93)
     public EncodingMode patternEncodingMode = EncodingMode.CRAFTING;
@@ -189,6 +197,7 @@ public class MESTMenu extends CraftingTermMenu {
         registerClientAction(ACTION_TRASH_MENU, this::openTrashMenu);
         registerClientAction(ACTION_CLOSE_TRASH, this::closeTrash);
         registerClientAction(ACTION_SET_TOOLKIT_OPEN, Boolean.class, this::setToolkitOpen);
+        registerClientAction(ACTION_SET_USELESS_PATTERN, String.class, this::setUselessPattern);
 
         updateStonecuttingRecipes();
         updatePatternCraftingOutput();
@@ -456,6 +465,49 @@ public class MESTMenu extends CraftingTermMenu {
         } else {
             clearEncodedPatternOnly();
         }
+    }
+
+    public void selectUselessPattern(ResourceLocation recipeId, String fingerprint, String sourceId) {
+        String selection = recipeId + "\u0000" + fingerprint + "\u0000" + sourceId;
+        if (isClientSide()) {
+            setUselessPattern(selection);
+            sendClientAction(ACTION_SET_USELESS_PATTERN, selection);
+        }
+    }
+
+    private void setUselessPattern(String selection) {
+        String[] parts = selection.split("\\u0000", -1);
+        if (parts.length != 3) {
+            return;
+        }
+        ResourceLocation recipeId = ResourceLocation.tryParse(parts[0]);
+        if (recipeId == null || parts[1].isEmpty() || parts[2].isEmpty()) {
+            return;
+        }
+        uselessPatternRecipeId = recipeId;
+        uselessPatternFingerprint = parts[1];
+        uselessPatternSourceId = parts[2];
+    }
+
+    @Nullable
+    public ResourceLocation getUselessPatternRecipeId() {
+        return uselessPatternRecipeId;
+    }
+
+    @Nullable
+    public String getUselessPatternFingerprint() {
+        return uselessPatternFingerprint;
+    }
+
+    @Nullable
+    public String getUselessPatternSourceId() {
+        return uselessPatternSourceId;
+    }
+
+    public void clearUselessPatternSelection() {
+        uselessPatternRecipeId = null;
+        uselessPatternFingerprint = null;
+        uselessPatternSourceId = null;
     }
 
     public void clearPatternEncoding() {
@@ -1030,7 +1082,8 @@ public class MESTMenu extends CraftingTermMenu {
             return null;
         }
 
-        return PatternDetailsHelper.encodeProcessingPattern(Arrays.asList(inputs), Arrays.asList(outputs));
+        ItemStack encoded = PatternDetailsHelper.encodeProcessingPattern(Arrays.asList(inputs), Arrays.asList(outputs));
+        return UselessPatternBridge.convert(this, encoded);
     }
 
     @Nullable

@@ -6,11 +6,13 @@
 
 1. Added: Direct encoding of Some Useless Things Omniversal patterns from the pattern panel.
 2. Added: Some Useless Things file 8962878 as a compile-time and runtime dependency.
+3. Fixed: Omniversal encoding now uses MEST's own encoding action instead of AE2's vanilla-menu-only transfer path.
 
 ### 中文
 
 1. 新增：样板编码面板可直接编码无用之物的万象样板。
 2. 新增：无用之物文件 8962878 加入编译与运行时依赖。
+3. 修复：万象样板编码改为走 MEST 自己的编码动作，不再依赖只支持原版终端的转移路径。
 
 ## v0.0.2.7
 
