@@ -30,23 +30,6 @@ public abstract class ToolkitInventoryMixin {
         }
     }
 
-    @Inject(method = "removeFromSelected", at = @At("HEAD"), cancellable = true)
-    private void mest$removeFromSelected(boolean all, CallbackInfoReturnable<ItemStack> cir) {
-        Inventory inventory = (Inventory) (Object) this;
-        if (!ToolkitHand.isOverrideActive(inventory.player)) {
-            return;
-        }
-        ItemStack selected = ToolkitBarState.selectedStack(inventory.player);
-        if (selected.isEmpty()) {
-            cir.setReturnValue(ItemStack.EMPTY);
-            return;
-        }
-        ItemStack removed = selected.copyWithCount(all ? selected.getCount() : 1);
-        selected.shrink(removed.getCount());
-        ToolkitBarState.setSelectedStack(inventory.player, selected);
-        cir.setReturnValue(removed);
-    }
-
     @Inject(method = "getDestroySpeed", at = @At("HEAD"), cancellable = true)
     private void mest$getDestroySpeed(BlockState state, CallbackInfoReturnable<Float> cir) {
         Inventory inventory = (Inventory) (Object) this;
