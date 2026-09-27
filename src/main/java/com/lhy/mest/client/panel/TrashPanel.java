@@ -92,6 +92,11 @@ public class TrashPanel extends ModulePanel {
     }
 
     @Override
+    public boolean canCombine() {
+        return false;
+    }
+
+    @Override
     public int defaultWidth() {
         return 2 * CONTENT_PADDING + MIN_COLS * SLOT + INSIDE_GUTTER;
     }

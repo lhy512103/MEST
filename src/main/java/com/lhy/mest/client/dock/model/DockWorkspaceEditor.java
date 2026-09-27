@@ -160,11 +160,34 @@ public final class DockWorkspaceEditor {
     }
 
     public DockWorkspace setRootMode(DockWorkspace workspace, String rootId, boolean floating, boolean pinned) {
+        return updateRoot(workspace, rootId, root -> root.withMode(floating, pinned));
+    }
+
+    /** Makes the window combined module {@code group}, taking the slot from any other window. */
+    public DockWorkspace setRootGroup(DockWorkspace workspace, String rootId, int group) {
+        validate(workspace);
+        var roots = new ArrayList<>(workspace.roots());
+        for (int i = 0; i < roots.size(); i++) {
+            FloatingRoot root = roots.get(i);
+            if (group != 0 && root.group() == group && !root.rootId().equals(rootId)) {
+                roots.set(i, root.withGroup(0));
+            }
+        }
+        DockWorkspace cleared = copyWithRoots(workspace, roots);
+        return updateRoot(cleared, rootId, root -> root.withGroup(group));
+    }
+
+    public DockWorkspace setRootHidden(DockWorkspace workspace, String rootId, boolean hidden) {
+        return updateRoot(workspace, rootId, root -> root.withHidden(hidden));
+    }
+
+    private DockWorkspace updateRoot(DockWorkspace workspace, String rootId,
+            java.util.function.UnaryOperator<FloatingRoot> change) {
         validate(workspace);
         var roots = new ArrayList<>(workspace.roots());
         for (int i = 0; i < roots.size(); i++) {
             if (roots.get(i).rootId().equals(rootId)) {
-                roots.set(i, roots.get(i).withMode(floating, pinned));
+                roots.set(i, change.apply(roots.get(i)));
                 return copyWithRoots(workspace, roots);
             }
         }

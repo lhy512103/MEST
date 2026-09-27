@@ -273,4 +273,27 @@ class DockWorkspaceEditorTest {
         assertFalse(detached.roots().getFirst().floating());
         assertTrue(detached.roots().getLast().floating());
     }
+
+    @Test
+    void combinedModuleSlotsAreUniqueAndOnlyForFloatingWindows() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b", "c");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        DockWorkspace floated = editor.setRootMode(
+                editor.setRootMode(workspace(), "root-a", true, false), "root-b", true, false);
+
+        DockWorkspace first = editor.setRootGroup(floated, "root-a", 1);
+        DockWorkspace moved = editor.setRootGroup(first, "root-b", 1);
+        assertEquals(0, moved.roots().get(0).group(), "slot 1 moves to the newer window");
+        assertEquals(1, moved.roots().get(1).group());
+
+        DockWorkspace anchored = editor.setRootGroup(floated, "root-c", 2);
+        assertEquals(0, anchored.roots().get(2).group(), "an anchored window cannot be a combined module");
+
+        DockWorkspace hidden = editor.setRootHidden(moved, "root-b", true);
+        assertTrue(hidden.roots().get(1).hidden());
+        DockWorkspace released = editor.setRootGroup(hidden, "root-b", 0);
+        assertFalse(released.roots().get(1).hidden(), "releasing a slot shows the window again");
+        DockWorkspace docked = editor.setRootMode(hidden, "root-b", false, false);
+        assertEquals(0, docked.roots().get(1).group(), "docking back drops the slot");
+    }
 }

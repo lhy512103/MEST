@@ -3,7 +3,6 @@
   "item.mesplicedterminal.spliced_terminal": "ME 拼接终端",
   "item.mesplicedterminal.network_toolkit": "网络工具包",
   "gui.mesplicedterminal.config.network_toolkit_slots": "网络工具包升级槽位数",
-
   "gui.mesplicedterminal.reset_layout": "重置布局",
   "gui.mesplicedterminal.lock_layout": "锁定布局（仅固定面板）",
   "gui.mesplicedterminal.unlock_layout": "解锁布局",
@@ -58,7 +57,7 @@
   "gui.mesplicedterminal.layout_no": "否",
   "gui.mesplicedterminal.layout_palette_hidden": "模块已隐藏：按住并拖入工作区即可重新放置",
   "gui.mesplicedterminal.layout_hint_drag": "拖动面板标题栏可自由移动面板",
-  "gui.mesplicedterminal.layout_hint_move_all": "按住 Ctrl 拖动标题栏可同时移动全部面板",
+  "gui.mesplicedterminal.layout_hint_move_all": "按住 Ctrl 拖动标题栏可移动整个拼接窗口，而不是把该面板拆出来",
   "gui.mesplicedterminal.layout_hint_splice": "将面板拖到另一面板的边缘可拼接为分栏窗口",
   "gui.mesplicedterminal.layout_hint_detach": "右键点击分割条可将分支拆分为独立窗口",
   "gui.mesplicedterminal.layout_hint_resize": "拖动窗口右下角可调整窗口大小",
@@ -181,5 +180,7 @@
   "gui.mesplicedterminal.hotkeys.cycle_preset": "切换布局预设",
   "gui.mesplicedterminal.hotkeys.select_preset": "切换到预设：%s",
   "gui.mesplicedterminal.float_window": "让该窗口悬浮",
-  "gui.mesplicedterminal.dock_window": "将该窗口收回终端"
+  "gui.mesplicedterminal.combined_module": "组合模块 %s",
+  "gui.mesplicedterminal.combine_window": "组成组合模块（点击依次选择 1、2、3）",
+  "gui.mesplicedterminal.combine_window.set": "组合模块 %s（点击切换到下一个，超过 3 则解除）"
 }

@@ -52,7 +52,7 @@ public final class DockLayoutCodec {
     private static final Set<String> OFFSET_FIELDS = Set.of("x", "y");
     private static final Set<String> POLICY_FIELDS =
             Set.of("visible", "movable", "resizable", "floating", "pinned", "showTerminalButton");
-    private static final Set<String> ROOT_FIELDS = Set.of("rootId", "bounds", "content", "floating", "pinned");
+    private static final Set<String> ROOT_FIELDS = Set.of("rootId", "bounds", "content", "floating", "pinned", "group", "hidden");
     private static final Set<String> BOUNDS_FIELDS = Set.of("x", "y", "width", "height");
     private static final Set<String> SIZE_FIELDS = Set.of("width", "height");
     private static final Set<String> LEAF_FIELDS = Set.of("type", "nodeId", "moduleId", "visible");
@@ -124,7 +124,8 @@ public final class DockLayoutCodec {
         WorkspaceValidator.validateStrict(workspace, catalog);
         var roots = new ArrayList<RootDto>();
         for (FloatingRoot root : workspace.roots()) {
-            roots.add(new RootDto(root.rootId(), root.bounds(), toDto(root.content()), root.floating(), root.pinned()));
+            roots.add(new RootDto(root.rootId(), root.bounds(), toDto(root.content()), root.floating(), root.pinned(),
+                    root.group(), root.hidden()));
         }
         var policies = new java.util.LinkedHashMap<String, PolicyDto>();
         for (String moduleId : catalog.moduleIds()) {
@@ -154,6 +155,17 @@ public final class DockLayoutCodec {
      * current default. Only a window holding nothing but that panel is moved; one it was spliced
      * into was arranged by the player, and shifting it would drag every other module along.
      */
+    /** A hand-edited file may reuse a combined-module slot; the first window keeps it. */
+    private static void dropDuplicateGroups(List<FloatingRoot> roots) {
+        var used = new java.util.HashSet<Integer>();
+        for (int i = 0; i < roots.size(); i++) {
+            FloatingRoot root = roots.get(i);
+            if (root.group() != 0 && !used.add(root.group())) {
+                roots.set(i, root.withGroup(0));
+            }
+        }
+    }
+
     private static void migrateNetworkToolkitPlacement(List<FloatingRoot> roots, int version) {
         int shift = DockWorkspaceDefaults.networkToolkitShiftFrom(version);
         if (shift <= 0) {
@@ -193,8 +205,11 @@ public final class DockLayoutCodec {
                         root.bounds(),
                         fromDto(root.content(), budget, 1),
                         root.floating(),
-                        root.pinned()));
+                        root.pinned(),
+                        root.group(),
+                        root.hidden()));
             }
+            dropDuplicateGroups(roots);
             migrateNetworkToolkitPlacement(roots, dto.version());
             if (dto.version() == 2) {
                 DockWorkspace workspace = new DockWorkspace(roots);
@@ -390,6 +405,12 @@ public final class DockLayoutCodec {
             if (root.pinned()) {
                 rootObject.addProperty("pinned", true);
             }
+            if (root.group() != 0) {
+                rootObject.addProperty("group", root.group());
+            }
+            if (root.hidden()) {
+                rootObject.addProperty("hidden", true);
+            }
             roots.add(rootObject);
         }
         object.add("roots", roots);
@@ -486,7 +507,9 @@ public final class DockLayoutCodec {
                     readBounds(objectField(root, "bounds", path), path + ".bounds"),
                     readNode(objectField(root, "content", path), path + ".content", budget, 1),
                     optionalBoolean(root, "floating", false, path),
-                    optionalBoolean(root, "pinned", false, path)));
+                    optionalBoolean(root, "pinned", false, path),
+                    root.has("group") ? integer(root, "group", path) : 0,
+                    optionalBoolean(root, "hidden", false, path)));
         }
         if (version == 2) {
             return new DockLayoutDto(version, roots);

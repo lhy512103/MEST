@@ -45,6 +45,18 @@ public final class MestGuiIcons {
                 .blit(graphics);
     }
 
+    /** Combined module 1 to 3 reuses the layout-preset 1 to 3 icons (row 2, icons 10 to 12). */
+    public static void blitCombined(GuiGraphics graphics, int group, int x, int y, int w, int h, float opacity) {
+        var blitter = Blitter.texture(ATLAS, 256, 256)
+                .src(144 + (group - 1) * SIZE, SIZE, SIZE, SIZE)
+                .dest(x, y, w, h)
+                .zOffset(3);
+        if (opacity < 1.0F) {
+            blitter.opacity(opacity);
+        }
+        blitter.blit(graphics);
+    }
+
     public static void blitSplicedTerminal(GuiGraphics graphics, int x, int y, int w, int h) {
         Blitter.texture(SPLICED_TERMINAL, SIZE, SIZE)
                 .src(0, 0, SIZE, SIZE)

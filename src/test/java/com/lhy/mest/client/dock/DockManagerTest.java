@@ -182,31 +182,6 @@ class DockManagerTest {
     }
 
     @Test
-    void ctrlDragIgnoresHiddenRootsWhenClampingTheGroup() throws ReflectiveOperationException {
-        FloatingRoot visible = root("visible", new DockRect(120, 28, 200, 150), true);
-        FloatingRoot hidden = root("hidden", new DockRect(120, 28, 500, 400), false);
-        DockWorkspace workspace = new DockWorkspace(
-                List.of(visible, hidden),
-                Map.of(
-                        "module-visible", new ModuleLayoutPolicy(true, true, true),
-                        "module-hidden", new ModuleLayoutPolicy(false, true, true)));
-
-        DockManager manager = new DockManager();
-        setField(manager, "workspace", workspace);
-        setField(manager, "viewportWorkspace", workspace);
-        setField(manager, "screenWidth", 800);
-        setField(manager, "screenHeight", 600);
-        setField(manager, "editingLayout", true);
-        setField(manager, "editorInsetLeft", 120);
-        setField(manager, "editorInsetTop", 28);
-        setField(manager, "editorInsetRight", 140);
-        setField(manager, "editorInsetBottom", 0);
-
-        assertEquals(340, manager.clampedVisibleGroupDelta(400, true));
-        assertEquals(422, manager.clampedVisibleGroupDelta(500, false));
-    }
-
-    @Test
     void areaMustBelongToTheOwningRoot() {
         FloatingRoot owner = root("owner", new DockRect(0, 0, 100, 80), true);
 

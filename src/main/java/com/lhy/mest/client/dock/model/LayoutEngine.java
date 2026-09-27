@@ -35,7 +35,7 @@ public final class LayoutEngine {
                     : new DockSize(
                             add(contentMinimum.width(), style.rootInsets().horizontal()),
                             add(contentMinimum.height(), style.rootInsets().vertical()));
-            boolean effectivelyVisible = !contentMinimum.isEmpty();
+            boolean effectivelyVisible = !root.hidden() && !contentMinimum.isEmpty();
             DockRect contentBounds = root.bounds().inset(style.rootInsets());
             builder.roots.add(new LayoutProjection.RootPlacement(
                     root.rootId(), root.bounds(), contentBounds, rootMinimum, effectivelyVisible));

@@ -19,9 +19,9 @@ public record DockLayoutDto(
     /**
      * v4 tightened the network-tool panel's placement; v5 tightened it by another 2px; v6 dropped
      * the stretch and compact splice modes, so every window is an outer shell; v7 made floating
-     * and pinned a property of the window instead of its modules.
+     * and pinned a property of the window instead of its modules; v8 added combined-module slots.
      */
-    public static final int CURRENT_VERSION = 7;
+    public static final int CURRENT_VERSION = 8;
     /** Oldest version this codec still decodes. */
     public static final int MIN_SUPPORTED_VERSION = 2;
 
@@ -48,9 +48,10 @@ public record DockLayoutDto(
         contentOffsets = contentOffsets == null ? Map.of() : Map.copyOf(new LinkedHashMap<>(contentOffsets));
     }
 
-    public record RootDto(String rootId, DockRect bounds, NodeDto content, boolean floating, boolean pinned) {
+    public record RootDto(String rootId, DockRect bounds, NodeDto content, boolean floating, boolean pinned,
+            int group, boolean hidden) {
         public RootDto(String rootId, DockRect bounds, NodeDto content) {
-            this(rootId, bounds, content, false, false);
+            this(rootId, bounds, content, false, false, 0, false);
         }
     }
 

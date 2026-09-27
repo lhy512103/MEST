@@ -81,6 +81,7 @@ import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.PanelSideBar;
 import com.lhy.mest.client.dock.ScrollingUpgradeColumn;
 import com.lhy.mest.client.dock.model.DockRect;
+import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.panel.CraftingPanel;
 import com.lhy.mest.client.panel.CraftingTerminalPanel;
 import com.lhy.mest.client.panel.InventoryPanel;
@@ -133,6 +134,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private static final String MORE_LOCK = "lock_layout";
     private static final String MORE_UNDO = "undo_layout";
     private static final String MORE_EDIT = "edit_layout";
+    private static final String MORE_GROUP_PREFIX = "combined_module_";
     private static final int MORE_SETTINGS_SHIFT = 3;
     private ToolbarIconButton lockLayoutBtn;
     private ToolbarIconButton undoLayoutBtn;
@@ -586,6 +588,11 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 available.add(panel.id());
             }
         }
+        for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
+            if (dock.hasGroup(group)) {
+                available.add(MORE_GROUP_PREFIX + group);
+            }
+        }
         List<String> resolved = new ArrayList<>();
         for (String id : dock.moreSettingsOrder()) {
             if (available.contains(id) && !resolved.contains(id)) {
@@ -630,6 +637,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                     Component.translatable("gui.mesplicedterminal.edit_layout"),
                     b -> Minecraft.getInstance().setScreen(new MESTLayoutEditorScreen(this, dock)));
             default -> {
+                if (id.startsWith(MORE_GROUP_PREFIX)) {
+                    yield new CombinedModuleButton(Integer.parseInt(id.substring(MORE_GROUP_PREFIX.length())));
+                }
                 ModulePanel panel = panelById(id);
                 yield panel == null
                         ? new ToolbarIconButton(Icon.COG, Component.literal(id), b -> { })
@@ -1441,6 +1451,13 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             dock.cyclePreset();
             return true;
         }
+        int combined = HotkeyActions.groupIndex(id);
+        if (combined > 0) {
+            if (dock.hasGroup(combined)) {
+                toggleCombinedModule(combined);
+            }
+            return true;
+        }
         int preset = HotkeyActions.presetIndex(id);
         if (preset >= 0 && preset < dock.presetCount()) {
             dock.selectPreset(preset);
@@ -1467,6 +1484,49 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (!shown && panel == wirelessSettingsPanel) {
             wirelessSettingsPanel.reloadFromStack();
         }
+    }
+
+    /** Shows or hides a combined module (a floating spliced window) as one unit. */
+    private final class CombinedModuleButton extends ToolbarIconButton {
+        private final int group;
+
+        CombinedModuleButton(int group) {
+            super(Icon.COG, combinedModuleMessage(group), button -> toggleCombinedModule(group));
+            this.group = group;
+        }
+
+        @Override
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partial) {
+            boolean shown = dock.isGroupShown(group);
+            setMessage(combinedModuleMessage(group));
+            if (!visible) {
+                return;
+            }
+            int yOffset = isHovered() ? 1 : 0;
+            Icon bgIcon = isHovered()
+                    ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER
+                    : isFocused() ? Icon.TOOLBAR_BUTTON_BACKGROUND_FOCUS : Icon.TOOLBAR_BUTTON_BACKGROUND;
+            bgIcon.getBlitter()
+                    .dest(getX() - 1, getY() + yOffset, 18, 20)
+                    .zOffset(2)
+                    .blit(guiGraphics);
+            MestGuiIcons.blitCombined(guiGraphics, group, getX(), getY() + 1 + yOffset, 16, 16, shown ? 1.0F : 0.5F);
+        }
+    }
+
+    private Component combinedModuleMessage(int group) {
+        return Component.translatable(dock.isGroupShown(group)
+                        ? "gui.mesplicedterminal.module_toggle.hide"
+                        : "gui.mesplicedterminal.module_toggle.show")
+                .append(": ")
+                .append(Component.translatable("gui.mesplicedterminal.combined_module", group));
+    }
+
+    private void toggleCombinedModule(int group) {
+        dock.toggleGroup(group);
+        attachMeSideBar();
+        attachExtraSlotColumns();
+        syncToolkitOpen();
     }
 
     private void toggleModule(ModulePanel panel) {

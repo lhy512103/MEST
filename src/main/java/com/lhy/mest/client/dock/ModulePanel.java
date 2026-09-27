@@ -277,16 +277,26 @@ public abstract class ModulePanel {
     private boolean pinned;
     private boolean floatVisible;
     private boolean windowFloating;
+    private int windowGroup;
 
     public void setPinControl(boolean visible, boolean pinned) {
         this.pinVisible = visible;
         this.pinned = pinned;
     }
 
-    /** Shown on one section per window; floats the whole window or docks it back to the terminal. */
-    public void setFloatControl(boolean visible, boolean floating) {
+    /**
+     * Shown on one section per window. Anchored: floats the whole window. Floating (layout editor
+     * only): cycles the window through combined modules 1 to 3.
+     */
+    public void setFloatControl(boolean visible, boolean floating, int group) {
         this.floatVisible = visible;
         this.windowFloating = floating;
+        this.windowGroup = group;
+    }
+
+    /** Whether this panel may be part of a combined module. */
+    public boolean canCombine() {
+        return true;
     }
 
     public boolean floatVisible() {
@@ -366,9 +376,12 @@ public abstract class ModulePanel {
 
     public Component titleBarTooltip(double mx, double my) {
         if (inFloatButton(mx, my)) {
-            return Component.translatable(windowFloating
-                    ? "gui.mesplicedterminal.dock_window"
-                    : "gui.mesplicedterminal.float_window");
+            if (!windowFloating) {
+                return Component.translatable("gui.mesplicedterminal.float_window");
+            }
+            return windowGroup == 0
+                    ? Component.translatable("gui.mesplicedterminal.combine_window")
+                    : Component.translatable("gui.mesplicedterminal.combine_window.set", windowGroup);
         }
         if (inPinButton(mx, my)) {
             return Component.translatable(pinned()
@@ -653,8 +666,12 @@ public abstract class ModulePanel {
                 drawChromeButton(g, pinButtonX(), pinButtonY(), inPinButton(mouseX, mouseY), ChromeGlyph.PIN);
             }
             if (floatVisible()) {
-                drawChromeButton(g, floatButtonX(), pinButtonY(), inFloatButton(mouseX, mouseY),
-                        windowFloating ? ChromeGlyph.DOCK : ChromeGlyph.FLOAT);
+                if (windowFloating) {
+                    drawCombineButton(g, floatButtonX(), pinButtonY(), inFloatButton(mouseX, mouseY));
+                } else {
+                    drawChromeButton(g, floatButtonX(), pinButtonY(), inFloatButton(mouseX, mouseY),
+                            ChromeGlyph.FLOAT);
+                }
             }
         }
     }
@@ -681,8 +698,16 @@ public abstract class ModulePanel {
             // AE2 states.png last 16px row, first cell (0, 240)
             case RESET -> blitAeIcon(g, Icon.SCHEDULING_DEFAULT, ix, iy);
             case FLOAT -> blitAeIcon(g, Icon.ARROW_UP, ix, iy);
-            case DOCK -> blitAeIcon(g, Icon.ARROW_DOWN, ix, iy);
         }
+    }
+
+    /** Unassigned: a faded module-1 icon. Assigned: the combined module's own 1/2/3 icon. */
+    private void drawCombineButton(GuiGraphics g, int px, int py, boolean hovered) {
+        int yOffset = hovered ? 1 : 0;
+        int bg = hovered ? 0xFF4A4A4A : 0xFF2E2E2E;
+        g.fill(px, py + yOffset, px + PIN_SIZE, py + yOffset + PIN_SIZE, bg);
+        MestGuiIcons.blitCombined(g, windowGroup == 0 ? 1 : windowGroup, px, py + yOffset, PIN_SIZE, PIN_SIZE,
+                windowGroup == 0 ? 0.45F : 1.0F);
     }
 
     private static void blitAeIcon(GuiGraphics g, Icon icon, int x, int y) {
@@ -693,8 +718,7 @@ public abstract class ModulePanel {
         CLOSE,
         RESET,
         PIN,
-        FLOAT,
-        DOCK
+        FLOAT
     }
 
     /**

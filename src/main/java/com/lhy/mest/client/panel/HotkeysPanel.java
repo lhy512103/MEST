@@ -149,6 +149,11 @@ public class HotkeysPanel extends ModulePanel {
         for (ModulePanel panel : dock.panels()) {
             addRow(panel.id(), panel::title);
         }
+        for (int group = 1; group <= 3; group++) {
+            int index = group;
+            addRow(HotkeyActions.groupId(index),
+                    () -> Component.translatable("gui.mesplicedterminal.combined_module", index));
+        }
         addRow(HotkeyActions.CYCLE_PRESET,
                 () -> Component.translatable("gui.mesplicedterminal.hotkeys.cycle_preset"));
         for (int slot = 0; slot < dock.presetCount(); slot++) {

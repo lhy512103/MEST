@@ -77,6 +77,24 @@ class DockLayoutCodecTest {
     }
 
     @Test
+    void roundTripsCombinedModulesAndDropsDuplicateSlots() throws Exception {
+        var base = WorkspacePersistenceFixtures.workspace();
+        var roots = new java.util.ArrayList<>(base.roots());
+        roots.set(0, roots.getFirst().withMode(true, false).withGroup(2).withHidden(true));
+        String encoded = codec().encode(base.withRoots(roots));
+
+        var decoded = codec().decode(encoded).workspace().roots().getFirst();
+        assertEquals(2, decoded.group());
+        assertTrue(decoded.hidden());
+
+        int last = encoded.lastIndexOf("\"rootId\"");
+        String duplicated = encoded.substring(0, last)
+                + "\"group\": 2, \"floating\": true, " + encoded.substring(last);
+        var twice = codec().decode(duplicated).workspace().roots();
+        assertEquals(1, twice.stream().filter(root -> root.group() == 2).count());
+    }
+
+    @Test
     void olderLayoutsTakeTheirWindowModeFromTheModules() throws Exception {
         String persisted = """
                 {

@@ -3,7 +3,6 @@
   "item.mesplicedterminal.spliced_terminal": "ME Spliced Terminal",
   "item.mesplicedterminal.network_toolkit": "Network Toolkit",
   "gui.mesplicedterminal.config.network_toolkit_slots": "Network toolkit upgrade slots",
-
   "gui.mesplicedterminal.reset_layout": "Reset Layout",
   "gui.mesplicedterminal.lock_layout": "Lock Layout (anchored panels only)",
   "gui.mesplicedterminal.unlock_layout": "Unlock Layout",
@@ -58,7 +57,7 @@
   "gui.mesplicedterminal.layout_no": "No",
   "gui.mesplicedterminal.layout_palette_hidden": "Module is hidden: hold and drag it into the workspace to place it",
   "gui.mesplicedterminal.layout_hint_drag": "Drag a panel's title bar to move it freely",
-  "gui.mesplicedterminal.layout_hint_move_all": "Hold Ctrl and drag a title bar to move every panel together",
+  "gui.mesplicedterminal.layout_hint_move_all": "Hold Ctrl and drag a title bar to move the whole spliced window instead of taking that panel out",
   "gui.mesplicedterminal.layout_hint_splice": "Drag a panel onto another panel's edge to splice them into a split window",
   "gui.mesplicedterminal.layout_hint_detach": "Right-click a split divider to detach the branch into its own window",
   "gui.mesplicedterminal.layout_hint_resize": "Drag a window's bottom-right corner to resize it",
@@ -181,5 +180,7 @@
   "gui.mesplicedterminal.hotkeys.cycle_preset": "Cycle layout preset",
   "gui.mesplicedterminal.hotkeys.select_preset": "Switch to preset: %s",
   "gui.mesplicedterminal.float_window": "Float this window",
-  "gui.mesplicedterminal.dock_window": "Dock this window back to the terminal"
+  "gui.mesplicedterminal.combined_module": "Combined module %s",
+  "gui.mesplicedterminal.combine_window": "Make this window a combined module (click to pick 1, 2 or 3)",
+  "gui.mesplicedterminal.combine_window.set": "Combined module %s (click for the next slot, past 3 to release)"
 }

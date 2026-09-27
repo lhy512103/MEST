@@ -196,7 +196,6 @@ public final class DockManager {
     private double grabOffsetY;
     private double pressX;
     private double pressY;
-    private boolean moveAllRoots;
     private String contentEditModuleId;
     private boolean contentSnapX;
     private boolean contentSnapY;
@@ -569,6 +568,80 @@ public final class DockManager {
 
     private boolean rootInCenterGroup(FloatingRoot root) {
         return !root.floating() && rootEffectivelyVisible(root.rootId());
+    }
+
+    // ---- combined modules ------------------------------------------------------------------
+
+    /** Combined-module slot (1 to 3) of the window holding {@code panel}, or 0. */
+    public int groupOf(ModulePanel panel) {
+        return panel == null || workspace == null ? 0 : rootOf(panel).group();
+    }
+
+    /** The combine button: only floating windows in the editor, and never with the trash inside. */
+    public boolean canCombine(ModulePanel panel) {
+        if (!editingLayout || panel == null || workspace == null) {
+            return false;
+        }
+        FloatingRoot root = rootOf(panel);
+        if (!root.floating()) {
+            return false;
+        }
+        for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+            ModulePanel member = panelsByModuleId.get(leaf.moduleId());
+            if (member != null && !member.canCombine()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Next free slot for the window holding {@code panel}; cycling past 3 releases the slot. */
+    public void cycleCombined(ModulePanel panel) {
+        if (!canCombine(panel)) {
+            return;
+        }
+        FloatingRoot root = rootOf(panel);
+        int next = root.group();
+        do {
+            next = (next + 1) % (FloatingRoot.MAX_GROUPS + 1);
+        } while (next != 0 && groupRoot(next) != null && !groupRoot(next).rootId().equals(root.rootId()));
+        rememberUndoPoint(workspace);
+        replaceWorkspace(editor.setRootGroup(workspace, root.rootId(), next), true);
+    }
+
+    public boolean hasGroup(int group) {
+        return groupRoot(group) != null;
+    }
+
+    public boolean isGroupShown(int group) {
+        FloatingRoot root = groupRoot(group);
+        return root != null && !root.hidden();
+    }
+
+    /** Shows or hides a combined module as a whole, like a single panel's terminal button. */
+    public void toggleGroup(int group) {
+        FloatingRoot root = groupRoot(group);
+        if (root == null) {
+            return;
+        }
+        DockWorkspace next = editor.setRootHidden(workspace, root.rootId(), !root.hidden());
+        if (root.hidden()) {
+            next = editor.raiseRoot(next, root.rootId());
+        }
+        replaceWorkspace(next, true);
+        save();
+    }
+
+    private FloatingRoot groupRoot(int group) {
+        if (group == 0 || workspace == null) {
+            return null;
+        }
+        for (FloatingRoot root : workspace.roots()) {
+            if (root.group() == group) {
+                return root;
+            }
+        }
+        return null;
     }
 
     public ModuleLayoutPolicy policyFor(ModulePanel panel) {
@@ -1632,7 +1705,11 @@ public final class DockManager {
             return true;
         }
         if (leaf != null && leaf.inFloatButton(mouseX, mouseY)) {
-            toggleFloating(leaf);
+            if (root.floating()) {
+                cycleCombined(leaf);
+            } else {
+                toggleFloating(leaf);
+            }
             return true;
         }
         if (leaf != null && leaf.inTitleBar(mouseX, mouseY)) {
@@ -1652,10 +1729,9 @@ public final class DockManager {
             }
             pressX = mouseX;
             pressY = mouseY;
-            if (editingLayout && Screen.hasControlDown()) {
-                // Ctrl+drag in the editor translates every floating root as one group.
+            if (Screen.hasControlDown()) {
+                // Ctrl+drag moves the whole spliced window instead of taking a section out.
                 mode = Mode.DRAG_ROOT;
-                moveAllRoots = true;
                 activeRootId = root.rootId();
                 grabOffsetX = mouseX - root.bounds().x();
                 grabOffsetY = mouseY - root.bounds().y();
@@ -1732,12 +1808,6 @@ public final class DockManager {
         }
         if (mode == Mode.DRAG_ROOT) {
             lastContentClickWasDrag = true;
-            if (moveAllRoots) {
-                translateAllRoots(mouseX, mouseY);
-                dropCandidate = null;
-                dragHoverBounds = null;
-                return true;
-            }
             FloatingRoot root = rootById(activeRootId);
             DockRect bounds = root.bounds();
             DockRect moved = clampRectToViewport(new DockRect(
@@ -1779,7 +1849,7 @@ public final class DockManager {
             finishGesture();
             return true;
         }
-        if (mode == Mode.DRAG_ROOT && !moveAllRoots) {
+        if (mode == Mode.DRAG_ROOT) {
             if (dropCandidate != null) {
                 executeDrop(dropCandidate);
             } else {
@@ -1834,70 +1904,12 @@ public final class DockManager {
         ensureProjection();
     }
 
-    private void translateAllRoots(double mouseX, double mouseY) {
-        FloatingRoot active = rootById(activeRootId);
-        int desiredDx = (int) Math.round(mouseX - grabOffsetX) - active.bounds().x();
-        int desiredDy = (int) Math.round(mouseY - grabOffsetY) - active.bounds().y();
-        int dx = clampedVisibleGroupDelta(desiredDx, true);
-        int dy = clampedVisibleGroupDelta(desiredDy, false);
-        if (dx == 0 && dy == 0) {
-            return;
-        }
-        var movedBounds = new HashMap<String, DockRect>();
-        for (FloatingRoot root : viewportWorkspace.roots()) {
-            DockRect bounds = root.bounds();
-            movedBounds.put(root.rootId(), new DockRect(
-                    bounds.x() + dx,
-                    bounds.y() + dy,
-                    bounds.width(),
-                    bounds.height()));
-        }
-        DockWorkspace next = editor.setRootBounds(workspace, movedBounds);
-        replaceWorkspace(next, false);
-    }
-
-    /**
-     * Shared translation for Ctrl+drag. Hidden roots keep their relative offset but must not
-     * shrink the allowed range: their leftover default geometry often fills the canvas and would
-     * otherwise pin the visible cluster to a few pixels.
-     */
-    int clampedVisibleGroupDelta(int desired, boolean horizontal) {
-        int minDelta = Integer.MIN_VALUE;
-        int maxDelta = Integer.MAX_VALUE;
-        boolean constrained = false;
-        for (FloatingRoot root : viewportWorkspace.roots()) {
-            if (!hasVisibleLeaf(workspace, root.content())) {
-                continue;
-            }
-            constrained = true;
-            DockRect bounds = root.bounds();
-            DockRect farthestPositive = clampRectToViewport(
-                    new DockRect(Integer.MAX_VALUE / 4, Integer.MAX_VALUE / 4, bounds.width(), bounds.height()),
-                    DockSize.ZERO);
-            DockRect farthestNegative = clampRectToViewport(
-                    new DockRect(Integer.MIN_VALUE / 4, Integer.MIN_VALUE / 4, bounds.width(), bounds.height()),
-                    DockSize.ZERO);
-            if (horizontal) {
-                minDelta = Math.max(minDelta, farthestNegative.x() - bounds.x());
-                maxDelta = Math.min(maxDelta, farthestPositive.x() - bounds.x());
-            } else {
-                minDelta = Math.max(minDelta, farthestNegative.y() - bounds.y());
-                maxDelta = Math.min(maxDelta, farthestPositive.y() - bounds.y());
-            }
-        }
-        if (!constrained) {
-            return 0;
-        }
-        return Math.max(minDelta, Math.min(maxDelta, desired));
-    }
-
     private void resetGestureState() {
         mode = Mode.NONE;
         activeRootId = null;
         activeLeafNodeId = null;
         activeSplitId = null;
         activeDividerBounds = null;
-        moveAllRoots = false;
         dropCandidate = null;
         dragHoverBounds = null;
         gestureStartWorkspace = null;
@@ -2144,7 +2156,10 @@ public final class DockManager {
             boolean composite = visibleLeaves > 1;
             DockRect window = composite ? root.bounds() : null;
             LeafNode floatControlLeaf = topRightLeaf(root, next);
-            boolean canFloat = root.floating() || otherAnchoredVisible(root, next);
+            // Anchored windows can float out; floating ones only offer "combine", and only while editing.
+            boolean canFloat = root.floating()
+                    ? editingLayout && combinable(root)
+                    : otherAnchoredVisible(root, next);
             for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
                 ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
                 var placement = next.visibleLeaf(leaf.nodeId());
@@ -2162,7 +2177,7 @@ public final class DockManager {
                 panel.splicedWindow = window;
                 panel.contentEditing = leaf.moduleId().equals(contentEditModuleId);
                 panel.setPinControl(visible && root.floating(), root.pinned());
-                panel.setFloatControl(visible && canFloat && leaf == floatControlLeaf, root.floating());
+                panel.setFloatControl(visible && canFloat && leaf == floatControlLeaf, root.floating(), root.group());
             }
             DockChromeLayout.markRightmostLeaves(root, next, panelsByModuleId);
             for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
@@ -2243,7 +2258,7 @@ public final class DockManager {
      * to the full clamp, as does every other gesture mode (resize, snap, splice).
      */
     private DockWorkspace clampGestureViewport(DockWorkspace changed, boolean structural) {
-        boolean translateOnly = mode == Mode.DRAG_ROOT && !moveAllRoots && !structural;
+        boolean translateOnly = mode == Mode.DRAG_ROOT && !structural;
         if (translateOnly) {
             boolean allMeasured = true;
             for (FloatingRoot root : changed.roots()) {
@@ -2942,6 +2957,16 @@ public final class DockManager {
         return paintOrderCache;
     }
 
+    private boolean combinable(FloatingRoot root) {
+        for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+            ModulePanel member = panelsByModuleId.get(leaf.moduleId());
+            if (member != null && !member.canCombine()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** The section whose title bar sits in the window's top-right corner carries the float button. */
     private static LeafNode topRightLeaf(FloatingRoot root, LayoutProjection source) {
         LeafNode best = null;
@@ -3197,6 +3222,10 @@ public final class DockManager {
         ensureProjection();
         LeafNode leaf = leafForPanel(panel);
         DockWorkspace next = workspace;
+        FloatingRoot holder = rootContainingNode(next, leaf.nodeId());
+        if (holder != null && holder.hidden()) {
+            next = editor.setRootHidden(next, holder.rootId(), false);
+        }
         if (!workspace.policyFor(leaf.moduleId()).visible()) {
             next = editor.setLeafVisible(next, leaf.nodeId(), true, null, null, null);
         }
