@@ -1,5 +1,6 @@
 package com.lhy.mest.client.panel;
 
+import com.lhy.mest.client.dock.model.ModuleDefaults;
 import java.util.List;
 
 import net.minecraft.client.gui.Font;
@@ -54,6 +55,20 @@ public class TrashPanel extends ModulePanel {
                 Icon.BACK,
                 Component.translatable("item.mesplicedterminal.spliced_terminal"),
                 button -> screen.closeTrash());
+    }
+
+    @Override
+    public ModuleDefaults defaults() {
+        return new ModuleDefaults(false, true, true, true);
+    }
+
+    @Override
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        var blitter = de.mari_023.ae2wtlib.api.gui.Icon.TRASH.getBlitter().dest(x, y, w, h).zOffset(3);
+        if (opacity < 1.0F) {
+            blitter.opacity(opacity);
+        }
+        blitter.blit(g);
     }
 
     @Override

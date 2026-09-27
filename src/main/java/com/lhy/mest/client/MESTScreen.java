@@ -94,6 +94,7 @@ import com.lhy.mest.client.panel.TrashPanel;
 import com.lhy.mest.client.panel.ToolkitPanel;
 import com.lhy.mest.client.panel.WirelessSettingsPanel;
 import com.lhy.mest.client.panel.HotkeysPanel;
+import com.lhy.mest.api.client.MestModuleContext;
 import com.lhy.mest.client.hotkey.HotkeyActions;
 import com.lhy.mest.client.hotkey.PanelHotkeys;
 import net.neoforged.fml.ModList;
@@ -398,35 +399,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
         boolean firstOpen = dock.isEmpty();
         if (firstOpen) {
-            List<ModulePanel> panels = new ArrayList<>();
-            panels.add(meListPanel);
-            craftingPanel = new CraftingPanel(getMenu());
-            panels.add(craftingPanel);
-            craftingTerminalPanel = new CraftingTerminalPanel(getMenu(), this);
-            meListPanel.setUtilitySource(craftingTerminalPanel);
-            panels.add(craftingTerminalPanel);
-            patternEncodingPanel = new PatternEncodingPanel(getMenu());
-            panels.add(patternEncodingPanel);
-            patternAccessPanel = new PatternAccessPanel(style);
-            panels.add(patternAccessPanel);
-            patternCachePanel = new PatternCachePanel(getMenu());
-            panels.add(patternCachePanel);
-            inventoryPanel = new InventoryPanel(getMenu());
-            panels.add(inventoryPanel);
-            wirelessSettingsPanel = new WirelessSettingsPanel(getMenu(), style, dock);
-            panels.add(wirelessSettingsPanel);
-            trashPanel = new TrashPanel(getMenu(), this);
-            panels.add(trashPanel);
-            toolkitPanel = new ToolkitPanel(getMenu());
-            panels.add(toolkitPanel);
-            networkToolkitPanel = new NetworkToolkitPanel(getMenu());
-            panels.add(networkToolkitPanel);
-            hotkeysPanel = new HotkeysPanel(style, dock);
-            panels.add(hotkeysPanel);
-            if (ModList.get().isLoaded("extendedae_plus")) {
-                providerSelectPanel = new ProviderSelectPanel(style);
-                panels.add(providerSelectPanel);
-            }
+            List<ModulePanel> panels = createModulePanels();
             dock.init(panels, this.width, this.height);
             viewCellsVisible = dock.viewCellsVisible();
             moreSettingsVisible = dock.moreSettingsVisible();
@@ -662,6 +635,80 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 yield panel == null
                         ? new ToolbarIconButton(Icon.COG, Component.literal(id), b -> { })
                         : new ModuleToggleButton(panel);
+            }
+        };
+    }
+
+    /**
+     * Builds every registered module, built-ins first, and keeps typed handles on the built-ins
+     * this screen coordinates directly.
+     */
+    private List<ModulePanel> createModulePanels() {
+        List<ModulePanel> panels = new ArrayList<>();
+        for (MestClientModules.Registration registration : MestClientModules.all()) {
+            ModulePanel panel = registration.factory().create(moduleContext(registration.id()));
+            if (panel == null) {
+                continue;
+            }
+            if (!registration.id().equals(panel.id())) {
+                throw new IllegalStateException("MEST module registered as " + registration.id()
+                        + " created a panel with id " + panel.id());
+            }
+            panels.add(panel);
+            switch (panel) {
+                case CraftingPanel p -> craftingPanel = p;
+                case CraftingTerminalPanel p -> craftingTerminalPanel = p;
+                case PatternEncodingPanel p -> patternEncodingPanel = p;
+                case PatternAccessPanel p -> patternAccessPanel = p;
+                case PatternCachePanel p -> patternCachePanel = p;
+                case InventoryPanel p -> inventoryPanel = p;
+                case WirelessSettingsPanel p -> wirelessSettingsPanel = p;
+                case TrashPanel p -> trashPanel = p;
+                case ToolkitPanel p -> toolkitPanel = p;
+                case NetworkToolkitPanel p -> networkToolkitPanel = p;
+                case HotkeysPanel p -> hotkeysPanel = p;
+                case ProviderSelectPanel p -> providerSelectPanel = p;
+                default -> {
+                }
+            }
+        }
+        if (craftingTerminalPanel != null) {
+            meListPanel.setUtilitySource(craftingTerminalPanel);
+        }
+        return panels;
+    }
+
+    private MestModuleContext moduleContext(String moduleId) {
+        MESTScreen screen = this;
+        return new MestModuleContext() {
+            @Override
+            public String moduleId() {
+                return moduleId;
+            }
+
+            @Override
+            public MESTMenu menu() {
+                return getMenu();
+            }
+
+            @Override
+            public MESTScreen screen() {
+                return screen;
+            }
+
+            @Override
+            public ScreenStyle style() {
+                return style;
+            }
+
+            @Override
+            public DockManager dock() {
+                return dock;
+            }
+
+            @Override
+            public List<Slot> slots() {
+                return getMenu().getModuleSlots(moduleId);
             }
         };
     }
@@ -1199,43 +1246,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     public static void blitPanelIcon(
             GuiGraphics graphics, ModulePanel panel, int x, int y, int w, int h, float opacity) {
-        if (MestGuiIcons.blitPanel(graphics, panel.id(), x, y, w, h, opacity)) {
-            return;
-        }
-        if ("trash".equals(panel.id())) {
-            var blitter = de.mari_023.ae2wtlib.api.gui.Icon.TRASH.getBlitter().dest(x, y, w, h).zOffset(3);
-            if (opacity < 1.0F) {
-                blitter.opacity(opacity);
-            }
-            blitter.blit(graphics);
-            return;
-        }
-        Icon icon = iconForPanel(panel);
-        var blitter = icon.getBlitter()
-                .dest(x + (w - icon.width) / 2, y + (h - icon.height) / 2)
-                .zOffset(3);
-        if (opacity < 1.0F) {
-            blitter.opacity(opacity);
-        }
-        blitter.blit(graphics);
-    }
-
-    public static Icon iconForPanel(ModulePanel panel) {
-        return switch (panel.id()) {
-            case "me_list" -> Icon.VIEW_MODE_ALL;
-            case "crafting" -> Icon.CRAFT_HAMMER;
-            case "crafting_terminal" -> Icon.CRAFT_HAMMER;
-            case "pattern_encoding" -> Icon.TAB_CRAFTING;
-            case "pattern_access" -> Icon.PATTERN_ACCESS_SHOW;
-            case "pattern_cache" -> Icon.BACKGROUND_ENCODED_PATTERN;
-            case "provider_select" -> Icon.ARROW_UP;
-            case "wireless_settings" -> Icon.COG;
-            case "trash" -> Icon.BACKGROUND_TRASH;
-            case "toolkit" -> Icon.S_STORAGE;
-            case "inventory" -> Icon.S_STORAGE;
-            case HotkeysPanel.ID -> Icon.TYPE_FILTER_ALL;
-            default -> Icon.COG;
-        };
+        panel.renderIcon(graphics, x, y, w, h, opacity);
     }
 
     /**
@@ -1394,7 +1405,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         private final ModulePanel panel;
 
         ModuleToggleButton(ModulePanel panel) {
-            super(iconForPanel(panel), moduleToggleMessage(panel, dock.isEffectivelyVisible(panel)),
+            super(panel.icon(), moduleToggleMessage(panel, dock.isEffectivelyVisible(panel)),
                     button -> toggleModule(panel));
             this.panel = panel;
         }

@@ -145,6 +145,11 @@ public class PatternAccessPanel extends ModulePanel {
     }
 
     @Override
+    public Icon icon() {
+        return Icon.PATTERN_ACCESS_SHOW;
+    }
+
+    @Override
     public String id() {
         return "pattern_access";
     }

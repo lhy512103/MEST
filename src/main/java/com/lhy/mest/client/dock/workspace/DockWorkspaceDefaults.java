@@ -75,25 +75,17 @@ public final class DockWorkspaceDefaults {
         var roots = new ArrayList<FloatingRoot>();
         int index = 0;
         for (String moduleId : catalog.moduleIds()) {
-            var leaf = new LeafNode(leafNodeId(moduleId), moduleId, defaultVisible(moduleId));
+            var leaf = new LeafNode(leafNodeId(moduleId), moduleId, catalog.metrics(moduleId).defaults().visible());
             roots.add(new FloatingRoot(
                     rootId(moduleId),
                     defaultBounds(moduleId, geometry.defaultRootBounds(catalog.metrics(moduleId), index++)),
                     leaf));
         }
-        DockWorkspace workspace = new DockWorkspace(roots);
-        var policies = new java.util.LinkedHashMap<>(workspace.policies());
+        var policies = new java.util.LinkedHashMap<String, ModuleLayoutPolicy>();
         for (String moduleId : catalog.moduleIds()) {
-            ModuleLayoutPolicy policy = workspace.policyFor(moduleId)
-                    .withShowTerminalButton(defaultShowTerminalButton(moduleId));
-            if (defaultFloating(moduleId) || defaultPinned(moduleId)) {
-                policy = policy
-                        .withFloating(defaultFloating(moduleId) || defaultPinned(moduleId))
-                        .withPinned(defaultPinned(moduleId));
-            }
-            policies.put(moduleId, policy);
+            policies.put(moduleId, catalog.metrics(moduleId).defaults().policy());
         }
-        return workspace.withPolicies(policies);
+        return new DockWorkspace(roots, policies);
     }
 
     private static DockWorkspace loadBundled(ModuleCatalog catalog, LegacyMigrationContext geometry,
@@ -108,30 +100,6 @@ public final class DockWorkspaceDefaults {
             MESplicedterminal.LOGGER.warn("Failed to load bundled default layout", e);
             return null;
         }
-    }
-
-    public static boolean defaultVisible(String moduleId) {
-        return !"provider_select".equals(moduleId)
-                && !"wireless_settings".equals(moduleId)
-                && !"trash".equals(moduleId)
-                && !"toolkit".equals(moduleId)
-                && !"hotkeys".equals(moduleId);
-    }
-
-    public static boolean defaultFloating(String moduleId) {
-        return "wireless_settings".equals(moduleId)
-                || "trash".equals(moduleId)
-                || "toolkit".equals(moduleId)
-                || "hotkeys".equals(moduleId)
-                || "network_toolkit".equals(moduleId);
-    }
-
-    public static boolean defaultPinned(String moduleId) {
-        return "trash".equals(moduleId) || "network_toolkit".equals(moduleId);
-    }
-
-    public static boolean defaultShowTerminalButton(String moduleId) {
-        return !"provider_select".equals(moduleId) && !"wireless_settings".equals(moduleId);
     }
 
     public static String leafNodeId(String moduleId) {

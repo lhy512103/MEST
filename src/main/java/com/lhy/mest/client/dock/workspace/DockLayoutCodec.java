@@ -269,13 +269,9 @@ public final class DockLayoutCodec {
             usedIdentifiers.add(rootId);
             String leafId = uniqueIdentifier(DockWorkspaceDefaults.leafNodeId(moduleId), usedIdentifiers, "leaf");
             usedIdentifiers.add(leafId);
-            boolean visible = DockWorkspaceDefaults.defaultVisible(moduleId);
-            boolean floating = DockWorkspaceDefaults.defaultFloating(moduleId)
-                    || DockWorkspaceDefaults.defaultPinned(moduleId);
-            boolean pinned = DockWorkspaceDefaults.defaultPinned(moduleId);
-            retainedPolicies.put(moduleId, new ModuleLayoutPolicy(
-                    visible, true, true, floating, pinned,
-                    DockWorkspaceDefaults.defaultShowTerminalButton(moduleId)));
+            var defaults = catalog.metrics(moduleId).defaults();
+            boolean visible = defaults.visible();
+            retainedPolicies.put(moduleId, defaults.policy());
             retainedRoots.add(new FloatingRoot(
                     rootId,
                     DockWorkspaceDefaults.defaultBounds(
@@ -493,7 +489,8 @@ public final class DockLayoutCodec {
                     policy.has("pinned") && bool(policy, "pinned", path),
                     policy.has("showTerminalButton")
                             ? bool(policy, "showTerminalButton", path)
-                            : DockWorkspaceDefaults.defaultShowTerminalButton(entry.getKey())));
+                            : !catalog.contains(entry.getKey())
+                                    || catalog.metrics(entry.getKey()).defaults().showTerminalButton()));
         }
         return new DockLayoutDto(
                 version,

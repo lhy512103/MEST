@@ -1,5 +1,7 @@
 package com.lhy.mest.client.panel;
 
+import appeng.client.gui.Icon;
+import com.lhy.mest.client.dock.model.ModuleDefaults;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
@@ -65,6 +67,16 @@ public class HotkeysPanel extends ModulePanel {
         this.style = style;
         this.dock = dock;
         this.scrollbar.setCaptureMouseWheel(false);
+    }
+
+    @Override
+    public ModuleDefaults defaults() {
+        return new ModuleDefaults(false, true, false, true);
+    }
+
+    @Override
+    public Icon icon() {
+        return Icon.TYPE_FILTER_ALL;
     }
 
     @Override

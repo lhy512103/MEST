@@ -1,5 +1,6 @@
 package com.lhy.mest.client.panel;
 
+import com.lhy.mest.client.MestGuiIcons;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -58,6 +59,11 @@ public class CraftingPanel extends ModulePanel {
         clearToPlayer.setHalfSize(true);
         clearToPlayer.setDisableBackground(true);
         widgets.add(clearToPlayer);
+    }
+
+    @Override
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        MestGuiIcons.blit(g, 1, 0, x, y, w, h, opacity);
     }
 
     @Override

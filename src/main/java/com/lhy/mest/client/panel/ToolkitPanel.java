@@ -1,5 +1,7 @@
 package com.lhy.mest.client.panel;
 
+import com.lhy.mest.client.MestGuiIcons;
+import com.lhy.mest.client.dock.model.ModuleDefaults;
 import java.util.List;
 
 import net.minecraft.client.gui.Font;
@@ -61,6 +63,16 @@ public class ToolkitPanel extends ModulePanel {
         }
         this.scrollbar.setCaptureMouseWheel(false);
         this.lockButton = new LockButton(button -> memoryMode = !memoryMode);
+    }
+
+    @Override
+    public ModuleDefaults defaults() {
+        return new ModuleDefaults(false, true, false, true);
+    }
+
+    @Override
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        MestGuiIcons.blit(g, 11, 0, x, y, w, h, opacity);
     }
 
     @Override

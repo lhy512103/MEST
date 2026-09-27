@@ -3,6 +3,7 @@ package com.lhy.mest.client;
 import net.minecraft.resources.ResourceLocation;
 
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
@@ -29,6 +30,7 @@ public final class MestClient {
         modEventBus.addListener(MestClient::onRegisterScreens);
         modEventBus.addListener(MestClient::onRegisterGuiLayers);
         modEventBus.addListener(MestClient::onRegisterKeyMappings);
+        modEventBus.addListener((FMLClientSetupEvent event) -> event.enqueueWork(MestClientModules::collect));
     }
 
     private static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {

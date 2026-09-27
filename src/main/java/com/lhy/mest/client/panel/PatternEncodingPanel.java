@@ -1,5 +1,6 @@
 package com.lhy.mest.client.panel;
 
+import com.lhy.mest.client.MestGuiIcons;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -177,6 +178,11 @@ public class PatternEncodingPanel extends ModulePanel {
                 ButtonToolTips.FluidSubstitutionsDescDisabled.text()));
         widgets.add(button);
         return button;
+    }
+
+    @Override
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        MestGuiIcons.blit(g, 3, 0, x, y, w, h, opacity);
     }
 
     @Override

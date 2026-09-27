@@ -1,5 +1,7 @@
 package com.lhy.mest.client.panel;
 
+import com.lhy.mest.client.MestGuiIcons;
+import com.lhy.mest.client.dock.model.ModuleDefaults;
 import java.util.List;
 
 import net.minecraft.client.gui.Font;
@@ -48,6 +50,16 @@ public class NetworkToolkitPanel extends ModulePanel {
             registerSlot(slot);
         }
         this.scrollbar.setCaptureMouseWheel(false);
+    }
+
+    @Override
+    public ModuleDefaults defaults() {
+        return new ModuleDefaults(true, true, true, true);
+    }
+
+    @Override
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        MestGuiIcons.blit(g, 7, 0, x, y, w, h, opacity);
     }
 
     @Override

@@ -70,6 +70,7 @@ import com.lhy.mest.compat.plus.PlusEncodingUpload;
 import com.lhy.mest.compat.UselessPatternBridge;
 import com.lhy.mest.network.PatternAccessSession;
 import com.lhy.mest.network.PatternCacheActionPacket;
+import com.lhy.mest.module.MestModuleSlots;
 
 /**
  * Container for the ME Spliced Terminal. Extends AE2's {@link CraftingTermMenu} (which itself extends
@@ -176,6 +177,8 @@ public class MESTMenu extends CraftingTermMenu {
         addToolkitSlots();
         addToolkitNetworkToolSlots();
         addTerminalNetworkToolkitSlots();
+        // Add-on modules come last so built-in slot indices never shift.
+        MestModuleSlots.addTo(this, host.getItemStack(), this::addSlot);
 
         this.patternEncodingMode = patternEncodingLogic.getMode();
         this.patternSubstitute = patternEncodingLogic.isSubstitution();
@@ -287,6 +290,12 @@ public class MESTMenu extends CraftingTermMenu {
 
     public List<Slot> getTrashSlots() {
         return getSlots(AE2wtlibSlotSemantics.TRASH);
+    }
+
+    /** Slots an add-on module registered through {@code RegisterMestModuleSlotsEvent}. */
+    public List<Slot> getModuleSlots(String moduleId) {
+        SlotSemantic semantic = MestModuleSlots.semantic(moduleId);
+        return semantic == null ? List.of() : getSlots(semantic);
     }
 
     public List<Slot> getToolkitSlots() {

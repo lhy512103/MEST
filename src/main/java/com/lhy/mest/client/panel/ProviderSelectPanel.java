@@ -1,5 +1,7 @@
 package com.lhy.mest.client.panel;
 
+import com.lhy.mest.client.MestGuiIcons;
+import com.lhy.mest.client.dock.model.ModuleDefaults;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -110,6 +112,16 @@ public class ProviderSelectPanel extends ModulePanel {
                 btn -> addMappingFromFields(),
                 Icon.ARROW_RIGHT,
                 () -> List.of(Component.translatable("extendedae_plus.screen.add_mapping")));
+    }
+
+    @Override
+    public ModuleDefaults defaults() {
+        return new ModuleDefaults(false, false, false, false);
+    }
+
+    @Override
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        MestGuiIcons.blit(g, 6, 0, x, y, w, h, opacity);
     }
 
     @Override

@@ -1,5 +1,6 @@
 package com.lhy.mest.client.panel;
 
+import com.lhy.mest.client.MestGuiIcons;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -136,6 +137,11 @@ public class MEListPanel extends ModulePanel implements ISortSource {
 
     public void setUtilitySource(CraftingTerminalPanel source) {
         this.utilitySource = source;
+    }
+
+    @Override
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        MestGuiIcons.blit(g, 0, 0, x, y, w, h, opacity);
     }
 
     @Override

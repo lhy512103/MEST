@@ -8,8 +8,10 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 
 import com.lhy.mest.config.MestConfig;
+import com.lhy.mest.module.MestModuleSlots;
 import com.lhy.mest.network.MestPackets;
 import com.lhy.mest.registry.ModAttachments;
 import com.lhy.mest.registry.ModComponents;
@@ -44,6 +46,7 @@ public class MESplicedterminal {
         MestTerminal.registerTerminal();
         modEventBus.addListener(MestTerminal::onRegisterCapabilities);
         modEventBus.addListener(MestTerminal::onCommonSetup);
+        modEventBus.addListener((FMLCommonSetupEvent event) -> event.enqueueWork(MestModuleSlots::collect));
         modEventBus.addListener(MestPackets::register);
 
     }

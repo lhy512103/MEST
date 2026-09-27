@@ -51,35 +51,4 @@ public final class MestGuiIcons {
                 .dest(x, y, w, h)
                 .blit(graphics);
     }
-
-    public static boolean blitPanel(GuiGraphics graphics, String panelId, int x, int y, int w, int h) {
-        return blitPanel(graphics, panelId, x, y, w, h, 1.0F);
-    }
-
-    public static boolean blitPanel(
-            GuiGraphics graphics, String panelId, int x, int y, int w, int h, float opacity) {
-        int col = panelColumn(panelId);
-        if (col < 0) {
-            return false;
-        }
-        blit(graphics, col, 0, x, y, w, h, opacity);
-        return true;
-    }
-
-    private static int panelColumn(String panelId) {
-        return switch (panelId) {
-            case "me_list" -> 0;
-            case "crafting" -> 1;
-            case "crafting_terminal" -> 2;
-            case "pattern_encoding" -> 3;
-            case "pattern_cache" -> 4;
-            case "wireless_settings" -> 5;
-            case "provider_select" -> 6;
-            // Row 1 icon 8 (0-based col 7) of layout_preset_icons.png.
-            case "network_toolkit" -> 7;
-            // Row 1 icon 12 (0-based col 11) of layout_preset_icons.png.
-            case "toolkit" -> 11;
-            default -> -1;
-        };
-    }
 }

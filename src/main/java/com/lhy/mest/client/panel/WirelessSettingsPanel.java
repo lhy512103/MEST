@@ -1,5 +1,7 @@
 package com.lhy.mest.client.panel;
 
+import com.lhy.mest.client.MestGuiIcons;
+import com.lhy.mest.client.dock.model.ModuleDefaults;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -90,6 +92,16 @@ public class WirelessSettingsPanel extends ModulePanel {
 
     private AECheckbox checkbox(Component label) {
         return new AECheckbox(0, 0, MIN_W - 2 * CONTENT_PADDING, CHECK_H, style, label);
+    }
+
+    @Override
+    public ModuleDefaults defaults() {
+        return new ModuleDefaults(false, true, false, false);
+    }
+
+    @Override
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        MestGuiIcons.blit(g, 5, 0, x, y, w, h, opacity);
     }
 
     @Override

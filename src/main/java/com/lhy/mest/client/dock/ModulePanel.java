@@ -24,6 +24,7 @@ import com.lhy.mest.client.MestGuiIcons;
 import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.LayoutProjection;
+import com.lhy.mest.client.dock.model.ModuleDefaults;
 
 /**
  * Base class for a floating, draggable, resizable module panel.
@@ -183,6 +184,28 @@ public abstract class ModulePanel {
     /** True when leftover vertical space should go to this leaf instead of a sibling. */
     public boolean expandsVertically() {
         return false;
+    }
+
+    /** How this module first appears in a layout that has never seen it. */
+    public ModuleDefaults defaults() {
+        return ModuleDefaults.STANDARD;
+    }
+
+    /** Icon for the terminal's module buttons and the layout editor palette. */
+    public Icon icon() {
+        return Icon.COG;
+    }
+
+    /** Draws the module icon into a {@code w}x{@code h} box; override for a custom texture. */
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        Icon icon = icon();
+        var blitter = icon.getBlitter()
+                .dest(x + (w - icon.width) / 2, y + (h - icon.height) / 2)
+                .zOffset(3);
+        if (opacity < 1.0F) {
+            blitter.opacity(opacity);
+        }
+        blitter.blit(g);
     }
 
     /** Standalone windows and composite sections keep a title strip; compact rails do not. */

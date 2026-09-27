@@ -3302,7 +3302,8 @@ public final class DockManager {
                     new ModuleMetrics(
                             new DockSize(minimumWidth, minimumHeight),
                             new DockSize(defaultWidth, defaultHeight),
-                            panel.expandsVertically()));
+                            panel.expandsVertically(),
+                            panel.defaults()));
         }
         return new ModuleCatalog(entries);
     }

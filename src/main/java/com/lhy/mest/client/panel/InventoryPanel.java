@@ -1,5 +1,6 @@
 package com.lhy.mest.client.panel;
 
+import appeng.client.gui.Icon;
 import java.util.List;
 
 import net.minecraft.client.gui.Font;
@@ -32,6 +33,11 @@ public class InventoryPanel extends ModulePanel {
         for (Slot s : hotbarSlots) {
             registerSlot(s);
         }
+    }
+
+    @Override
+    public Icon icon() {
+        return Icon.S_STORAGE;
     }
 
     @Override

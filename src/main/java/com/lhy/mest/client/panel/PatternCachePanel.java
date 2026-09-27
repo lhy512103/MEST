@@ -1,5 +1,6 @@
 package com.lhy.mest.client.panel;
 
+import com.lhy.mest.client.MestGuiIcons;
 import java.util.List;
 
 import net.minecraft.client.Minecraft;
@@ -96,6 +97,11 @@ public class PatternCachePanel extends ModulePanel {
             multipliers[i] = new MultiplierButton(
                     labels[i], shiftLabels[i], keys[i], shiftKeys[i], order[i], shiftActions[i]);
         }
+    }
+
+    @Override
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        MestGuiIcons.blit(g, 4, 0, x, y, w, h, opacity);
     }
 
     @Override

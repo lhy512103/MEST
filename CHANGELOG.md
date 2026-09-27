@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.3.0
+
+### English
+
+1. Added: Module API. Other mods can add their own terminal modules through `RegisterMestModulesEvent` (client panel) and `RegisterMestModuleSlotsEvent` (menu slots, built identically on both sides), see the README.
+2. Changed: Built-in modules use the same registration path; each panel now declares its own default visibility, floating and pinned state, terminal button and icon instead of MEST checking hard-coded module ids.
+
+### 中文
+
+1. 新增：模块 API。其他模组可以通过 `RegisterMestModulesEvent`（客户端面板）和 `RegisterMestModuleSlotsEvent`（菜单槽位，两端按相同顺序构建）为终端添加自己的模块，用法见 README。
+2. 调整：内置模块也改为走同一套注册；默认是否显示、浮动、钉住、显示终端按钮以及图标都由面板自己声明，不再按写死的模块 ID 判断。
+
 ## v0.0.2.8
 
 ### English
