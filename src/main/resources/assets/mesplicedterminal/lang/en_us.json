@@ -41,8 +41,8 @@
   "gui.mesplicedterminal.layout_state_visible": "Visible",
   "gui.mesplicedterminal.layout_state_movable": "Movable",
   "gui.mesplicedterminal.layout_state_resizable": "Resizable",
-  "gui.mesplicedterminal.layout_state_floating": "Floating",
-  "gui.mesplicedterminal.layout_state_floating_hint": "When off, this panel stays with other anchored panels, is centered on return, and cannot be detached into its own window",
+  "gui.mesplicedterminal.layout_state_floating": "Window floats",
+  "gui.mesplicedterminal.layout_state_floating_hint": "Applies to the whole window holding this panel. An anchored window moves with the terminal and carries the toolbar; a floating one stands on its own",
   "gui.mesplicedterminal.layout_state_terminal_button": "Show button in terminal",
   "gui.mesplicedterminal.layout_state_terminal_button_hint": "When on, More Settings includes a show/hide button for this panel",
   "gui.mesplicedterminal.more_settings.show": "More settings: show",
@@ -179,5 +179,7 @@
   "gui.mesplicedterminal.hotkeys.press": "> Press a combo <",
   "gui.mesplicedterminal.hotkeys.hint": "Left: set  Right: clear  Esc: cancel",
   "gui.mesplicedterminal.hotkeys.cycle_preset": "Cycle layout preset",
-  "gui.mesplicedterminal.hotkeys.select_preset": "Switch to preset: %s"
+  "gui.mesplicedterminal.hotkeys.select_preset": "Switch to preset: %s",
+  "gui.mesplicedterminal.float_window": "Float this window",
+  "gui.mesplicedterminal.dock_window": "Dock this window back to the terminal"
 }

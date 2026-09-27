@@ -250,4 +250,27 @@ class DockWorkspaceEditorTest {
     private static List<String> rootIds(DockWorkspace workspace) {
         return workspace.roots().stream().map(FloatingRoot::rootId).toList();
     }
+
+    @Test
+    void windowModeFollowsTheWindowThroughSpliceAndDetach() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b", "c");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        DockWorkspace floated = editor.setRootMode(workspace(), "root-b", true, true);
+        assertTrue(floated.roots().get(1).floating());
+        assertTrue(floated.roots().get(1).pinned());
+
+        // Splicing an anchored window into a floating one keeps the host's mode.
+        DockWorkspace joined = editor.insertSplit(floated, "leaf-a", "leaf-b", DockEdge.LEFT, "split-ab", 0.5);
+        FloatingRoot host = joined.roots().getFirst();
+        assertEquals("root-b", host.rootId());
+        assertTrue(host.floating());
+
+        // A section taken out of an anchored window floats on its own.
+        DockWorkspace docked = editor.setRootMode(joined, "root-b", false, true);
+        assertFalse(docked.roots().getFirst().floating());
+        assertFalse(docked.roots().getFirst().pinned(), "docking drops the pin");
+        DockWorkspace detached = editor.detach(docked, "leaf-a", "root-a2", new DockRect(0, 0, 80, 60));
+        assertFalse(detached.roots().getFirst().floating());
+        assertTrue(detached.roots().getLast().floating());
+    }
 }

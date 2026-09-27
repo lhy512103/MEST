@@ -24,6 +24,7 @@ import com.lhy.mest.client.dock.model.DockSize;
 import com.lhy.mest.client.dock.model.DockWorkspace;
 import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.dock.model.LayoutNode;
+import com.lhy.mest.client.dock.model.LayoutTrees;
 import com.lhy.mest.client.dock.model.LeafNode;
 import com.lhy.mest.client.dock.model.ModuleCatalog;
 import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
@@ -51,7 +52,7 @@ public final class DockLayoutCodec {
     private static final Set<String> OFFSET_FIELDS = Set.of("x", "y");
     private static final Set<String> POLICY_FIELDS =
             Set.of("visible", "movable", "resizable", "floating", "pinned", "showTerminalButton");
-    private static final Set<String> ROOT_FIELDS = Set.of("rootId", "bounds", "content");
+    private static final Set<String> ROOT_FIELDS = Set.of("rootId", "bounds", "content", "floating", "pinned");
     private static final Set<String> BOUNDS_FIELDS = Set.of("x", "y", "width", "height");
     private static final Set<String> SIZE_FIELDS = Set.of("width", "height");
     private static final Set<String> LEAF_FIELDS = Set.of("type", "nodeId", "moduleId", "visible");
@@ -98,6 +99,9 @@ public final class DockLayoutCodec {
                 DockWorkspace workspace = wasShell(object, dto.version())
                         ? reconciliation.workspace()
                         : shellFit.apply(reconciliation.workspace());
+                if (dto.version() < 7) {
+                    workspace = deriveWindowModes(workspace);
+                }
                 return new DecodedLayout(
                         workspace,
                         dto.version(),
@@ -106,7 +110,7 @@ public final class DockLayoutCodec {
             }
             Reconciliation reconciliation = reconcile(migrateV1(object));
             return new DecodedLayout(
-                    shellFit.apply(reconciliation.workspace()), 1, true, reconciliation.changed());
+                    deriveWindowModes(shellFit.apply(reconciliation.workspace())), 1, true, reconciliation.changed());
         } catch (DockLayoutFormatException e) {
             throw e;
         } catch (JsonParseException | ArithmeticException | ClassCastException e) {
@@ -120,7 +124,7 @@ public final class DockLayoutCodec {
         WorkspaceValidator.validateStrict(workspace, catalog);
         var roots = new ArrayList<RootDto>();
         for (FloatingRoot root : workspace.roots()) {
-            roots.add(new RootDto(root.rootId(), root.bounds(), toDto(root.content())));
+            roots.add(new RootDto(root.rootId(), root.bounds(), toDto(root.content()), root.floating(), root.pinned()));
         }
         var policies = new java.util.LinkedHashMap<String, PolicyDto>();
         for (String moduleId : catalog.moduleIds()) {
@@ -187,7 +191,9 @@ public final class DockLayoutCodec {
                 roots.add(new FloatingRoot(
                         root.rootId(),
                         root.bounds(),
-                        fromDto(root.content(), budget, 1)));
+                        fromDto(root.content(), budget, 1),
+                        root.floating(),
+                        root.pinned()));
             }
             migrateNetworkToolkitPlacement(roots, dto.version());
             if (dto.version() == 2) {
@@ -277,7 +283,9 @@ public final class DockLayoutCodec {
                     DockWorkspaceDefaults.defaultBounds(
                             moduleId,
                             migrationContext.defaultRootBounds(catalog.metrics(moduleId), defaultIndex++)),
-                    new LeafNode(leafId, moduleId, visible)));
+                    new LeafNode(leafId, moduleId, visible),
+                    defaults.floating(),
+                    defaults.pinned()));
         }
 
         result = new DockWorkspace(
@@ -376,6 +384,12 @@ public final class DockLayoutCodec {
             rootObject.addProperty("rootId", root.rootId());
             rootObject.add("bounds", writeBounds(root.bounds()));
             rootObject.add("content", writeNode(root.content()));
+            if (root.floating()) {
+                rootObject.addProperty("floating", true);
+            }
+            if (root.pinned()) {
+                rootObject.addProperty("pinned", true);
+            }
             roots.add(rootObject);
         }
         object.add("roots", roots);
@@ -470,7 +484,9 @@ public final class DockLayoutCodec {
             roots.add(new RootDto(
                     string(root, "rootId", path),
                     readBounds(objectField(root, "bounds", path), path + ".bounds"),
-                    readNode(objectField(root, "content", path), path + ".content", budget, 1)));
+                    readNode(objectField(root, "content", path), path + ".content", budget, 1),
+                    optionalBoolean(root, "floating", false, path),
+                    optionalBoolean(root, "pinned", false, path)));
         }
         if (version == 2) {
             return new DockLayoutDto(version, roots);
@@ -498,6 +514,26 @@ public final class DockLayoutCodec {
                 policies,
                 readRestoreSizes(object),
                 readContentOffsets(object));
+    }
+
+    /**
+     * Before v7 a window's mode followed its modules: it was anchored while any visible module was
+     * non-floating, and pinned while a visible floating module was pinned. Keeps old layouts as-is.
+     */
+    static DockWorkspace deriveWindowModes(DockWorkspace workspace) {
+        var roots = new ArrayList<FloatingRoot>();
+        for (FloatingRoot root : workspace.roots()) {
+            List<LeafNode> leaves = LayoutTrees.leaves(root.content());
+            List<LeafNode> shown = leaves.stream()
+                    .filter(leaf -> workspace.policyFor(leaf.moduleId()).visible())
+                    .toList();
+            List<LeafNode> considered = shown.isEmpty() ? leaves : shown;
+            boolean floating = considered.stream().allMatch(leaf -> workspace.policyFor(leaf.moduleId()).floating());
+            boolean pinned = floating
+                    && considered.stream().anyMatch(leaf -> workspace.policyFor(leaf.moduleId()).pinned());
+            roots.add(root.withMode(floating, pinned));
+        }
+        return workspace.withRoots(roots);
     }
 
     /**

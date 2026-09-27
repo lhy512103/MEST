@@ -76,10 +76,13 @@ public final class DockWorkspaceDefaults {
         int index = 0;
         for (String moduleId : catalog.moduleIds()) {
             var leaf = new LeafNode(leafNodeId(moduleId), moduleId, catalog.metrics(moduleId).defaults().visible());
+            var defaults = catalog.metrics(moduleId).defaults();
             roots.add(new FloatingRoot(
                     rootId(moduleId),
                     defaultBounds(moduleId, geometry.defaultRootBounds(catalog.metrics(moduleId), index++)),
-                    leaf));
+                    leaf,
+                    defaults.floating(),
+                    defaults.pinned()));
         }
         var policies = new java.util.LinkedHashMap<String, ModuleLayoutPolicy>();
         for (String moduleId : catalog.moduleIds()) {

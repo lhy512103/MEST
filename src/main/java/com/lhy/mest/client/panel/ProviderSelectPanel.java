@@ -209,7 +209,7 @@ public class ProviderSelectPanel extends ModulePanel {
 
     @Override
     protected int titleRightInset() {
-        return (pinVisible() ? 16 : 4) + SEARCH_WIDTH + 4 + (contentChromeVisible() ? 28 : 0);
+        return Math.max(4, chromeButtonsReserve()) + SEARCH_WIDTH + 4 + (contentChromeVisible() ? 28 : 0);
     }
 
     @Override
@@ -576,7 +576,7 @@ public class ProviderSelectPanel extends ModulePanel {
     private void layoutChrome() {
         boolean show = visible;
         boolean titleSearch = show && drawsTitleBar();
-        int searchX = pinVisible() ? pinButtonX() - 4 - SEARCH_WIDTH : x + width - 4 - SEARCH_WIDTH;
+        int searchX = chromeButtonsLeft() - 4 - SEARCH_WIDTH;
         if (searchField != null) {
             searchField.setVisible(titleSearch);
             if (titleSearch) {

@@ -36,6 +36,10 @@ modules you can move, resize and splice together however you like.
 - Every window is a tree of splits. Drag a panel onto another panel's edge to splice them, drag a
   divider to resize the sections, and drag a section's title out to detach it again.
 - Spliced windows are drawn as one outer shell with thin section rules, so no seam can appear.
+- Floating is a window property. Anchored windows move with the terminal and carry the toolbar;
+  the float / dock button in a window's top-right title bar lets any spliced group float on its own
+  or return to the terminal. Floating windows can be pinned above the rest. Alt+drag a section
+  title to take it out of an anchored window; at least one anchored window always stays visible.
 - The full-screen layout editor adds a module palette, a property inspector, three named presets,
   undo, reset, share-folder/zip/clipboard import and export, and a backup.
 - The layout is a client-side preference in `config/mesplicedterminal/` (`layout.json`,
@@ -151,6 +155,8 @@ ME 拼接终端（MEST）是运行在 NeoForge 1.21.1 上的 AE2 / AE2WTLib 无�
 
 - 每个窗口是一棵分割树。把面板拖到另一个面板的边缘即可拼接，拖动分隔线调整比例，把某一栏的标题拖出来即可拆分。
 - 拼接窗口统一画成一个外壳，内部只有细分隔线，不会出现接缝。
+- 悬浮是窗口属性。锚定窗口跟随终端移动并挂载工具栏；窗口右上角标题栏的“悬浮 / 收回终端”按钮可以让任意拼接组合整体悬浮
+  或收回终端，悬浮窗口还可以钉在最上层。按住 Alt 拖动某一栏的标题可将其从锚定窗口中拆出；始终至少保留一个可见的锚定窗口。
 - 全屏布局编辑器提供模块面板、属性面板、三个可命名预设、撤销、重置、分享文件夹 / zip / 剪贴板的导入导出，以及备份。
 - 布局是客户端偏好，保存在 `config/mesplicedterminal/`（`layout.json`、`presets.json`）。写盘是原子替换；旧格式在
   读取时自动迁移；文件损坏时会被隔离，而不是被覆盖。

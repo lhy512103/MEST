@@ -61,6 +61,57 @@ class DockLayoutCodecTest {
     }
 
     @Test
+    void roundTripsWindowModes() throws Exception {
+        var base = WorkspacePersistenceFixtures.workspace();
+        var roots = new java.util.ArrayList<>(base.roots());
+        roots.set(0, roots.getFirst().withMode(true, true));
+        var original = base.withRoots(roots);
+
+        String encoded = codec().encode(original);
+        var decoded = codec().decode(encoded);
+
+        assertTrue(decoded.workspace().roots().getFirst().floating());
+        assertTrue(decoded.workspace().roots().getFirst().pinned());
+        assertFalse(decoded.workspace().roots().getLast().floating());
+        assertFalse(decoded.needsRewrite());
+    }
+
+    @Test
+    void olderLayoutsTakeTheirWindowModeFromTheModules() throws Exception {
+        String persisted = """
+                {
+                  "version": 6,
+                  "roots": [{
+                    "rootId": "root-a",
+                    "bounds": {"x": 0, "y": 0, "width": 100, "height": 80},
+                    "content": {"type": "leaf", "nodeId": "leaf-a", "moduleId": "a", "visible": true}
+                  }, {
+                    "rootId": "root-bc",
+                    "bounds": {"x": 160, "y": 40, "width": 220, "height": 140},
+                    "content": {
+                      "type": "split", "nodeId": "split-bc", "axis": "VERTICAL", "ratio": 0.35,
+                      "first": {"type": "leaf", "nodeId": "leaf-b", "moduleId": "b", "visible": true},
+                      "second": {"type": "leaf", "nodeId": "leaf-c", "moduleId": "c", "visible": true}
+                    }
+                  }],
+                  "policies": {
+                    "a": {"visible": true, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true},
+                    "b": {"visible": true, "movable": true, "resizable": true, "floating": true, "pinned": true, "showTerminalButton": true},
+                    "c": {"visible": false, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true}
+                  }
+                }
+                """;
+
+        var decoded = codec().decode(persisted);
+
+        assertFalse(decoded.workspace().roots().getFirst().floating());
+        // "c" is hidden, so only the visible, pinned "b" decides the window's mode.
+        assertTrue(decoded.workspace().roots().getLast().floating());
+        assertTrue(decoded.workspace().roots().getLast().pinned());
+        assertTrue(decoded.needsRewrite());
+    }
+
+    @Test
     void noLongerWritesASpliceMode() throws Exception {
         String encoded = codec().encode(WorkspacePersistenceFixtures.workspace());
 

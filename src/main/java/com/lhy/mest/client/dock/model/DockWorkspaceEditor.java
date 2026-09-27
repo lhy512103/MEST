@@ -100,10 +100,13 @@ public final class DockWorkspaceEditor {
             throw new IllegalStateException("failed to detach node " + nodeId);
         }
         roots.set(rootIndex, sourceRoot.withContent(removal.remaining()));
+        // A branch taken out of a window always floats on its own; dock it back explicitly.
         roots.add(new FloatingRoot(
                 newRootId,
                 workspace.restoredBounds(removal.removed().nodeId(), newBounds),
-                removal.removed()));
+                removal.removed(),
+                true,
+                false));
         return copyWithRoots(workspace, roots);
     }
 
@@ -154,6 +157,18 @@ public final class DockWorkspaceEditor {
             return validated(next);
         }
         return validated(revealHiddenLeaf(next, leafNodeId, revealedRootId, revealedFallback));
+    }
+
+    public DockWorkspace setRootMode(DockWorkspace workspace, String rootId, boolean floating, boolean pinned) {
+        validate(workspace);
+        var roots = new ArrayList<>(workspace.roots());
+        for (int i = 0; i < roots.size(); i++) {
+            if (roots.get(i).rootId().equals(rootId)) {
+                roots.set(i, roots.get(i).withMode(floating, pinned));
+                return copyWithRoots(workspace, roots);
+            }
+        }
+        throw new IllegalArgumentException("unknown root: " + rootId);
     }
 
     public DockWorkspace setRootBounds(DockWorkspace workspace, String rootId, DockRect bounds) {
@@ -336,7 +351,9 @@ public final class DockWorkspaceEditor {
         }
         var roots = new ArrayList<>(workspace.roots());
         roots.set(rootIndex, host.withContent(removal.remaining()));
-        roots.add(new FloatingRoot(revealedRootId, revealedBounds, removal.removed()));
+        ModuleLayoutPolicy preferred = workspace.policyFor(((LeafNode) findRequired(workspace, leafNodeId)).moduleId());
+        roots.add(new FloatingRoot(revealedRootId, revealedBounds, removal.removed(),
+                preferred.floating(), preferred.pinned()));
         return copyWithRoots(workspace, roots);
     }
 

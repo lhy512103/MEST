@@ -186,7 +186,7 @@ public class MEListPanel extends ModulePanel implements ISortSource {
 
     @Override
     protected int titleRightInset() {
-        return SEARCH_WIDTH + 8 + (pinVisible() ? 16 : 0)
+        return SEARCH_WIDTH + 8 + chromeButtonsReserve()
                 + (contentChromeVisible() ? 28 : 0) + utilityBarWidth();
     }
 

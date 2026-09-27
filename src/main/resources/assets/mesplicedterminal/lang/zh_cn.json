@@ -41,8 +41,8 @@
   "gui.mesplicedterminal.layout_state_visible": "显示",
   "gui.mesplicedterminal.layout_state_movable": "允许拖动",
   "gui.mesplicedterminal.layout_state_resizable": "允许调整大小",
-  "gui.mesplicedterminal.layout_state_floating": "可悬浮",
-  "gui.mesplicedterminal.layout_state_floating_hint": "关闭后，该面板会和其它不可悬浮面板一起作为整体参与返回居中，且不能从终端窗口拆成独立悬浮面板",
+  "gui.mesplicedterminal.layout_state_floating": "窗口悬浮",
+  "gui.mesplicedterminal.layout_state_floating_hint": "作用于该面板所在的整个窗口。锚定窗口跟随终端移动并挂载工具栏；悬浮窗口独立存在",
   "gui.mesplicedterminal.layout_state_terminal_button": "在终端界面显示按钮",
   "gui.mesplicedterminal.layout_state_terminal_button_hint": "开启后，更多设置栏会显示这个面板的显示/隐藏按钮",
   "gui.mesplicedterminal.more_settings.show": "更多设置：显示",
@@ -179,5 +179,7 @@
   "gui.mesplicedterminal.hotkeys.press": "> 按下组合键 <",
   "gui.mesplicedterminal.hotkeys.hint": "左键设置  右键清除  Esc 取消",
   "gui.mesplicedterminal.hotkeys.cycle_preset": "切换布局预设",
-  "gui.mesplicedterminal.hotkeys.select_preset": "切换到预设：%s"
+  "gui.mesplicedterminal.hotkeys.select_preset": "切换到预设：%s",
+  "gui.mesplicedterminal.float_window": "让该窗口悬浮",
+  "gui.mesplicedterminal.dock_window": "将该窗口收回终端"
 }

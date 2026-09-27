@@ -333,7 +333,13 @@ public final class DockManager {
         if (pick == null) {
             return false;
         }
-        setModulePolicy(pick, policyFor(pick).withVisible(true).withFloating(false));
+        LeafNode leaf = leafForPanel(pick);
+        DockWorkspace next = workspace;
+        if (!next.policyFor(pick.id()).visible()) {
+            next = editor.setLeafVisible(next, leaf.nodeId(), true, null, null, null);
+        }
+        next = editor.setRootMode(next, rootContainingNode(next, leaf.nodeId()).rootId(), false, false);
+        replaceWorkspace(next, true);
         return hasVisibleAnchored();
     }
 
@@ -562,18 +568,7 @@ public final class DockManager {
     }
 
     private boolean rootInCenterGroup(FloatingRoot root) {
-        if (!rootEffectivelyVisible(root.rootId())) {
-            return false;
-        }
-        for (LeafNode leaf : leavesOf(root)) {
-            if (projection.visibleLeaf(leaf.nodeId()).isEmpty()) {
-                continue;
-            }
-            if (!workspace.policyFor(leaf.moduleId()).floating()) {
-                return true;
-            }
-        }
-        return false;
+        return !root.floating() && rootEffectivelyVisible(root.rootId());
     }
 
     public ModuleLayoutPolicy policyFor(ModulePanel panel) {
@@ -616,9 +611,17 @@ public final class DockManager {
         if (catalog == null || candidate == null) {
             return true;
         }
-        for (String moduleId : catalog.moduleIds()) {
-            ModuleLayoutPolicy policy = candidate.policyFor(moduleId);
-            if (policy.visible() && !policy.floating()) {
+        for (FloatingRoot root : candidate.roots()) {
+            if (!root.floating() && hasVisibleModule(candidate, root)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasVisibleModule(DockWorkspace candidate, FloatingRoot root) {
+        for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+            if (candidate.policyFor(leaf.moduleId()).visible()) {
                 return true;
             }
         }
@@ -629,12 +632,51 @@ public final class DockManager {
         if (panel == null || !panel.pinVisible()) {
             return;
         }
-        ModuleLayoutPolicy current = workspace.policyFor(panel.id());
-        if (!current.floating()) {
+        FloatingRoot root = rootOf(panel);
+        if (!root.floating()) {
             return;
         }
-        setModulePolicy(panel, current.withPinned(!current.pinned()));
+        replaceWorkspace(editor.setRootMode(workspace, root.rootId(), true, !root.pinned()), true);
         save();
+    }
+
+    /** Whether the window holding {@code panel} may switch between floating and anchored. */
+    public boolean canToggleFloating(ModulePanel panel) {
+        if (panel == null || workspace == null) {
+            return false;
+        }
+        FloatingRoot root = rootOf(panel);
+        return root.floating() || hasVisibleAnchored(editor.setRootMode(workspace, root.rootId(), true, false));
+    }
+
+    /** Floats the whole window holding {@code panel}, or docks it back into the terminal group. */
+    public void toggleFloating(ModulePanel panel) {
+        setWindowFloating(panel, !rootOf(panel).floating());
+    }
+
+    public void setWindowFloating(ModulePanel panel, boolean floating) {
+        if (!canToggleFloating(panel)) {
+            return;
+        }
+        FloatingRoot root = rootOf(panel);
+        if (root.floating() == floating) {
+            return;
+        }
+        rememberUndoPoint(workspace);
+        replaceWorkspace(editor.setRootMode(workspace, root.rootId(), floating, false), true);
+        if (!editingLayout) {
+            save();
+        }
+    }
+
+    /** True while the window holding {@code panel} floats and is not pinned. */
+    public boolean isFloatingUnpinned(ModulePanel panel) {
+        FloatingRoot root = rootOf(panel);
+        return root.floating() && !root.pinned();
+    }
+
+    private FloatingRoot rootOf(ModulePanel panel) {
+        return rootContainingNode(workspace, leafForPanel(panel).nodeId());
     }
 
     public void applyEditedWorkspace(DockWorkspace edited) {
@@ -1589,6 +1631,10 @@ public final class DockManager {
             }
             return true;
         }
+        if (leaf != null && leaf.inFloatButton(mouseX, mouseY)) {
+            toggleFloating(leaf);
+            return true;
+        }
         if (leaf != null && leaf.inTitleBar(mouseX, mouseY)) {
             LeafNode leafNode = leafNodeAt(root, mouseX, mouseY);
             if (leafNode == null) {
@@ -1620,8 +1666,8 @@ public final class DockManager {
                 activeRootId = root.rootId();
                 grabOffsetX = mouseX - root.bounds().x();
                 grabOffsetY = mouseY - root.bounds().y();
-            } else if (!editingLayout && !policyFor(leafNode).floating()) {
-                // Non-floating modules stay in the terminal window; drag the whole spliced root.
+            } else if (!editingLayout && !root.floating() && !Screen.hasAltDown()) {
+                // Anchored windows move as a whole; Alt+drag takes one section out.
                 mode = Mode.DRAG_ROOT;
                 activeRootId = root.rootId();
                 grabOffsetX = mouseX - root.bounds().x();
@@ -2097,16 +2143,8 @@ public final class DockManager {
             }
             boolean composite = visibleLeaves > 1;
             DockRect window = composite ? root.bounds() : null;
-            boolean anchored = false;
-            for (LeafNode sibling : LayoutTrees.leaves(root.content())) {
-                if (next.visibleLeaf(sibling.nodeId()).isEmpty()) {
-                    continue;
-                }
-                if (!workspace.policyFor(sibling.moduleId()).floating()) {
-                    anchored = true;
-                    break;
-                }
-            }
+            LeafNode floatControlLeaf = topRightLeaf(root, next);
+            boolean canFloat = root.floating() || otherAnchoredVisible(root, next);
             for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
                 ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
                 var placement = next.visibleLeaf(leaf.nodeId());
@@ -2123,8 +2161,8 @@ public final class DockManager {
                 panel.spliced = composite;
                 panel.splicedWindow = window;
                 panel.contentEditing = leaf.moduleId().equals(contentEditModuleId);
-                ModuleLayoutPolicy policy = workspace.policyFor(leaf.moduleId());
-                panel.setPinControl(visible && !anchored && policy.floating(), policy.pinned());
+                panel.setPinControl(visible && root.floating(), root.pinned());
+                panel.setFloatControl(visible && canFloat && leaf == floatControlLeaf, root.floating());
             }
             DockChromeLayout.markRightmostLeaves(root, next, panelsByModuleId);
             for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
@@ -2620,9 +2658,6 @@ public final class DockManager {
                 || sourceRoot.content().nodeId().equals(activeLeafNodeId)) {
             return false;
         }
-        if (!editingLayout && !policyFor(leaf).floating()) {
-            return false;
-        }
         DockRect leafBounds = projection.boundsFor(activeLeafNodeId).orElse(null);
         if (leafBounds == null) {
             return false;
@@ -2643,7 +2678,7 @@ public final class DockManager {
             return;
         }
         LayoutNode detached = detachFirst ? split.first() : split.second();
-        if (!editingLayout && !subtreeCanFloat(detached)) {
+        if (!editingLayout && !sourceRoot.floating() && !Screen.hasAltDown()) {
             return;
         }
         String newRootId = "root:" + NodeIds.random();
@@ -2658,18 +2693,6 @@ public final class DockManager {
      * sizes captured at splice time. Without a stored size, remaining content keeps its projected
      * slice instead of the combined host window.
      */
-    private boolean subtreeCanFloat(LayoutNode node) {
-        for (LeafNode leaf : LayoutTrees.leaves(node)) {
-            if (projection.visibleLeaf(leaf.nodeId()).isEmpty()) {
-                continue;
-            }
-            if (!policyFor(leaf).floating()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     private DockWorkspace detachAndRestore(DockWorkspace source, String nodeId, String newRootId) {
         FloatingRoot sourceRoot = rootContainingNode(source, nodeId);
         DockRect detachedProjected = projection.boundsFor(nodeId).orElse(sourceRoot.bounds());
@@ -2833,12 +2856,7 @@ public final class DockManager {
     }
 
     public boolean isFloatingWindow(ModulePanel panel) {
-        if (panel == null) {
-            return false;
-        }
-        LeafNode leaf = leafForPanel(panel);
-        FloatingRoot root = rootContainingNode(viewportWorkspace, leaf.nodeId());
-        return root != null && !isAnchoredRoot(root);
+        return panel != null && workspace != null && rootOf(panel).floating();
     }
 
     public float anchoredChromeZ() {
@@ -2924,21 +2942,45 @@ public final class DockManager {
         return paintOrderCache;
     }
 
+    /** The section whose title bar sits in the window's top-right corner carries the float button. */
+    private static LeafNode topRightLeaf(FloatingRoot root, LayoutProjection source) {
+        LeafNode best = null;
+        DockRect bestBounds = null;
+        for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
+            var placement = source.visibleLeaf(leaf.nodeId());
+            if (placement.isEmpty()) {
+                continue;
+            }
+            DockRect bounds = placement.get().bounds();
+            if (best == null || bounds.y() < bestBounds.y()
+                    || (bounds.y() == bestBounds.y() && bounds.right() > bestBounds.right())) {
+                best = leaf;
+                bestBounds = bounds;
+            }
+        }
+        return best;
+    }
+
+    private boolean otherAnchoredVisible(FloatingRoot self, LayoutProjection source) {
+        for (FloatingRoot other : viewportWorkspace.roots()) {
+            if (other == self || other.floating()) {
+                continue;
+            }
+            for (LeafNode leaf : LayoutTrees.leaves(other.content())) {
+                if (source.visibleLeaf(leaf.nodeId()).isPresent()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private boolean isAnchoredRoot(FloatingRoot root) {
         return rootInCenterGroup(root);
     }
 
     private boolean isPinnedRoot(FloatingRoot root) {
-        for (LeafNode leaf : leavesOf(root)) {
-            if (projection.visibleLeaf(leaf.nodeId()).isEmpty()) {
-                continue;
-            }
-            ModuleLayoutPolicy policy = workspace.policyFor(leaf.moduleId());
-            if (policy.floating() && policy.pinned()) {
-                return true;
-            }
-        }
-        return false;
+        return root.pinned();
     }
 
     private boolean rootOutsideHit(FloatingRoot root, double mouseX, double mouseY) {

@@ -275,10 +275,45 @@ public abstract class ModulePanel {
     private static final int CHROME_BUTTON_GAP = 2;
     private boolean pinVisible;
     private boolean pinned;
+    private boolean floatVisible;
+    private boolean windowFloating;
 
     public void setPinControl(boolean visible, boolean pinned) {
         this.pinVisible = visible;
         this.pinned = pinned;
+    }
+
+    /** Shown on one section per window; floats the whole window or docks it back to the terminal. */
+    public void setFloatControl(boolean visible, boolean floating) {
+        this.floatVisible = visible;
+        this.windowFloating = floating;
+    }
+
+    public boolean floatVisible() {
+        return floatVisible && drawsTitleBar() && !contentEditing;
+    }
+
+    public int floatButtonX() {
+        return pinVisible() ? pinButtonX() - PIN_SIZE - CHROME_BUTTON_GAP : pinButtonX();
+    }
+
+    public boolean inFloatButton(double mx, double my) {
+        return floatVisible() && inChromeButton(mx, my, floatButtonX(), pinButtonY());
+    }
+
+    private int chromeButtonCount() {
+        return (pinVisible() ? 1 : 0) + (floatVisible() ? 1 : 0);
+    }
+
+    /** Title-bar width taken by the dock's own buttons, for panels that put controls beside them. */
+    protected int chromeButtonsReserve() {
+        int count = chromeButtonCount();
+        return count == 0 ? 0 : count * PIN_SIZE + (count - 1) * CHROME_BUTTON_GAP + 4;
+    }
+
+    /** Left edge of the dock's title-bar buttons, or the title bar's right padding without any. */
+    protected int chromeButtonsLeft() {
+        return x + width - 4 - chromeButtonsReserve() + (chromeButtonCount() == 0 ? 0 : 4);
     }
 
     public boolean pinVisible() {
@@ -330,6 +365,11 @@ public abstract class ModulePanel {
     }
 
     public Component titleBarTooltip(double mx, double my) {
+        if (inFloatButton(mx, my)) {
+            return Component.translatable(windowFloating
+                    ? "gui.mesplicedterminal.dock_window"
+                    : "gui.mesplicedterminal.float_window");
+        }
         if (inPinButton(mx, my)) {
             return Component.translatable(pinned()
                     ? "gui.mesplicedterminal.unpin_panel"
@@ -366,7 +406,7 @@ public abstract class ModulePanel {
      * Title-bar widgets (search field, etc.) that must not start a window drag.
      */
     public boolean inTitleBarControls(double mx, double my) {
-        return inPinButton(mx, my) || inCloseButton(mx, my) || inResetButton(mx, my);
+        return inPinButton(mx, my) || inFloatButton(mx, my) || inCloseButton(mx, my) || inResetButton(mx, my);
     }
 
     public boolean inResizeHandle(double mx, double my) {
@@ -385,7 +425,8 @@ public abstract class ModulePanel {
         if (contentChromeVisible()) {
             return 8 + 2 * PIN_SIZE + CHROME_BUTTON_GAP;
         }
-        return pinVisible() ? 28 + PIN_SIZE : 28;
+        int count = chromeButtonCount();
+        return 28 + count * PIN_SIZE + Math.max(0, count - 1) * CHROME_BUTTON_GAP;
     }
 
     protected int titleTextOffsetX() {
@@ -607,23 +648,14 @@ public abstract class ModulePanel {
         if (contentChromeVisible()) {
             drawChromeButton(g, resetButtonX(), resetButtonY(), inResetButton(mouseX, mouseY), ChromeGlyph.RESET);
             drawChromeButton(g, closeButtonX(), closeButtonY(), inCloseButton(mouseX, mouseY), ChromeGlyph.CLOSE);
-        } else if (pinVisible()) {
-            int px = pinButtonX();
-            int py = pinButtonY();
-            boolean hovered = inPinButton(mouseX, mouseY);
-            int yOffset = hovered ? 1 : 0;
-            if (ModList.get().isLoaded("extendedae")) {
-                Blitter background = hovered
-                        ? EPPIcon.TERMINAL_BUTTON_HOVER
-                        : EPPIcon.TERMINAL_BUTTON;
-                background.dest(px, py + yOffset, PIN_SIZE, PIN_SIZE).zOffset(2).blit(g);
-            } else {
-                // ExtendedAE supplies a tasteful button sprite; without it, fall back to a flat dark
-                // fill that matches the title bar so the pin glyph still reads as a button.
-                int bg = hovered ? 0xFF4A4A4A : 0xFF2E2E2E;
-                g.fill(px, py + yOffset, px + PIN_SIZE, py + yOffset + PIN_SIZE, bg);
+        } else {
+            if (pinVisible()) {
+                drawChromeButton(g, pinButtonX(), pinButtonY(), inPinButton(mouseX, mouseY), ChromeGlyph.PIN);
             }
-            MestGuiIcons.blit(g, 12, 1, px, py + yOffset, PIN_SIZE, PIN_SIZE);
+            if (floatVisible()) {
+                drawChromeButton(g, floatButtonX(), pinButtonY(), inFloatButton(mouseX, mouseY),
+                        windowFloating ? ChromeGlyph.DOCK : ChromeGlyph.FLOAT);
+            }
         }
     }
 
@@ -635,26 +667,34 @@ public abstract class ModulePanel {
                     : EPPIcon.TERMINAL_BUTTON;
             background.dest(px, py + yOffset, PIN_SIZE, PIN_SIZE).zOffset(2).blit(g);
         } else {
+            // ExtendedAE supplies a tasteful button sprite; without it, fall back to a flat dark
+            // fill that matches the title bar so the glyph still reads as a button.
             int bg = hovered ? 0xFF4A4A4A : 0xFF2E2E2E;
             g.fill(px, py + yOffset, px + PIN_SIZE, py + yOffset + PIN_SIZE, bg);
         }
         int ix = px;
         int iy = py + yOffset;
-        if (glyph == ChromeGlyph.CLOSE) {
+        switch (glyph) {
             // layout_preset_icons.png row 4 col 2 (16, 48)
-            MestGuiIcons.blit(g, 1, 3, ix, iy, PIN_SIZE, PIN_SIZE);
-        } else {
+            case CLOSE -> MestGuiIcons.blit(g, 1, 3, ix, iy, PIN_SIZE, PIN_SIZE);
+            case PIN -> MestGuiIcons.blit(g, 12, 1, ix, iy, PIN_SIZE, PIN_SIZE);
             // AE2 states.png last 16px row, first cell (0, 240)
-            Icon.SCHEDULING_DEFAULT.getBlitter()
-                    .dest(ix, iy, PIN_SIZE, PIN_SIZE)
-                    .zOffset(3)
-                    .blit(g);
+            case RESET -> blitAeIcon(g, Icon.SCHEDULING_DEFAULT, ix, iy);
+            case FLOAT -> blitAeIcon(g, Icon.ARROW_UP, ix, iy);
+            case DOCK -> blitAeIcon(g, Icon.ARROW_DOWN, ix, iy);
         }
+    }
+
+    private static void blitAeIcon(GuiGraphics g, Icon icon, int x, int y) {
+        icon.getBlitter().dest(x, y, PIN_SIZE, PIN_SIZE).zOffset(3).blit(g);
     }
 
     private enum ChromeGlyph {
         CLOSE,
-        RESET
+        RESET,
+        PIN,
+        FLOAT,
+        DOCK
     }
 
     /**

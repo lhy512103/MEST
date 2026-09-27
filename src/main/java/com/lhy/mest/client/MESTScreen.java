@@ -283,8 +283,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (panel == null) {
             return;
         }
-        var policy = dock.policyFor(panel);
-        if (!policy.floating() || policy.pinned() || !policy.visible()) {
+        if (!dock.policyFor(panel).visible() || !dock.isFloatingUnpinned(panel)) {
             return;
         }
         dock.hideModule(panel);
@@ -789,7 +788,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         int hanging = 0;
         int rightEdgeInset = 0;
         for (ModulePanel panel : dock.panels()) {
-            if (!dock.isEffectivelyVisible(panel) || dock.policyFor(panel).floating()) {
+            if (!dock.isEffectivelyVisible(panel) || dock.isFloatingWindow(panel)) {
                 continue;
             }
             if (panel.x >= group.right() || panel.x + panel.width <= group.x()
@@ -813,7 +812,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     private boolean rightEdgeIsPatternCache(DockRect group) {
         for (ModulePanel panel : dock.panels()) {
-            if (!dock.isEffectivelyVisible(panel) || dock.policyFor(panel).floating()) {
+            if (!dock.isEffectivelyVisible(panel) || dock.isFloatingWindow(panel)) {
                 continue;
             }
             if (!"pattern_cache".equals(panel.id())) {
@@ -1031,7 +1030,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         } else {
             for (ModulePanel panel : dock.panels()) {
                 if (panel != null && dock.isEffectivelyVisible(panel)
-                        && !dock.policyFor(panel).floating()
+                        && !dock.isFloatingWindow(panel)
                         && panel.width > 0 && panel.height > 0) {
                     core = panel;
                     break;
@@ -2001,7 +2000,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (providerSelectPanel == null) {
             return;
         }
-        boolean floating = dock.policyFor(providerSelectPanel).floating();
+        boolean floating = dock.isFloatingWindow(providerSelectPanel);
         if (packet.applyPreset() && !floating) {
             keepPendingOnRemove = true;
             minecraft.setScreen(PlusScreenSupport.presetPicker(this, packet));
@@ -2019,8 +2018,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (providerSelectPanel == null) {
             return;
         }
-        var policy = dock.policyFor(providerSelectPanel);
-        if (!policy.floating() || policy.pinned()) {
+        if (!dock.isFloatingUnpinned(providerSelectPanel)) {
             return;
         }
         if (!dock.isEffectivelyVisible(providerSelectPanel)) {

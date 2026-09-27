@@ -444,7 +444,7 @@ public final class MESTLayoutEditorScreen extends Screen {
             case 0 -> !policy.visible();
             case 1 -> !policy.movable();
             case 2 -> !policy.resizable();
-            case 3 -> !policy.floating();
+            case 3 -> !dock.isFloatingWindow(selected);
             default -> !policy.showTerminalButton();
         };
         applyProperty(index, enabled);
@@ -463,9 +463,14 @@ public final class MESTLayoutEditorScreen extends Screen {
             case 2 -> new ModuleLayoutPolicy(
                     policy.visible(), policy.movable(), enabled,
                     policy.floating(), policy.pinned(), policy.showTerminalButton());
-            case 3 -> policy.withFloating(enabled);
+            case 3 -> null;
             default -> policy.withShowTerminalButton(enabled);
         };
+        if (next == null) {
+            // Floating belongs to the window that holds the selected module, not the module.
+            dock.setWindowFloating(selected, enabled);
+            return;
+        }
         dock.setModulePolicy(selected, next);
     }
 
@@ -828,7 +833,7 @@ public final class MESTLayoutEditorScreen extends Screen {
             ModuleLayoutPolicy policy = dock.policyFor(selected);
             for (int index = 0; index < PROPERTY_COUNT; index++) {
                 if (propertyToggleRect(index).contains(mouseX, mouseY)) {
-                    boolean enabled = propertyEnabled(policy, index);
+                    boolean enabled = propertyEnabled(selected, policy, index);
                     List<Component> lines = new ArrayList<>();
                     lines.add(propertyCaption(index, enabled));
                     if (index == 3) {
@@ -924,7 +929,7 @@ public final class MESTLayoutEditorScreen extends Screen {
 
         ModuleLayoutPolicy policy = dock.policyFor(selected);
         for (int index = 0; index < PROPERTY_COUNT; index++) {
-            drawPropertyControl(graphics, mouseX, mouseY, index, propertyEnabled(policy, index));
+            drawPropertyControl(graphics, mouseX, mouseY, index, propertyEnabled(selected, policy, index));
         }
         drawHelpButton(graphics, mouseX, mouseY);
     }
@@ -937,12 +942,12 @@ public final class MESTLayoutEditorScreen extends Screen {
         }
     }
 
-    private static boolean propertyEnabled(ModuleLayoutPolicy policy, int index) {
+    private boolean propertyEnabled(ModulePanel panel, ModuleLayoutPolicy policy, int index) {
         return switch (index) {
             case 0 -> policy.visible();
             case 1 -> policy.movable();
             case 2 -> policy.resizable();
-            case 3 -> policy.floating();
+            case 3 -> dock.isFloatingWindow(panel);
             default -> policy.showTerminalButton();
         };
     }

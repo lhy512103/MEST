@@ -6,11 +6,13 @@
 
 1. Added: Module API. Other mods can add their own terminal modules through `RegisterMestModulesEvent` (client panel) and `RegisterMestModuleSlotsEvent` (menu slots, built identically on both sides), see the README.
 2. Changed: Built-in modules use the same registration path; each panel now declares its own default visibility, floating and pinned state, terminal button and icon instead of MEST checking hard-coded module ids.
+3. Changed: Floating and pinned are now properties of a window instead of its modules, so any combination of spliced panels can float together. Each window gets a float / dock button in its top-right title bar, Alt+drag takes a section out of an anchored window, and older layouts keep their current look.
 
 ### 中文
 
 1. 新增：模块 API。其他模组可以通过 `RegisterMestModulesEvent`（客户端面板）和 `RegisterMestModuleSlotsEvent`（菜单槽位，两端按相同顺序构建）为终端添加自己的模块，用法见 README。
 2. 调整：内置模块也改为走同一套注册；默认是否显示、浮动、钉住、显示终端按钮以及图标都由面板自己声明，不再按写死的模块 ID 判断。
+3. 调整：悬浮与钉住改为窗口属性，不再按模块决定，任意面板拼接后都能整体悬浮。每个窗口右上角标题栏有“悬浮 / 收回终端”按钮，按住 Alt 拖动标题栏可从锚定窗口中拆出单个面板；旧布局加载后外观保持不变。
 
 ## v0.0.2.8
 
