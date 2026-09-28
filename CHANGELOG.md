@@ -9,6 +9,7 @@
 3. Changed: Floating and pinned are now properties of a window instead of its modules, so any combination of spliced panels can float together. Anchored windows get a float button in their top-right title bar, Alt+drag takes a section out of an anchored window, and older layouts keep their current look.
 4. Added: Combined modules. In the layout editor a floating window's title-bar button turns it into combined module 1, 2 or 3 (the trash cannot join one); the terminal's more-settings bar and the panel hotkeys can then show or hide the whole window at once, using the layout preset 1-3 icons.
 5. Changed: Ctrl+drag now moves only the spliced window you grab, in the terminal and in the editor, instead of every window at once.
+6. Fixed: Combined-module controls now appear only for joined windows; joined panels stay together on click, require Alt+drag to detach, and share one pin and matching button backgrounds.
 
 ### 中文
 
@@ -17,6 +18,7 @@
 3. 调整：悬浮与钉住改为窗口属性，不再按模块决定，任意面板拼接后都能整体悬浮。锚定窗口右上角标题栏有悬浮按钮，按住 Alt 拖动标题栏可从锚定窗口中拆出单个面板；旧布局加载后外观保持不变。
 4. 新增：组合模块。在布局编辑器中，悬浮窗口标题栏的按钮可把它设为组合模块 1、2 或 3（垃圾桶不能参与）；之后在终端的更多设置栏和面板快捷键里即可整体显示或隐藏该窗口，图标沿用布局预设 1–3。
 5. 调整：按住 Ctrl 拖动时只移动当前抓住的拼接窗口（终端与编辑器中都一样），不再移动全部窗口。
+6. 修复：组合模块按钮仅在窗口拼接后显示；点击拼接面板不再散开，须按住 Alt 拖动才能拆分，且每窗只显示一个钉住按钮并统一按钮底图。
 
 ## v0.0.2.8
 

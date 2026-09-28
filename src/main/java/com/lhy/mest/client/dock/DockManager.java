@@ -574,7 +574,11 @@ public final class DockManager {
 
     /** Combined-module slot (1 to 3) of the window holding {@code panel}, or 0. */
     public int groupOf(ModulePanel panel) {
-        return panel == null || workspace == null ? 0 : rootOf(panel).group();
+        if (panel == null || workspace == null) {
+            return 0;
+        }
+        FloatingRoot root = rootOf(panel);
+        return root.group() != 0 && groupRoot(root.group()) != null ? root.group() : 0;
     }
 
     /** The combine button: only floating windows in the editor, and never with the trash inside. */
@@ -583,16 +587,7 @@ public final class DockManager {
             return false;
         }
         FloatingRoot root = rootOf(panel);
-        if (!root.floating()) {
-            return false;
-        }
-        for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
-            ModulePanel member = panelsByModuleId.get(leaf.moduleId());
-            if (member != null && !member.canCombine()) {
-                return false;
-            }
-        }
-        return true;
+        return root.floating() && combinable(root);
     }
 
     /** Next free slot for the window holding {@code panel}; cycling past 3 releases the slot. */
@@ -633,11 +628,11 @@ public final class DockManager {
     }
 
     private FloatingRoot groupRoot(int group) {
-        if (group == 0 || workspace == null) {
+        if (group < 1 || group > FloatingRoot.MAX_GROUPS || workspace == null) {
             return null;
         }
         for (FloatingRoot root : workspace.roots()) {
-            if (root.group() == group) {
+            if (root.group() == group && root.floating() && combinable(root)) {
                 return root;
             }
         }
@@ -740,6 +735,11 @@ public final class DockManager {
         if (!editingLayout) {
             save();
         }
+    }
+
+    /** A spliced window must not lose one of its panels to transient popover auto-dismissal. */
+    public boolean isJoinedWindow(ModulePanel panel) {
+        return panel != null && workspace != null && rootOf(panel).content() instanceof SplitNode;
     }
 
     /** True while the window holding {@code panel} floats and is not pinned. */
@@ -1638,6 +1638,11 @@ public final class DockManager {
         return cached.orElse(null);
     }
 
+    /** A joined leaf detaches only in the editor or with Alt held in the terminal; Ctrl moves the root. */
+    static boolean shouldDetachJoinedLeaf(boolean editing, boolean altDown, boolean controlDown) {
+        return !controlDown && (editing || altDown);
+    }
+
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         ensureProjection();
         if (handleContentEditClick(mouseX, mouseY, button)) {
@@ -1654,7 +1659,9 @@ public final class DockManager {
 
         DividerHit divider = dividerAt(root, mouseX, mouseY);
         if (button == 1 && divider != null) {
-            if (!editingLayout && !canResizeNode(findNode(divider.splitNodeId()))) {
+            // In the terminal, only Alt + title-bar drag may break a joined window apart.
+            // Right-click splitting remains an editor gesture.
+            if (!editingLayout) {
                 return false;
             }
             DockWorkspace beforeInteraction = takeInteractionStartWorkspace();
@@ -1729,7 +1736,9 @@ public final class DockManager {
             }
             pressX = mouseX;
             pressY = mouseY;
-            if (Screen.hasControlDown()) {
+            boolean controlDown = Screen.hasControlDown();
+            boolean detachLeaf = shouldDetachJoinedLeaf(editingLayout, Screen.hasAltDown(), controlDown);
+            if (controlDown) {
                 // Ctrl+drag moves the whole spliced window instead of taking a section out.
                 mode = Mode.DRAG_ROOT;
                 activeRootId = root.rootId();
@@ -1742,8 +1751,9 @@ public final class DockManager {
                 activeRootId = root.rootId();
                 grabOffsetX = mouseX - root.bounds().x();
                 grabOffsetY = mouseY - root.bounds().y();
-            } else if (!editingLayout && !root.floating() && !Screen.hasAltDown()) {
-                // Anchored windows move as a whole; Alt+drag takes one section out.
+            } else if (!detachLeaf) {
+                // In the terminal, every joined window moves as one unit. Only Alt+drag
+                // detaches a section, whether the window is anchored or floating.
                 mode = Mode.DRAG_ROOT;
                 activeRootId = root.rootId();
                 grabOffsetX = mouseX - root.bounds().x();
@@ -2176,7 +2186,10 @@ public final class DockManager {
                 panel.spliced = composite;
                 panel.splicedWindow = window;
                 panel.contentEditing = leaf.moduleId().equals(contentEditModuleId);
-                panel.setPinControl(visible && root.floating(), root.pinned());
+                // The pin belongs to the window, not to each section of a spliced window.
+                // Keep it next to the single combine control on the top-right title bar.
+                panel.setPinControl(visible && root.floating() && (!composite || leaf == floatControlLeaf),
+                        root.pinned());
                 panel.setFloatControl(visible && canFloat && leaf == floatControlLeaf, root.floating(), root.group());
             }
             DockChromeLayout.markRightmostLeaves(root, next, panelsByModuleId);
@@ -2664,7 +2677,7 @@ public final class DockManager {
     }
 
     private boolean detachPendingLeaf() {
-        if (activeRootId == null || activeLeafNodeId == null) {
+        if ((!editingLayout && !Screen.hasAltDown()) || activeRootId == null || activeLeafNodeId == null) {
             return false;
         }
         FloatingRoot sourceRoot = rootById(activeRootId);
@@ -2693,7 +2706,7 @@ public final class DockManager {
             return;
         }
         LayoutNode detached = detachFirst ? split.first() : split.second();
-        if (!editingLayout && !sourceRoot.floating() && !Screen.hasAltDown()) {
+        if (!editingLayout) {
             return;
         }
         String newRootId = "root:" + NodeIds.random();
@@ -2958,13 +2971,16 @@ public final class DockManager {
     }
 
     private boolean combinable(FloatingRoot root) {
+        // A combined module represents a spliced window, not a lone floating panel.
+        int members = 0;
         for (LeafNode leaf : LayoutTrees.leaves(root.content())) {
             ModulePanel member = panelsByModuleId.get(leaf.moduleId());
-            if (member != null && !member.canCombine()) {
+            if (member == null || !member.canCombine()) {
                 return false;
             }
+            members++;
         }
-        return true;
+        return members > 1;
     }
 
     /** The section whose title bar sits in the window's top-right corner carries the float button. */

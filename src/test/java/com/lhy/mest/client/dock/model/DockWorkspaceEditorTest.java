@@ -275,6 +275,36 @@ class DockWorkspaceEditorTest {
     }
 
     @Test
+    void threeSplicedFloatingModulesToggleIndependently() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b", "c", "d", "e", "f", "g");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        var roots = new java.util.ArrayList<FloatingRoot>();
+        for (int i = 0; i < 7; i++) {
+            String id = String.valueOf((char) ('a' + i));
+            roots.add(new FloatingRoot("root-" + id, new DockRect(i * 120, 0, 110, 80),
+                    new LeafNode("leaf-" + id, id, true), i != 0, false));
+        }
+        DockWorkspace joined = new DockWorkspace(roots);
+        joined = editor.insertSplit(joined, "leaf-c", "leaf-b", DockEdge.RIGHT, "split-bc", 0.5);
+        joined = editor.insertSplit(joined, "leaf-e", "leaf-d", DockEdge.RIGHT, "split-de", 0.5);
+        joined = editor.insertSplit(joined, "leaf-g", "leaf-f", DockEdge.RIGHT, "split-fg", 0.5);
+        for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
+            joined = editor.setRootGroup(joined, "root-" + (char) ('a' + group * 2 - 1), group);
+        }
+        assertEquals(List.of(0, 1, 2, 3), joined.roots().stream().map(FloatingRoot::group).toList());
+
+        DockWorkspace hidden = editor.setRootHidden(joined, "root-d", true);
+        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 4)).project(hidden);
+        assertTrue(projection.isEffectivelyVisible("leaf-b"));
+        assertTrue(projection.isEffectivelyVisible("leaf-c"));
+        assertFalse(projection.isEffectivelyVisible("leaf-d"));
+        assertFalse(projection.isEffectivelyVisible("leaf-e"));
+        assertTrue(projection.isEffectivelyVisible("leaf-f"));
+        assertTrue(projection.isEffectivelyVisible("leaf-g"));
+        assertEquals(2, editor.setRootHidden(hidden, "root-d", false).roots().get(2).group());
+    }
+
+    @Test
     void combinedModuleSlotsAreUniqueAndOnlyForFloatingWindows() {
         ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b", "c");
         DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);

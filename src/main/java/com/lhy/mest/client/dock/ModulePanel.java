@@ -678,17 +678,7 @@ public abstract class ModulePanel {
 
     private void drawChromeButton(GuiGraphics g, int px, int py, boolean hovered, ChromeGlyph glyph) {
         int yOffset = hovered ? 1 : 0;
-        if (ModList.get().isLoaded("extendedae")) {
-            Blitter background = hovered
-                    ? EPPIcon.TERMINAL_BUTTON_HOVER
-                    : EPPIcon.TERMINAL_BUTTON;
-            background.dest(px, py + yOffset, PIN_SIZE, PIN_SIZE).zOffset(2).blit(g);
-        } else {
-            // ExtendedAE supplies a tasteful button sprite; without it, fall back to a flat dark
-            // fill that matches the title bar so the glyph still reads as a button.
-            int bg = hovered ? 0xFF4A4A4A : 0xFF2E2E2E;
-            g.fill(px, py + yOffset, px + PIN_SIZE, py + yOffset + PIN_SIZE, bg);
-        }
+        drawChromeBackground(g, px, py, hovered);
         int ix = px;
         int iy = py + yOffset;
         switch (glyph) {
@@ -701,11 +691,25 @@ public abstract class ModulePanel {
         }
     }
 
+    private void drawChromeBackground(GuiGraphics g, int px, int py, boolean hovered) {
+        int yOffset = hovered ? 1 : 0;
+        if (ModList.get().isLoaded("extendedae")) {
+            Blitter background = hovered
+                    ? EPPIcon.TERMINAL_BUTTON_HOVER
+                    : EPPIcon.TERMINAL_BUTTON;
+            background.dest(px, py + yOffset, PIN_SIZE, PIN_SIZE).zOffset(2).blit(g);
+        } else {
+            // ExtendedAE supplies a tasteful button sprite; without it, fall back to a flat dark
+            // fill that matches the title bar so the glyph still reads as a button.
+            int bg = hovered ? 0xFF4A4A4A : 0xFF2E2E2E;
+            g.fill(px, py + yOffset, px + PIN_SIZE, py + yOffset + PIN_SIZE, bg);
+        }
+    }
+
     /** Unassigned: a faded module-1 icon. Assigned: the combined module's own 1/2/3 icon. */
     private void drawCombineButton(GuiGraphics g, int px, int py, boolean hovered) {
         int yOffset = hovered ? 1 : 0;
-        int bg = hovered ? 0xFF4A4A4A : 0xFF2E2E2E;
-        g.fill(px, py + yOffset, px + PIN_SIZE, py + yOffset + PIN_SIZE, bg);
+        drawChromeBackground(g, px, py, hovered);
         MestGuiIcons.blitCombined(g, windowGroup == 0 ? 1 : windowGroup, px, py + yOffset, PIN_SIZE, PIN_SIZE,
                 windowGroup == 0 ? 0.45F : 1.0F);
     }

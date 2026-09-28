@@ -285,7 +285,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (panel == null) {
             return;
         }
-        if (!dock.policyFor(panel).visible() || !dock.isFloatingUnpinned(panel)) {
+        // A popup joined to another panel is part of that window now. Hiding just this leaf
+        // when the player clicks its neighbor would visually tear the combined module apart.
+        if (!dock.policyFor(panel).visible() || !dock.isFloatingUnpinned(panel)
+                || dock.isJoinedWindow(panel)) {
             return;
         }
         dock.hideModule(panel);
@@ -583,17 +586,32 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         available.add(MORE_LOCK);
         available.add(MORE_UNDO);
         available.add(MORE_EDIT);
+        List<String> resolved = new ArrayList<>();
+        List<String> groups = new ArrayList<>();
+        // Put joined-window controls first, even if an older saved order lists every panel ahead of
+        // them; otherwise they can end up below the visible screen at the bottom of this rail.
+        for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
+            if (dock.hasGroup(group)) {
+                String id = MORE_GROUP_PREFIX + group;
+                available.add(id);
+                groups.add(id);
+            }
+        }
+        for (String id : dock.moreSettingsOrder()) {
+            if (groups.contains(id) && !resolved.contains(id)) {
+                resolved.add(id);
+            }
+        }
+        for (String id : groups) {
+            if (!resolved.contains(id)) {
+                resolved.add(id);
+            }
+        }
         for (ModulePanel panel : dock.panels()) {
-            if (panel != null && dock.policyFor(panel).showTerminalButton()) {
+            if (panel != null && dock.groupOf(panel) == 0 && dock.policyFor(panel).showTerminalButton()) {
                 available.add(panel.id());
             }
         }
-        for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
-            if (dock.hasGroup(group)) {
-                available.add(MORE_GROUP_PREFIX + group);
-            }
-        }
-        List<String> resolved = new ArrayList<>();
         for (String id : dock.moreSettingsOrder()) {
             if (available.contains(id) && !resolved.contains(id)) {
                 resolved.add(id);
@@ -1718,10 +1736,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             hotkeysPanel.cancelCapture();
         }
 
-        if (target != providerSelectPanel) {
+        if (target != providerSelectPanel && !dock.isJoinedWindow(providerSelectPanel)) {
             dismissProviderPicker(true);
         }
-        if (target != wirelessSettingsPanel) {
+        if (target != wirelessSettingsPanel && !dock.isJoinedWindow(wirelessSettingsPanel)) {
             dismissWirelessSettingsPanel();
         }
         if (target != toolkitPanel) {

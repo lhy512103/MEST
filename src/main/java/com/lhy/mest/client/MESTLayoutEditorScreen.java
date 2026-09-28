@@ -29,6 +29,7 @@ import appeng.client.gui.widgets.ITooltip;
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.client.dock.DockManager;
 import com.lhy.mest.client.dock.ModulePanel;
+import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
 
 /**
@@ -138,6 +139,11 @@ public final class MESTLayoutEditorScreen extends Screen {
         for (ModulePanel panel : panels) {
             maxText = Math.max(maxText, measuredWidth(panel.title()));
         }
+        for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
+            if (dock.hasGroup(group)) {
+                maxText = Math.max(maxText, measuredWidth(combinedTitle(group)));
+            }
+        }
         return SIDEBAR_PAD + ICON_SIZE + 4 + maxText + 4 + TOGGLE_SIZE + SIDEBAR_PAD;
     }
 
@@ -237,7 +243,33 @@ public final class MESTLayoutEditorScreen extends Screen {
         return new Rect(sidebarWidth() - SIDEBAR_PAD - TOGGLE_SIZE, SIDEBAR_HEADER_TOP, TOGGLE_SIZE, TOGGLE_SIZE);
     }
 
+    private Component combinedTitle(int group) {
+        return Component.translatable("gui.mesplicedterminal.combined_module", group);
+    }
+
+    private int combinedRowIndex(int group) {
+        int index = 0;
+        for (int slot = 1; slot < group; slot++) {
+            if (dock.hasGroup(slot)) {
+                index++;
+            }
+        }
+        return index;
+    }
+
+    private int combinedRowCount() {
+        return combinedRowIndex(FloatingRoot.MAX_GROUPS + 1);
+    }
+
+    private Rect sidebarGroupRowRect(int group) {
+        return sidebarEntryRect(combinedRowIndex(group));
+    }
+
     private Rect sidebarRowRect(int index) {
+        return sidebarEntryRect(combinedRowCount() + index);
+    }
+
+    private Rect sidebarEntryRect(int index) {
         int y = SIDEBAR_ROW_TOP + index * SIDEBAR_ROW_HEIGHT;
         if (sidebarCollapsed) {
             return collapsedRailRect(y);
@@ -572,6 +604,12 @@ public final class MESTLayoutEditorScreen extends Screen {
             return true;
         }
         if (button == 0 && mouseX < sidebarWidth()) {
+            for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
+                if (dock.hasGroup(group) && sidebarGroupRowRect(group).contains(mouseX, mouseY)) {
+                    dock.toggleGroup(group);
+                    return true;
+                }
+            }
             for (int index = 0; index < panels.size(); index++) {
                 if (sidebarRowRect(index).contains(mouseX, mouseY)) {
                     ModulePanel panel = panels.get(index);
@@ -814,6 +852,15 @@ public final class MESTLayoutEditorScreen extends Screen {
             graphics.renderComponentTooltip(font, hintTooltip(), mouseX, mouseY);
             return;
         }
+        for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
+            if (dock.hasGroup(group) && sidebarGroupRowRect(group).contains(mouseX, mouseY)) {
+                graphics.renderComponentTooltip(font, List.of(combinedTitle(group),
+                        Component.translatable(dock.isGroupShown(group)
+                                ? "gui.mesplicedterminal.module_toggle.hide"
+                                : "gui.mesplicedterminal.module_toggle.show")), mouseX, mouseY);
+                return;
+            }
+        }
         for (int index = 0; index < panels.size(); index++) {
             Rect row = sidebarRowRect(index);
             if (!row.contains(mouseX, mouseY)) {
@@ -879,6 +926,35 @@ public final class MESTLayoutEditorScreen extends Screen {
                     SIDEBAR_PAD, SIDEBAR_HEADER_TOP + 5, ModulePanel.COLOR_TITLE_TEXT, false);
         }
 
+        for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
+            if (!dock.hasGroup(group)) {
+                continue;
+            }
+            Rect row = sidebarGroupRowRect(group);
+            boolean hovered = row.contains(mouseX, mouseY);
+            boolean shown = dock.isGroupShown(group);
+            if (hovered) {
+                graphics.fill(row.x, row.y, row.x + row.w, row.y + row.h, COLOR_HOVER);
+            }
+            if (sidebarCollapsed) {
+                Icon background = shown || hovered
+                        ? Icon.TOOLBAR_BUTTON_BACKGROUND_HOVER : Icon.TOOLBAR_BUTTON_BACKGROUND;
+                int bx = row.x + (row.w - background.width) / 2;
+                int by = row.y + (row.h - background.height) / 2;
+                background.getBlitter().dest(bx, by).blit(graphics);
+                MestGuiIcons.blitCombined(graphics, group,
+                        bx + (background.width - ICON_SIZE) / 2,
+                        by + (background.height - ICON_SIZE) / 2, ICON_SIZE, ICON_SIZE,
+                        shown ? 1.0F : 0.5F);
+            } else {
+                MestGuiIcons.blitCombined(graphics, group, row.x + 2, row.y + 3,
+                        ICON_SIZE, ICON_SIZE, shown ? 1.0F : 0.5F);
+            }
+            if (!sidebarCollapsed) {
+                graphics.drawString(font, combinedTitle(group), row.x + 22, row.y + 7,
+                        shown ? ModulePanel.COLOR_TITLE_TEXT : ModulePanel.COLOR_MUTED, false);
+            }
+        }
         for (int i = 0; i < panels.size(); i++) {
             ModulePanel panel = panels.get(i);
             Rect row = sidebarRowRect(i);

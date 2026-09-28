@@ -15,15 +15,54 @@ import org.junit.jupiter.api.Test;
 
 import net.minecraft.network.chat.Component;
 
+import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.DockWorkspace;
 import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.dock.model.LeafNode;
 import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
+import com.lhy.mest.client.dock.model.SplitNode;
 import com.lhy.mest.client.dock.workspace.DockLayoutCodec;
 import com.lhy.mest.client.dock.workspace.DockLayoutPersistence;
 
 class DockManagerTest {
+    @Test
+    @SuppressWarnings("unchecked")
+    void joinedFloatingPanelsStayJoinedForTransientAutoDismissal() throws ReflectiveOperationException {
+        TestPanel cache = new TestPanel("cache", false);
+        TestPanel toolkit = new TestPanel("toolkit", false);
+        TestPanel standalone = new TestPanel("standalone", false);
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-joined", new DockRect(0, 0, 240, 100),
+                        new SplitNode("split-cache-toolkit", DockAxis.HORIZONTAL, 0.5,
+                                new LeafNode("leaf-cache", cache.id(), true),
+                                new LeafNode("leaf-toolkit", toolkit.id(), true)), true, false, 1, false),
+                new FloatingRoot("root-alone", new DockRect(250, 0, 100, 80),
+                        new LeafNode("leaf-alone", standalone.id(), true), true, false)));
+        DockManager manager = new DockManager();
+        setField(manager, "workspace", workspace);
+        Map<String, ModulePanel> registered = (Map<String, ModulePanel>) getField(manager, "panelsByModuleId");
+        registered.put(cache.id(), cache);
+        registered.put(toolkit.id(), toolkit);
+        registered.put(standalone.id(), standalone);
+
+        // Do not rely on the transient rendered "spliced" flag: a hidden leaf still has a split tree.
+        assertFalse(toolkit.spliced);
+        assertTrue(manager.isJoinedWindow(toolkit));
+        assertTrue(manager.isJoinedWindow(cache));
+        assertFalse(manager.isJoinedWindow(standalone));
+        assertFalse(manager.isJoinedWindow(null));
+    }
+
+    @Test
+    void joinedWindowDetachesOnlyWithAltOutsideEditor() {
+        assertFalse(DockManager.shouldDetachJoinedLeaf(false, false, false));
+        assertTrue(DockManager.shouldDetachJoinedLeaf(false, true, false));
+        assertTrue(DockManager.shouldDetachJoinedLeaf(true, false, false));
+        assertFalse(DockManager.shouldDetachJoinedLeaf(false, true, true));
+        assertFalse(DockManager.shouldDetachJoinedLeaf(true, true, true));
+    }
+
     @Test
     void previewSaveIsSuppressedAndPendingGestureCommitsOnce() throws ReflectiveOperationException {
         DockWorkspace before = new DockWorkspace(List.of(root("a", new DockRect(0, 0, 100, 80), true)));
