@@ -1,30 +1,40 @@
 package com.lhy.mest.client.panel;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 import java.util.Locale;
 
 import net.minecraft.ChatFormatting;
-
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.Rect2i;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+import appeng.api.stacks.AEKey;
 import appeng.client.Point;
 import appeng.client.gui.Icon;
 import appeng.api.storage.cells.CellState;
+import appeng.client.gui.style.ScreenStyle;
+import appeng.client.gui.widgets.AETextField;
 import appeng.client.gui.widgets.Scrollbar;
 import appeng.core.localization.GuiText;
 
+import com.lhy.mest.client.MESTScreen;
+import com.lhy.mest.client.PinyinSearch;
 import com.lhy.mest.client.dock.ModulePanel;
+import com.lhy.mest.compat.plus.PlusPatternAccess;
 import com.lhy.mest.client.dock.model.ModuleDefaults;
 import com.lhy.mest.network.DriveCellActionPacket;
 import com.lhy.mest.network.DriveCellListPacket;
 import com.lhy.mest.network.DriveCellRequestPacket;
+import com.lhy.mest.network.DriveCellSearchPacket;
 import com.lhy.mest.network.DrivePriorityPacket;
 import com.lhy.mest.terminal.MESTMenu;
 
@@ -53,8 +63,22 @@ public final class DrivePanel extends ModulePanel {
     private static final int GUTTER = TRACK_WIDTH + TRACK_GAP + TRACK_SHIFT_X;
     private static final int TRACK_BORDER = 0xFFF2F2F2;
     private static final int TRACK_FILL = 0xFF9A9FB4;
+    private static final int SEARCH_ROW = 16;
+    private static final int SEARCH_WIDTH = 65;
+    private static final int SEARCH_HEIGHT = 10;
+    private static final int MATCH_HIGHLIGHT = 0x66ACE9FF;
+    private static final int UNMATCHED_DIM = 0x6A000000;
+    private static final int SLOT_HOVER_FILL = 0x669CD3FF;
+    private static final int SLOT_HOVER_BORDER = 0xFFDAFFFF;
 
     private final MESTMenu menu;
+    private final ScreenStyle style;
+    private AETextField searchField;
+    private String search = "";
+    private int searchId;
+    private int pendingScrollId = -1;
+    private int matchCount;
+    private BitSet matches = new BitSet();
     private final Scrollbar scrollbar = new Scrollbar(Scrollbar.SMALL);
     private List<DriveCellListPacket.Group> groups = List.of();
     private List<DriveCellListPacket.Row> rows = List.of();
@@ -75,8 +99,9 @@ public final class DrivePanel extends ModulePanel {
     private record HeaderHit(int group, HeaderPart part) {
     }
 
-    public DrivePanel(MESTMenu menu) {
+    public DrivePanel(MESTMenu menu, ScreenStyle style) {
         this.menu = menu;
+        this.style = style;
         scrollbar.setCaptureMouseWheel(false);
     }
 
@@ -117,7 +142,23 @@ public final class DrivePanel extends ModulePanel {
 
     @Override
     public int minHeight() {
-        return TITLE_BAR_HEIGHT + CONTENT_PADDING + HEADER + SLOT + 2 * FRAME;
+        return TITLE_BAR_HEIGHT + SEARCH_ROW + CONTENT_PADDING + HEADER + SLOT + 2 * FRAME;
+    }
+
+    @Override
+    public int contentTop() {
+        return super.contentTop() + SEARCH_ROW;
+    }
+
+    @Override
+    public int contentHeight() {
+        return Math.max(0, super.contentHeight() - SEARCH_ROW);
+    }
+
+    @Override
+    public boolean inTitleBarControls(double mx, double my) {
+        return super.inTitleBarControls(mx, my)
+                || (searchField != null && searchField.visible && searchField.isMouseOver(mx, my));
     }
 
     @Override
@@ -128,6 +169,7 @@ public final class DrivePanel extends ModulePanel {
     @Override
     public void layoutSlots() {
         // The grid is virtual: dynamically changing remote drives cannot alter menu slot indices.
+        layoutSearch();
         layoutScrollbar();
         if (subscribed) {
             syncWindow();
@@ -148,12 +190,69 @@ public final class DrivePanel extends ModulePanel {
         revision = packet.revision();
         requestedWindow = receivedWindow;
         pending = false;
+        matches = new BitSet();
+        for (int match : packet.matches()) {
+            matches.set(match);
+        }
+        matchCount = packet.matches().size();
         layoutScrollbar();
+        if (packet.searchId() == pendingScrollId) {
+            pendingScrollId = -1;
+            if (!packet.matches().isEmpty()) {
+                scrollToSlot(packet.matches().get(0));
+            }
+        }
         syncWindow();
+    }
+
+    private void scrollToSlot(int absolute) {
+        int pixels = 0;
+        int first = 0;
+        for (var group : groups) {
+            if (absolute < first + group.slots()) {
+                pixels += (absolute - first) / cellsPerRow() * SLOT;
+                break;
+            }
+            pixels += groupHeight(group);
+            first += group.slots();
+        }
+        scrollbar.setCurrentScroll(pixels / SCROLL_STEP);
+    }
+
+    private void onSearchChanged(String value) {
+        search = value;
+        searchId = (searchId + 1) & Integer.MAX_VALUE;
+        pendingScrollId = search.isBlank() ? -1 : searchId;
+        if (search.isBlank()) {
+            matches = new BitSet();
+            matchCount = 0;
+        }
+        if (subscribed) {
+            sendSearch();
+        }
+    }
+
+    private void sendSearch() {
+        String query = search.strip();
+        var keys = new ArrayList<AEKey>();
+        var repo = menu.getClientRepo();
+        if (!query.isEmpty() && repo != null) {
+            for (var entry : repo.getAllEntries()) {
+                if (keys.size() >= DriveCellSearchPacket.MAX_KEYS) {
+                    break;
+                }
+                if (entry.getStoredAmount() > 0
+                        && PinyinSearch.contains(entry.getWhat().getDisplayName().getString(), query)) {
+                    keys.add(entry.getWhat());
+                }
+            }
+        }
+        PacketDistributor.sendToServer(new DriveCellSearchPacket(menu.containerId, searchId, query, keys));
     }
 
     public void tick(boolean visible) {
         ticks++;
+        layoutSearch();
         if (!visible) {
             closeSubscription();
             return;
@@ -161,6 +260,10 @@ public final class DrivePanel extends ModulePanel {
         if (!subscribed) {
             subscribed = true;
             requestWindow(0);
+            if (!search.isBlank()) {
+                pendingScrollId = searchId;
+                sendSearch();
+            }
         } else if (pending && ticks - requestedAt >= 10) {
             requestWindow(requestedWindow);
         } else if (!pending && ticks - requestedAt >= 40) {
@@ -180,6 +283,8 @@ public final class DrivePanel extends ModulePanel {
         requestedWindow = 0;
         groups = List.of();
         rows = List.of();
+        matches = new BitSet();
+        matchCount = 0;
         scrollbar.setCurrentScroll(0);
     }
 
@@ -357,7 +462,8 @@ public final class DrivePanel extends ModulePanel {
         lines.add(Component.translatable("gui.mesplicedterminal.drive.status",
                 Component.translatable("gui.mesplicedterminal.drive.status." + state.name().toLowerCase(Locale.ROOT))
                         .withColor(state.getStateColor())).withStyle(ChatFormatting.GRAY));
-        if (row.hasCapacity()) {
+        // Stacks sent without components (over the size budget) lack AE2's own capacity lines.
+        if (row.hasCapacity() && row.usedBytes() > 0 && row.stack().getComponentsPatch().isEmpty()) {
             lines.add(Component.translatable("gui.mesplicedterminal.drive.bytes",
                     number(row.usedBytes()), number(row.totalBytes())).withStyle(ChatFormatting.GRAY));
             lines.add(Component.translatable("gui.mesplicedterminal.drive.types",
@@ -430,6 +536,15 @@ public final class DrivePanel extends ModulePanel {
 
     @Override
     public void renderBackgroundContent(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
+        ensureSearch(font);
+        layoutSearch();
+        if (searchField != null) {
+            searchField.render(g, mouseX, mouseY, partialTicks);
+            if (searchField.visible && !search.isBlank()) {
+                g.drawString(font, Component.translatable("gui.mesplicedterminal.drive.matches", matchCount),
+                        contentLeft() + SEARCH_WIDTH + 4, y + TITLE_BAR_HEIGHT + 2, COLOR_MUTED, false);
+            }
+        }
         if (contentWidth() <= 0 || contentHeight() <= 0) {
             return;
         }
@@ -441,15 +556,17 @@ public final class DrivePanel extends ModulePanel {
         drawWell(g);
         g.enableScissor(left, top, gridRight(), bottom);
         try {
-            int y = top - scrollPixels();
+            int groupY = top - scrollPixels();
+            int firstSlot = 0;
             for (int i = 0; i < groups.size(); i++) {
                 var group = groups.get(i);
                 int height = groupHeight(group);
-                if (y + height > top && y < bottom) {
-                    drawGroup(g, font, i, group, y, hovered == null ? -1 : hovered.index(),
+                if (groupY + height > top && groupY < bottom) {
+                    drawGroup(g, font, i, group, groupY, firstSlot, hovered == null ? -1 : hovered.index(),
                             header != null && header.group() == i ? header.part() : null);
                 }
-                y += height;
+                groupY += height;
+                firstSlot += group.slots();
             }
             if (groups.isEmpty() && receivedWindow >= 0) {
                 g.drawString(font, Component.translatable("gui.mesplicedterminal.drive.empty"),
@@ -464,7 +581,7 @@ public final class DrivePanel extends ModulePanel {
     }
 
     private void drawGroup(GuiGraphics g, Font font, int index, DriveCellListPacket.Group group,
-            int y, int hovered, HeaderPart headerPart) {
+            int y, int firstSlot, int hovered, HeaderPart headerPart) {
         int left = gridLeft();
         int nameRight = group.editable() ? priorityX() - 2 : gridRight() - 2;
         if (!group.powered()) {
@@ -501,12 +618,35 @@ public final class DrivePanel extends ModulePanel {
                 g.renderItem(row.stack(), px + 1, py + 1);
                 drawCellState(g, row, px, py, group.powered());
             }
-            if (rowIndex >= 0 && rowIndex == hovered) {
-                g.pose().pushPose();
-                g.pose().translate(0, 0, 250);
-                g.fill(px + 1, py + 1, px + SLOT - 1, py + SLOT - 1, 0x669CD3FF);
-                g.pose().popPose();
+            boolean searching = !search.isBlank();
+            boolean hovering = rowIndex >= 0 && rowIndex == hovered;
+            if (!searching && !hovering) {
+                continue;
             }
+            g.pose().pushPose();
+            g.pose().translate(0, 0, 250);
+            if (searching) {
+                if (matches.get(firstSlot + slot)) {
+                    if (ModList.get().isLoaded("extendedae_plus")) {
+                        PlusPatternAccess.drawSlotRainbowHighlight(g, px + 1, py + 1);
+                    } else {
+                        g.fill(px, py, px + SLOT, py + SLOT, MATCH_HIGHLIGHT);
+                    }
+                } else {
+                    g.fill(px + 1, py + 1, px + SLOT - 1, py + SLOT - 1, UNMATCHED_DIM);
+                }
+            }
+            if (hovering) {
+                int ix = px + 1;
+                int iy = py + 1;
+                g.hLine(ix, ix + 16, iy - 1, SLOT_HOVER_BORDER);
+                g.hLine(ix - 1, ix + 16, iy + 16, SLOT_HOVER_BORDER);
+                g.vLine(ix - 1, iy - 2, iy + 16, SLOT_HOVER_BORDER);
+                g.vLine(ix + 16, iy - 2, iy + 16, SLOT_HOVER_BORDER);
+                g.fillGradient(RenderType.guiOverlay(), ix, iy, ix + 16, iy + 16,
+                        SLOT_HOVER_FILL, SLOT_HOVER_FILL, 0);
+            }
+            g.pose().popPose();
         }
     }
 
@@ -602,6 +742,28 @@ public final class DrivePanel extends ModulePanel {
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
+        if (inResizeHandle(mx, my)) {
+            return false;
+        }
+        if (!visible || !contains(mx, my)) {
+            if (searchField != null) {
+                searchField.setFocused(false);
+            }
+            return false;
+        }
+        // AE2's MEStorageScreen clears its search field on right-click; AETextField itself does not.
+        if (searchField != null && searchField.visible && searchField.isMouseOver(mx, my) && button == 1) {
+            searchField.setValue("");
+            setSearchFocused(true);
+            return true;
+        }
+        if (searchField != null && searchField.mouseClicked(mx, my, button)) {
+            setSearchFocused(true);
+            return true;
+        }
+        if (searchField != null) {
+            searchField.setFocused(false);
+        }
         if (!inList(mx, my)) {
             return false;
         }
@@ -664,5 +826,70 @@ public final class DrivePanel extends ModulePanel {
     @Override
     public boolean scrollbarDragging() {
         return dragging;
+    }
+
+    public boolean searchCharTyped(char character, int modifiers) {
+        return searchField != null && searchField.isFocused() && searchField.charTyped(character, modifiers);
+    }
+
+    public boolean searchKeyPressed(int keyCode, int scanCode, int modifiers) {
+        return searchField != null && searchField.isFocused() && searchField.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    public boolean isSearchFocused() {
+        return searchField != null && searchField.isFocused();
+    }
+
+    public void setSearchFocused(boolean focused) {
+        if (searchField == null) {
+            return;
+        }
+        searchField.setFocused(focused);
+        if (Minecraft.getInstance().screen instanceof MESTScreen screen) {
+            if (focused) {
+                screen.setFocused(searchField);
+            } else if (screen.getFocused() == searchField) {
+                screen.setFocused(null);
+            }
+        }
+    }
+
+    public AETextField searchField() {
+        return searchField;
+    }
+
+    public void rebindSearchField(MESTScreen screen) {
+        if (searchField != null) {
+            screen.attachPatternSearchField(searchField);
+        }
+    }
+
+    private void ensureSearch(Font font) {
+        if (searchField != null) {
+            return;
+        }
+        searchField = new AETextField(style, font, 0, 0, SEARCH_WIDTH, SEARCH_HEIGHT);
+        searchField.setBordered(false);
+        searchField.setMaxLength(DriveCellSearchPacket.MAX_QUERY);
+        searchField.setValue(search);
+        searchField.setResponder(this::onSearchChanged);
+        searchField.setPlaceholder(GuiText.SearchPlaceholder.text());
+        if (Minecraft.getInstance().screen instanceof MESTScreen screen) {
+            screen.attachPatternSearchField(searchField);
+        }
+    }
+
+    private void layoutSearch() {
+        if (searchField == null) {
+            return;
+        }
+        boolean show = visible && drawsTitleBar();
+        searchField.setVisible(show);
+        if (show) {
+            searchField.resize(SEARCH_WIDTH, SEARCH_HEIGHT);
+            searchField.move(new Point(contentLeft(), y + TITLE_BAR_HEIGHT + 1));
+        } else {
+            searchField.setFocused(false);
+        }
     }
 }

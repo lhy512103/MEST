@@ -39,7 +39,7 @@ class DriveCellPacketTest {
     void emptyViewportRoundTripAndOversizedGroupCountIsDiscarded() {
         RegistryFriendlyByteBuf buf = registryBuffer();
         try {
-            var viewport = new DriveCellListPacket(4, 8, 0, 0, false, List.of(), List.of());
+            var viewport = new DriveCellListPacket(4, 8, 0, 0, false, List.of(), List.of(), 0, List.of());
             DriveCellListPacket.STREAM_CODEC.encode(buf, viewport);
             var decoded = DriveCellListPacket.STREAM_CODEC.decode(buf);
             assertEquals(viewport.containerId(), decoded.containerId());

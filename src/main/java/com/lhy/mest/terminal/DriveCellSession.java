@@ -2,11 +2,17 @@ package com.lhy.mest.terminal;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+import io.netty.buffer.Unpooled;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -16,11 +22,14 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.connection.ConnectionType;
 
 import appeng.api.implementations.blockentities.IChestOrDrive;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridNode;
+import appeng.api.stacks.AEKey;
 import appeng.api.storage.StorageCells;
+import appeng.api.storage.cells.StorageCell;
 import appeng.api.storage.cells.CellState;
 import appeng.blockentity.AEBaseInvBlockEntity;
 import appeng.blockentity.storage.DriveBlockEntity;
@@ -37,6 +46,9 @@ import com.lhy.mest.network.DriveCellListPacket;
 public final class DriveCellSession {
     private static final int MAX_SLOTS_PER_DRIVE = 128;
     private static final long MIN_REQUEST_TICKS = 5;
+    // Full cell stacks let the client render AE2's own tooltip; oversized ones degrade to the bare icon.
+    private static final int MAX_STACK_BYTES = 32 * 1024;
+    private static final int MAX_WINDOW_STACK_BYTES = 512 * 1024;
 
     private record Drive(IGridNode node, IChestOrDrive host, BlockEntity block, IItemHandler inventory, int slots) {
     }
@@ -58,6 +70,11 @@ public final class DriveCellSession {
     private List<SlotRef> references = List.of();
     private List<DriveCellListPacket.Group> previousGroups = List.of();
     private List<DriveCellListPacket.Row> previousRows = List.of();
+    private int searchId;
+    private String query = "";
+    private Set<AEKey> searchKeys = Set.of();
+    private int previousSearchId;
+    private List<Integer> previousMatches = List.of();
 
     public DriveCellSession(MESTMenu menu) {
         this.menu = menu;
@@ -78,7 +95,7 @@ public final class DriveCellSession {
             if (grid != null || windowStart != 0 || totalSlots != 0 || truncated
                     || !hosts.isEmpty() || !previousGroups.isEmpty() || !previousRows.isEmpty()) {
                 grid = null;
-                publish(player, 0, 0, false, List.of(), List.of(), List.of(), List.of());
+                publish(player, 0, 0, false, List.of(), List.of(), List.of(), List.of(), List.of());
             }
             return;
         }
@@ -113,6 +130,7 @@ public final class DriveCellSession {
         int end = (int) Math.min((long) count, (long) start + DriveCellListPacket.MAX_ROWS);
         List<SlotRef> nextRefs = new ArrayList<>(end - start);
         List<DriveCellListPacket.Row> rows = new ArrayList<>(end - start);
+        int budget = MAX_WINDOW_STACK_BYTES;
         int index = 0;
         for (int driveIndex = 0; driveIndex < drives.size() && index < end; driveIndex++) {
             Drive drive = drives.get(driveIndex);
@@ -122,20 +140,81 @@ public final class DriveCellSession {
                 }
                 ItemStack stack = drive.inventory().getStackInSlot(slot).copy();
                 nextRefs.add(new SlotRef(drive, slot, stack));
-                // Cell components may contain a huge inventory; transmit only the item icon.
-                ItemStack icon = stack.isEmpty() ? ItemStack.EMPTY : new ItemStack(stack.getItem());
-                rows.add(row(drive, driveIndex, slot, icon));
+                ItemStack shown = ItemStack.EMPTY;
+                if (!stack.isEmpty()) {
+                    int size = encodedSize(player, stack);
+                    if (size <= MAX_STACK_BYTES && size <= budget) {
+                        budget -= size;
+                        shown = stack;
+                    } else {
+                        shown = new ItemStack(stack.getItem());
+                    }
+                }
+                rows.add(row(drive, driveIndex, slot, shown));
             }
         }
+        List<Integer> matches = matches(drives);
         if (grid != current || windowStart != start || totalSlots != count || truncated != scan.truncated()
                 || !sameHosts(hosts, drives) || !previousGroups.equals(groups)
-                || !sameRows(previousRows, rows) || !sameSlots(references, nextRefs)) {
+                || !sameRows(previousRows, rows) || !sameSlots(references, nextRefs)
+                || previousSearchId != searchId || !previousMatches.equals(matches)) {
             grid = current;
-            publish(player, start, count, scan.truncated(), drives, groups, nextRefs, rows);
+            publish(player, start, count, scan.truncated(), drives, groups, nextRefs, rows, matches);
         } else {
             // Update the full stack action guard without sending redundant icons or cell contents.
             references = List.copyOf(nextRefs);
         }
+    }
+
+    private static int encodedSize(ServerPlayer player, ItemStack stack) {
+        var buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), player.registryAccess(), ConnectionType.NEOFORGE);
+        try {
+            ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, stack);
+            return buf.readableBytes();
+        } catch (RuntimeException exception) {
+            return Integer.MAX_VALUE;
+        } finally {
+            buf.release();
+        }
+    }
+
+    public void search(ServerPlayer player, int id, String text, List<AEKey> keys) {
+        searchId = id;
+        query = text.strip().toLowerCase(Locale.ROOT);
+        searchKeys = query.isEmpty() ? Set.of() : new HashSet<>(keys);
+        if (windowStart >= 0) {
+            lastRequestTick = -1;
+            request(player, windowStart);
+        }
+    }
+
+    /** Absolute slot indices, ascending, of cells holding any key matching the current search. */
+    private List<Integer> matches(List<Drive> drives) {
+        if (query.isEmpty()) {
+            return List.of();
+        }
+        var result = new ArrayList<Integer>();
+        int index = 0;
+        for (Drive drive : drives) {
+            for (int slot = 0; slot < drive.slots(); slot++, index++) {
+                StorageCell cell = drive.host().getOriginalCellInventory(slot);
+                if (cell == null) {
+                    continue;
+                }
+                for (AEKey key : cell.getAvailableStacks().keySet()) {
+                    if (matches(key)) {
+                        result.add(index);
+                        break;
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    private boolean matches(AEKey key) {
+        return searchKeys.contains(key) || key.getId().toString().contains(query)
+                || key.getDisplayName().getString().toLowerCase(Locale.ROOT).contains(query);
     }
 
     private static DriveCellListPacket.Row row(Drive drive, int driveIndex, int slot, ItemStack icon) {
@@ -353,7 +432,8 @@ public final class DriveCellSession {
     }
 
     private void publish(ServerPlayer player, int start, int count, boolean limited, List<Drive> drives,
-            List<DriveCellListPacket.Group> groups, List<SlotRef> refs, List<DriveCellListPacket.Row> rows) {
+            List<DriveCellListPacket.Group> groups, List<SlotRef> refs, List<DriveCellListPacket.Row> rows,
+            List<Integer> matches) {
         revision = (revision + 1) & Integer.MAX_VALUE;
         windowStart = start;
         totalSlots = count;
@@ -362,8 +442,10 @@ public final class DriveCellSession {
         previousGroups = List.copyOf(groups);
         references = List.copyOf(refs);
         previousRows = List.copyOf(rows);
+        previousSearchId = searchId;
+        previousMatches = List.copyOf(matches);
         PacketDistributor.sendToPlayer(player, new DriveCellListPacket(menu.containerId, revision, windowStart,
-                totalSlots, truncated, previousGroups, previousRows));
+                totalSlots, truncated, previousGroups, previousRows, previousSearchId, previousMatches));
     }
 
     private static boolean sameHosts(List<Drive> a, List<Drive> b) {
@@ -420,5 +502,10 @@ public final class DriveCellSession {
         totalSlots = 0;
         truncated = false;
         lastRequestTick = -1;
+        searchId = 0;
+        query = "";
+        searchKeys = Set.of();
+        previousSearchId = 0;
+        previousMatches = List.of();
     }
 }

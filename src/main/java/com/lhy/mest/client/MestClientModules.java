@@ -50,7 +50,7 @@ public final class MestClientModules {
             new Registration("provider_select", context -> ModList.get().isLoaded("extendedae_plus")
                     ? new ProviderSelectPanel(context.style())
                     : null),
-            new Registration("drive", context -> new DrivePanel(context.menu())));
+            new Registration("drive", context -> new DrivePanel(context.menu(), context.style())));
 
     private static final OrderedModuleRegistry<MestModuleFactory> ADDONS =
             new OrderedModuleRegistry<>(BuiltinModules.IDS);

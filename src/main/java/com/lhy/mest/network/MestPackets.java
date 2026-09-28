@@ -34,6 +34,10 @@ public final class MestPackets {
                 DrivePriorityPacket.TYPE,
                 DrivePriorityPacket.STREAM_CODEC,
                 DrivePriorityPacket::handle);
+        registrar.playToServer(
+                DriveCellSearchPacket.TYPE,
+                DriveCellSearchPacket.STREAM_CODEC,
+                DriveCellSearchPacket::handle);
 
         registrar.playToClient(
                 DriveCellListPacket.TYPE,

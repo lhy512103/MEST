@@ -198,5 +198,6 @@
   "gui.mesplicedterminal.drive.status.types_full": "Types full",
   "gui.mesplicedterminal.drive.status.full": "Full",
   "gui.mesplicedterminal.drive.location": "Location: %s",
-  "gui.mesplicedterminal.drive.priority.open": "Click to open priority settings"
+  "gui.mesplicedterminal.drive.priority.open": "Click to open priority settings",
+  "gui.mesplicedterminal.drive.matches": "%s matches"
 }

@@ -18,9 +18,11 @@ import com.lhy.mest.MESplicedterminal;
 
 /** Bounded viewport of physical storage-cell icons with metadata for every visible drive group. */
 public record DriveCellListPacket(int containerId, int revision, int windowStart, int totalSlots,
-        boolean truncated, List<Group> groups, List<Row> rows) implements CustomPacketPayload {
+        boolean truncated, List<Group> groups, List<Row> rows, int searchId, List<Integer> matches)
+        implements CustomPacketPayload {
     public static final int MAX_ROWS = 256;
     public static final int MAX_GROUPS = 256;
+    public static final int MAX_MATCHES = MAX_GROUPS * 128;
     public static final Type<DriveCellListPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
             MESplicedterminal.MODID, "drive_cell_list"));
     private static final StreamCodec<RegistryFriendlyByteBuf, Item> ITEM_CODEC = ByteBufCodecs.registry(Registries.ITEM);
@@ -53,7 +55,8 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
 
     private void write(RegistryFriendlyByteBuf buf) {
         if (!validHeader(containerId, revision, windowStart, totalSlots, groups.size(), rows.size())
-                || !validEntries(groups, rows, windowStart, totalSlots)) {
+                || !validEntries(groups, rows, windowStart, totalSlots)
+                || !validMatches(searchId, matches, totalSlots)) {
             throw new IllegalArgumentException("Invalid drive viewport");
         }
         buf.writeVarInt(containerId);
@@ -83,6 +86,11 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
             buf.writeVarLong(row.totalBytes());
             buf.writeVarLong(row.usedTypes());
             buf.writeVarLong(row.totalTypes());
+        }
+        buf.writeVarInt(searchId);
+        buf.writeVarInt(matches.size());
+        for (int match : matches) {
+            buf.writeVarInt(match);
         }
     }
 
@@ -129,18 +137,28 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
                 long totalTypes = buf.readVarLong();
                 rows.add(new Row(drive, slot, stack, status, usedBytes, totalBytes, usedTypes, totalTypes));
             }
-            if (!validEntries(groups, rows, start, total) || buf.isReadable()) {
+            int searchId = buf.readVarInt();
+            int matchCount = buf.readVarInt();
+            if (searchId < 0 || matchCount < 0 || matchCount > total || matchCount > MAX_MATCHES) {
+                throw new IllegalArgumentException("Invalid drive search result");
+            }
+            List<Integer> matches = new ArrayList<>(matchCount);
+            for (int i = 0; i < matchCount; i++) {
+                matches.add(buf.readVarInt());
+            }
+            if (!validEntries(groups, rows, start, total) || !validMatches(searchId, matches, total)
+                    || buf.isReadable()) {
                 throw new IllegalArgumentException("Invalid drive viewport data");
             }
             return new DriveCellListPacket(container, revision, start, total, truncated,
-                    List.copyOf(groups), List.copyOf(rows));
+                    List.copyOf(groups), List.copyOf(rows), searchId, List.copyOf(matches));
         } catch (RuntimeException exception) {
             try {
                 buf.skipBytes(buf.readableBytes());
             } catch (RuntimeException ignored) {
                 // Invalid payloads are discarded, not routed to the screen.
             }
-            return new DriveCellListPacket(-1, 0, 0, 0, false, List.of(), List.of());
+            return new DriveCellListPacket(-1, 0, 0, 0, false, List.of(), List.of(), 0, List.of());
         }
     }
 
@@ -148,6 +166,20 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
         return container >= 0 && revision >= 0 && start >= 0 && total >= 0 && start <= total
                 && groups >= 0 && groups <= MAX_GROUPS && rows >= 0 && rows <= MAX_ROWS
                 && rows <= total - start;
+    }
+
+    private static boolean validMatches(int searchId, List<Integer> matches, int total) {
+        if (searchId < 0 || matches.size() > total || matches.size() > MAX_MATCHES) {
+            return false;
+        }
+        int previous = -1;
+        for (Integer match : matches) {
+            if (match == null || match <= previous || match >= total) {
+                return false;
+            }
+            previous = match;
+        }
+        return true;
     }
 
     private static boolean validEntries(List<Group> groups, List<Row> rows, int start, int total) {

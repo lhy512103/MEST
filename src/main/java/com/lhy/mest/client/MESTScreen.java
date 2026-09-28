@@ -462,6 +462,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (providerSelectPanel != null) {
             providerSelectPanel.rebindSearchField(this);
         }
+        if (drivePanel != null) {
+            drivePanel.rebindSearchField(this);
+        }
         if (upgradeColumn == null && getMenu().getHost() instanceof IUpgradeableObject upgradeable) {
             List<Slot> upgradeSlots = new ArrayList<>();
             upgradeSlots.addAll(getMenu().getSlots(AE2wtlibSlotSemantics.SINGULARITY));
@@ -1764,6 +1767,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (button == 0 && scrollbarPressedAt(mx, my)) {
             return true;
         }
+        if (target != drivePanel && drivePanel != null) {
+            drivePanel.setSearchFocused(false);
+        }
         if (target != null && !target.inResizeHandle(mx, my) && target.mouseClicked(mx, my, button)) {
             return true;
         }
@@ -2409,6 +2415,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (patternAccessPanel != null && patternAccessPanel.searchCharTyped(character, modifiers)) {
             return true;
         }
+        if (drivePanel != null && getFocused() == drivePanel.searchField()) {
+            return super.charTyped(character, modifiers);
+        }
+        if (drivePanel != null && drivePanel.searchCharTyped(character, modifiers)) {
+            return true;
+        }
         if (providerSelectPanel != null && getFocused() == providerSelectPanel.searchField()) {
             return super.charTyped(character, modifiers);
         }
@@ -2433,7 +2445,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 && (getFocused() == providerSelectPanel.searchField()
                 || getFocused() == providerSelectPanel.mappingField()
                 || providerSelectPanel.isSearchFocused());
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE && (meSearch || patSearch || pickerSearch)) {
+        boolean driveSearch = drivePanel != null
+                && (getFocused() == drivePanel.searchField() || drivePanel.isSearchFocused());
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && (meSearch || patSearch || pickerSearch || driveSearch)) {
             if (meSearch) {
                 meListPanel.setSearchFocused(false);
             }
@@ -2442,6 +2456,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             }
             if (pickerSearch) {
                 providerSelectPanel.setSearchFocused(false);
+            }
+            if (driveSearch) {
+                drivePanel.setSearchFocused(false);
             }
             setFocused(null);
         } else if (meSearch) {
@@ -2480,6 +2497,19 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 return super.keyPressed(keyCode, scanCode, modifiers);
             }
             if (providerSelectPanel.searchKeyPressed(keyCode, scanCode, modifiers)) {
+                return true;
+            }
+            return true;
+        } else if (driveSearch) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER) {
+                drivePanel.setSearchFocused(false);
+                setFocused(null);
+                return true;
+            }
+            if (getFocused() == drivePanel.searchField()) {
+                return super.keyPressed(keyCode, scanCode, modifiers);
+            }
+            if (drivePanel.searchKeyPressed(keyCode, scanCode, modifiers)) {
                 return true;
             }
             return true;
