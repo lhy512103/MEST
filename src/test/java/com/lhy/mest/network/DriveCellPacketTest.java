@@ -59,31 +59,19 @@ class DriveCellPacketTest {
     }
 
     @Test
-    void priorityAcceptsAe2Steps() {
-        for (int delta : new int[] { 1, -1, 10, -10, 100, -100, 1000, -1000 }) {
-            assertTrue(DrivePriorityPacket.validDelta(delta));
-        }
-        for (int delta : new int[] { 0, 2, 50, 1001, Integer.MIN_VALUE }) {
-            assertTrue(!DrivePriorityPacket.validDelta(delta));
-        }
-    }
-
-    @Test
-    void priorityRejectsInvalidDeltaAndTrailingData() {
+    void priorityRejectsInvalidDriveAndTrailingData() {
         RegistryFriendlyByteBuf buf = registryBuffer();
         try {
-            var action = new DrivePriorityPacket(4, 8, 2, 1);
+            var action = new DrivePriorityPacket(4, 8, 2);
             DrivePriorityPacket.STREAM_CODEC.encode(buf, action);
             assertEquals(action, DrivePriorityPacket.STREAM_CODEC.decode(buf));
             buf.writeVarInt(4);
             buf.writeVarInt(8);
-            buf.writeVarInt(2);
-            buf.writeByte(3);
+            buf.writeVarInt(DriveCellListPacket.MAX_GROUPS);
             assertEquals(-1, DrivePriorityPacket.STREAM_CODEC.decode(buf).containerId());
             buf.writeVarInt(4);
             buf.writeVarInt(8);
             buf.writeVarInt(2);
-            buf.writeByte(-1);
             buf.writeByte(1);
             assertEquals(-1, DrivePriorityPacket.STREAM_CODEC.decode(buf).containerId());
             assertEquals(0, buf.readableBytes());

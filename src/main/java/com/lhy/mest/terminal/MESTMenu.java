@@ -29,6 +29,7 @@ import net.minecraft.world.item.crafting.StonecutterRecipe;
 
 import it.unimi.dsi.fastutil.ints.IntArraySet;
 import it.unimi.dsi.fastutil.ints.IntSet;
+import appeng.api.storage.StorageCells;
 import appeng.api.storage.StorageHelper;
 import appeng.api.inventories.InternalInventory;
 import appeng.api.networking.IGridNode;
@@ -1325,6 +1326,15 @@ public class MESTMenu extends CraftingTermMenu {
                         return initialCount;
                     }
                 }
+            }
+        }
+
+        if (driveCellSession != null && getPlayer() instanceof ServerPlayer player
+                && StorageCells.isCellHandled(input)) {
+            input = input.copy();
+            input.shrink(driveCellSession.insertCells(player, input));
+            if (input.isEmpty()) {
+                return initialCount;
             }
         }
 

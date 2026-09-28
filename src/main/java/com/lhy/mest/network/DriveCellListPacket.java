@@ -24,7 +24,8 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
             StreamCodec.ofMember(DriveCellListPacket::write, DriveCellListPacket::read);
 
     /** The index within groups is the drive ordinal used by each row and by priority actions. */
-    public record Group(Component name, int slots, int priority, boolean editable, boolean powered) {
+    public record Group(Component name, Component location, int slots, int priority, boolean editable,
+            boolean powered, long usedBytes, long totalBytes) {
     }
 
     /** Status is a {@code CellState} ordinal; capacity fields are zero when the cell exposes no byte usage. */
@@ -59,10 +60,13 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
         buf.writeVarInt(groups.size());
         for (Group group : groups) {
             ComponentSerialization.TRUSTED_STREAM_CODEC.encode(buf, group.name());
+            ComponentSerialization.TRUSTED_STREAM_CODEC.encode(buf, group.location());
             buf.writeVarInt(group.slots());
             buf.writeInt(group.priority());
             buf.writeBoolean(group.editable());
             buf.writeBoolean(group.powered());
+            buf.writeVarLong(group.usedBytes());
+            buf.writeVarLong(group.totalBytes());
         }
         buf.writeVarInt(rows.size());
         for (Row row : rows) {
@@ -91,14 +95,17 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
             List<Group> groups = new ArrayList<>(groupCount);
             for (int i = 0; i < groupCount; i++) {
                 Component name = ComponentSerialization.TRUSTED_STREAM_CODEC.decode(buf);
+                Component location = ComponentSerialization.TRUSTED_STREAM_CODEC.decode(buf);
                 int slots = buf.readVarInt();
                 int priority = buf.readInt();
                 boolean editable = buf.readBoolean();
                 boolean powered = buf.readBoolean();
+                long usedBytes = buf.readVarLong();
+                long totalBytes = buf.readVarLong();
                 if (slots < 1 || slots > 128) {
                     throw new IllegalArgumentException("Invalid drive group");
                 }
-                groups.add(new Group(name, slots, priority, editable, powered));
+                groups.add(new Group(name, location, slots, priority, editable, powered, usedBytes, totalBytes));
             }
             int size = buf.readVarInt();
             if (!validHeader(container, revision, start, total, groupCount, size)) {
@@ -140,7 +147,8 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
     private static boolean validEntries(List<Group> groups, List<Row> rows, int start, int total) {
         int slots = 0;
         for (Group group : groups) {
-            if (group.name() == null || group.slots() < 1 || group.slots() > 128) {
+            if (group.name() == null || group.location() == null || group.slots() < 1 || group.slots() > 128
+                    || group.usedBytes() < 0 || group.totalBytes() < 0) {
                 return false;
             }
             slots += group.slots();

@@ -77,8 +77,6 @@
   "gui.mesplicedterminal.network_toolkit": "网络工具",
   "gui.mesplicedterminal.drive": "ME 驱动器",
   "gui.mesplicedterminal.drive.empty": "当前网络没有驱动器",
-  "gui.mesplicedterminal.drive.priority.down": "降低驱动器优先级",
-  "gui.mesplicedterminal.drive.priority.up": "提高驱动器优先级",
   "gui.mesplicedterminal.toolkit.lock": "锁定槽位",
   "gui.mesplicedterminal.toolkit.lock.hint1": "左键有物品的槽位，即可锁定为该物品。",
   "gui.mesplicedterminal.toolkit.lock.hint2": "锁定的空槽只收该物品，Shift 放入时优先填入。",
@@ -188,8 +186,6 @@
   "gui.mesplicedterminal.combine_window": "组成组合模块（点击依次选择 1、2、3）",
   "gui.mesplicedterminal.combine_window.set": "组合模块 %s（点击切换到下一个，超过 3 则解除）",
   "gui.mesplicedterminal.drive.priority.value": "优先级：%s",
-  "gui.mesplicedterminal.drive.priority.wheel": "滚轮或点击调整（右键降低）",
-  "gui.mesplicedterminal.drive.priority.step": "Shift ×10，Ctrl ×100，Shift+Ctrl ×1000",
   "gui.mesplicedterminal.drive.online": "在线",
   "gui.mesplicedterminal.drive.offline": "离线",
   "gui.mesplicedterminal.drive.cells": "元件：%s / %s",
@@ -200,5 +196,7 @@
   "gui.mesplicedterminal.drive.status.empty": "空",
   "gui.mesplicedterminal.drive.status.not_empty": "已使用",
   "gui.mesplicedterminal.drive.status.types_full": "类型已满",
-  "gui.mesplicedterminal.drive.status.full": "已满"
+  "gui.mesplicedterminal.drive.status.full": "已满",
+  "gui.mesplicedterminal.drive.location": "位置：%s",
+  "gui.mesplicedterminal.drive.priority.open": "点击打开优先级设置"
 }

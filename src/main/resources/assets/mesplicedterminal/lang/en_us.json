@@ -77,8 +77,6 @@
   "gui.mesplicedterminal.network_toolkit": "Network Tool",
   "gui.mesplicedterminal.drive": "ME Drives",
   "gui.mesplicedterminal.drive.empty": "No connected drives",
-  "gui.mesplicedterminal.drive.priority.down": "Decrease drive priority",
-  "gui.mesplicedterminal.drive.priority.up": "Increase drive priority",
   "gui.mesplicedterminal.toolkit.lock": "Lock slots",
   "gui.mesplicedterminal.toolkit.lock.hint1": "Left-click a filled slot to lock it to that item.",
   "gui.mesplicedterminal.toolkit.lock.hint2": "Locked empty slots only accept that item and are filled first.",
@@ -188,8 +186,6 @@
   "gui.mesplicedterminal.combine_window": "Make this window a combined module (click to pick 1, 2 or 3)",
   "gui.mesplicedterminal.combine_window.set": "Combined module %s (click for the next slot, past 3 to release)",
   "gui.mesplicedterminal.drive.priority.value": "Priority: %s",
-  "gui.mesplicedterminal.drive.priority.wheel": "Scroll or click (right-click lowers) to adjust",
-  "gui.mesplicedterminal.drive.priority.step": "Shift x10, Ctrl x100, Shift+Ctrl x1000",
   "gui.mesplicedterminal.drive.online": "Online",
   "gui.mesplicedterminal.drive.offline": "Offline",
   "gui.mesplicedterminal.drive.cells": "Cells: %s / %s",
@@ -200,5 +196,7 @@
   "gui.mesplicedterminal.drive.status.empty": "Empty",
   "gui.mesplicedterminal.drive.status.not_empty": "In use",
   "gui.mesplicedterminal.drive.status.types_full": "Types full",
-  "gui.mesplicedterminal.drive.status.full": "Full"
+  "gui.mesplicedterminal.drive.status.full": "Full",
+  "gui.mesplicedterminal.drive.location": "Location: %s",
+  "gui.mesplicedterminal.drive.priority.open": "Click to open priority settings"
 }

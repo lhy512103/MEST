@@ -88,6 +88,10 @@ public final class MestTerminal {
                     ToolkitItemLocator.class,
                     ToolkitItemLocator::writeToPacket,
                     ToolkitItemLocator::readFromPacket);
+            MenuLocators.register(
+                    DrivePriorityLocator.class,
+                    DrivePriorityLocator::writeToPacket,
+                    DrivePriorityLocator::readFromPacket);
         });
     }
 }

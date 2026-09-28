@@ -6,9 +6,11 @@ import java.util.IdentityHashMap;
 import java.util.List;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Nameable;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -24,10 +26,12 @@ import appeng.blockentity.AEBaseInvBlockEntity;
 import appeng.blockentity.storage.DriveBlockEntity;
 import appeng.helpers.IPriorityHost;
 import appeng.me.cells.BasicCellInventory;
+import appeng.menu.MenuOpener;
+import appeng.menu.implementations.PriorityMenu;
+import appeng.menu.locator.ItemMenuHostLocator;
 
 import com.lhy.mest.network.DriveCellActionPacket;
 import com.lhy.mest.network.DriveCellListPacket;
-import com.lhy.mest.network.DrivePriorityPacket;
 
 /** Menu-scoped server snapshot. No remote slots are added to the fixed terminal container. */
 public final class DriveCellSession {
@@ -84,14 +88,25 @@ public final class DriveCellSession {
         List<DriveCellListPacket.Group> groups = new ArrayList<>(drives.size());
         for (Drive drive : drives) {
             count += drive.slots();
-            Component label = drive.block().getBlockState().getBlock().getName().copy().append(" (")
-                    .append(drive.block().getBlockPos().toShortString()).append(")");
+            Component label = drive.block() instanceof Nameable nameable && nameable.getCustomName() != null
+                    ? nameable.getCustomName()
+                    : drive.block().getBlockState().getBlock().getName();
+            String where = drive.block().getBlockPos().toShortString();
             if (drive.block().getLevel().dimension() != player.level().dimension()) {
-                label = label.copy().append(" @" + drive.block().getLevel().dimension().location());
+                where += " @" + drive.block().getLevel().dimension().location();
             }
             boolean editable = drive.block() instanceof IPriorityHost;
             int priority = editable ? ((IPriorityHost) drive.block()).getPriority() : 0;
-            groups.add(new DriveCellListPacket.Group(label, drive.slots(), priority, editable, drive.host().isPowered()));
+            long usedBytes = 0;
+            long totalBytes = 0;
+            for (int slot = 0; slot < drive.slots(); slot++) {
+                if (drive.host().getOriginalCellInventory(slot) instanceof BasicCellInventory cell) {
+                    usedBytes += Math.max(0, cell.getUsedBytes());
+                    totalBytes += Math.max(0, cell.getTotalBytes());
+                }
+            }
+            groups.add(new DriveCellListPacket.Group(label, Component.literal(where), drive.slots(), priority,
+                    editable, drive.host().isPowered(), usedBytes, totalBytes));
         }
         int start = Math.min(requestedStart, count);
         int end = (int) Math.min((long) count, (long) start + DriveCellListPacket.MAX_ROWS);
@@ -112,7 +127,7 @@ public final class DriveCellSession {
             }
         }
         if (grid != current || windowStart != start || totalSlots != count || truncated != scan.truncated()
-                || !sameHosts(hosts, drives) || !sameGroups(previousGroups, groups)
+                || !sameHosts(hosts, drives) || !previousGroups.equals(groups)
                 || !sameRows(previousRows, rows) || !sameSlots(references, nextRefs)) {
             grid = current;
             publish(player, start, count, scan.truncated(), drives, groups, nextRefs, rows);
@@ -165,25 +180,49 @@ public final class DriveCellSession {
         }
     }
 
-    public void changePriority(ServerPlayer player, int expectedRevision, int driveIndex, int delta) {
-        if (!DrivePriorityPacket.validDelta(delta) || expectedRevision != revision || grid == null
-                || connectedGrid(player) != grid || driveIndex < 0 || driveIndex >= hosts.size()
-                || driveIndex >= previousGroups.size()) {
+    public void openPriority(ServerPlayer player, int expectedRevision, int driveIndex) {
+        if (expectedRevision != revision || grid == null || connectedGrid(player) != grid || driveIndex < 0
+                || driveIndex >= hosts.size() || driveIndex >= previousGroups.size()
+                || !previousGroups.get(driveIndex).editable()) {
             return;
         }
         Drive drive = hosts.get(driveIndex);
-        if (!active(drive) || !(drive.block() instanceof IPriorityHost priorityHost)) {
+        if (!active(drive) || !(drive.block() instanceof IPriorityHost)
+                || !(menu.getMestHost().getLocator() instanceof ItemMenuHostLocator terminal)) {
             return;
         }
-        int priority = priorityHost.getPriority();
-        long next = Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, (long) priority + delta));
-        if (!previousGroups.get(driveIndex).editable() || priority != previousGroups.get(driveIndex).priority()
-                || next == priority) {
-            return;
+        MenuOpener.open(PriorityMenu.TYPE, player, new DrivePriorityLocator(terminal,
+                GlobalPos.of(drive.block().getLevel().dimension(), drive.block().getBlockPos())));
+    }
+
+    /** Places cells from a shift-click into empty drive slots; returns how many were inserted. */
+    public int insertCells(ServerPlayer player, ItemStack input) {
+        if (windowStart < 0 || grid == null || input.isEmpty() || !StorageCells.isCellHandled(input)
+                || connectedGrid(player) != grid) {
+            return 0;
         }
-        priorityHost.setPriority((int) next);
-        lastRequestTick = -1;
-        request(player, windowStart);
+        int inserted = 0;
+        for (Drive drive : hosts) {
+            if (inserted >= input.getCount() || !active(drive)) {
+                continue;
+            }
+            IItemHandler inventory = drive.inventory();
+            for (int slot = 0; slot < drive.slots() && inserted < input.getCount(); slot++) {
+                ItemStack one = input.copyWithCount(1);
+                if (!inventory.getStackInSlot(slot).isEmpty() || !inventory.isItemValid(slot, one)
+                        || !inventory.insertItem(slot, one, true).isEmpty()) {
+                    continue;
+                }
+                if (inventory.insertItem(slot, one, false).isEmpty()) {
+                    inserted++;
+                }
+            }
+        }
+        if (inserted > 0) {
+            lastRequestTick = -1;
+            request(player, windowStart);
+        }
+        return inserted;
     }
 
     private boolean active(Drive drive) {
@@ -343,22 +382,6 @@ public final class DriveCellSession {
         for (int i = 0; i < a.size(); i++) {
             if (a.get(i).drive().block() != b.get(i).drive().block()
                     || a.get(i).slot() != b.get(i).slot()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean sameGroups(List<DriveCellListPacket.Group> a, List<DriveCellListPacket.Group> b) {
-        if (a.size() != b.size()) {
-            return false;
-        }
-        for (int i = 0; i < a.size(); i++) {
-            var before = a.get(i);
-            var after = b.get(i);
-            if (before.slots() != after.slots() || before.priority() != after.priority()
-                    || before.editable() != after.editable() || before.powered() != after.powered()
-                    || !before.name().equals(after.name())) {
                 return false;
             }
         }
