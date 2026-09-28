@@ -14,16 +14,31 @@ import io.netty.buffer.Unpooled;
 import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.MenuProvider;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.common.CommonHooks;
+import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.connection.ConnectionType;
 
+import appeng.api.config.ShowPatternProviders;
 import appeng.api.crafting.PatternDetailsHelper;
 import appeng.api.implementations.blockentities.PatternContainerGroup;
 import appeng.api.inventories.InternalInventory;
 import appeng.api.networking.IGrid;
 import appeng.helpers.patternprovider.PatternContainer;
+import appeng.helpers.patternprovider.PatternProviderLogicHost;
+import appeng.menu.slot.RestrictedInputSlot;
 import appeng.util.inv.FilteredInternalInventory;
 import appeng.util.inv.PlayerInternalInventory;
 import appeng.util.inv.filter.IAEItemFilter;
@@ -75,12 +90,17 @@ public final class PatternAccessSession {
     private boolean subscribed;
     private boolean snapshotRequired;
     private boolean queueInvalid;
+    private ShowPatternProviders showMode = ShowPatternProviders.VISIBLE;
+    // Tracked by provider object, not id: ids are reassigned from 1 on every snapshot rebuild.
+    private PatternContainer lastUploadContainer;
+    private int lastUploadSlot = -1;
+    private ItemStack lastUploadPattern = ItemStack.EMPTY;
 
     public PatternAccessSession(MESTMenu menu) {
         this.menu = Objects.requireNonNull(menu);
     }
 
-    public void setSubscribed(ServerPlayer player, boolean subscribe) {
+    public void setSubscribed(ServerPlayer player, boolean subscribe, byte showModeOrdinal) {
         if (menu.getPlayer() != player) {
             return;
         }
@@ -89,6 +109,12 @@ public final class PatternAccessSession {
             clearServerState();
             return;
         }
+        ShowPatternProviders[] values = ShowPatternProviders.values();
+        ShowPatternProviders next = showModeOrdinal >= 0 && showModeOrdinal < values.length
+                ? values[showModeOrdinal]
+                : ShowPatternProviders.VISIBLE;
+        boolean modeChanged = showMode != next;
+        showMode = next;
         // Subscribe requests have their own budget so a client flooding request packets cannot
         // repeatedly force snapshot work within a single game tick.
         if (!subscribeRequestBudget.tryAcquire(player.serverLevel().getGameTime())) {
@@ -96,6 +122,8 @@ public final class PatternAccessSession {
         }
         if (!subscribed) {
             subscribed = true;
+            snapshotRequired = true;
+        } else if (modeChanged) {
             snapshotRequired = true;
         } else {
             requestResnapshot();
@@ -193,6 +221,19 @@ public final class PatternAccessSession {
             flush(player, gameTick);
             return;
         }
+        if (packet.action() == PatternProviderActionPacket.Action.OPEN_PROVIDER_UI) {
+            if (!openProviderUi(player, tracker)) {
+                player.displayClientMessage(
+                        Component.translatable("gui.mesplicedterminal.pattern_access.open_ui_failed"), true);
+            }
+            return;
+        }
+        if (packet.action() == PatternProviderActionPacket.Action.INSERT_INTO_PROVIDER) {
+            insertFromPlayerSlot(player, tracker, packet.providerSlot());
+            refreshTrackerContents(tracker);
+            flush(player, gameTick);
+            return;
+        }
         if (packet.providerSlot() < 0 || packet.providerSlot() >= tracker.inventory.size()) {
             return;
         }
@@ -202,6 +243,10 @@ public final class PatternAccessSession {
         switch (packet.action()) {
             case PICKUP_OR_SET_DOWN -> exchangeWithCarried(patternSlot);
             case QUICK_MOVE_TO_PLAYER -> quickMoveToPlayer(player, patternSlot);
+            case DROP -> dropFromSlot(player, patternSlot, false);
+            case DROP_STACK -> dropFromSlot(player, patternSlot, true);
+            case OPEN_PROVIDER_UI, INSERT_INTO_PROVIDER -> {
+            }
         }
 
         refreshTrackerContents(tracker);
@@ -216,9 +261,138 @@ public final class PatternAccessSession {
         menu.setCarried(PatternSlotTransactions.exchange(patternSlot, carried));
     }
 
+    private boolean includeProvider(PatternContainer container, InternalInventory inventory) {
+        if (showMode != ShowPatternProviders.ALL && !container.isVisibleInTerminal()) {
+            return false;
+        }
+        return showMode != ShowPatternProviders.NOT_FULL || inventory == null || !inventoryFull(inventory);
+    }
+
+    private static boolean inventoryFull(InternalInventory inventory) {
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            if (inventory.getStackInSlot(slot).isEmpty()) {
+                return false;
+            }
+        }
+        return inventory.size() > 0;
+    }
+
+    private void insertFromPlayerSlot(ServerPlayer player, Tracker tracker, int menuSlotIndex) {
+        if (menuSlotIndex < 0 || menuSlotIndex >= menu.slots.size()) {
+            return;
+        }
+        var slot = menu.getSlot(menuSlotIndex);
+        if (slot == null || !slot.mayPickup(player)) {
+            return;
+        }
+        ItemStack source = slot.getItem();
+        if (!PatternDetailsHelper.isEncodedPattern(source)) {
+            return;
+        }
+        var filter = new FilteredInternalInventory(tracker.inventory, ENCODED_PATTERN_FILTER);
+        ItemStack remaining = filter.addItems(source);
+        slot.set(remaining);
+        slot.setChanged();
+    }
+
+    private boolean openProviderUi(ServerPlayer player, Tracker tracker) {
+        PatternProviderLoc loc = PatternProviderLoc.from(tracker.container);
+        if (loc == null) {
+            return false;
+        }
+        ServerLevel level = player.server.getLevel(loc.dimension());
+        if (level == null || !level.isLoaded(loc.pos())) {
+            return false;
+        }
+        return tryOpenTarget(player, tracker.container, level, loc.pos(), loc.face());
+    }
+
+    /**
+     * Opens the UI of a block adjacent to the provider.
+     *
+     * <p>The menu-provider route is tried first because it only opens a container. Falling back to
+     * {@code useWithoutItem} simulates a real right-click, which would fire every other interaction
+     * the target block has (buttons, levers, machines with a use action) on a block the player may
+     * be thousands of blocks away from. It is therefore limited to block entities in the player's
+     * own dimension, where protection mods can veto it through {@code RightClickBlock}.
+     */
+    private boolean tryOpenTarget(ServerPlayer player, PatternContainer patternProvider,
+            ServerLevel level, BlockPos pos, Direction face) {
+        if (patternProvider instanceof PatternProviderLogicHost logicHost) {
+            var targets = logicHost.getTargets();
+            if (targets != null) {
+                for (Direction direction : targets) {
+                    if (tryTarget(player, level, pos.relative(direction), direction)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        if (face != null) {
+            return tryTarget(player, level, pos.relative(face), face);
+        }
+        for (Direction direction : Direction.values()) {
+            if (tryTarget(player, level, pos.relative(direction), direction)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean tryTarget(ServerPlayer player, ServerLevel level, BlockPos targetPos,
+            Direction providerToTarget) {
+        if (!level.isLoaded(targetPos) || level.getBlockState(targetPos).isAir()) {
+            return false;
+        }
+        // Spawn protection and world border, as for any other block interaction.
+        if (!level.mayInteract(player, targetPos)) {
+            return false;
+        }
+        var hit = new BlockHitResult(Vec3.atCenterOf(targetPos), providerToTarget.getOpposite(), targetPos, false);
+        // The event reads the player's level, so it can only vouch for targets in that dimension.
+        boolean sameLevel = level == player.level();
+        if (sameLevel) {
+            var event = CommonHooks.onRightClickBlock(player, InteractionHand.MAIN_HAND, targetPos, hit);
+            if (event.isCanceled() || event.getUseBlock() == TriState.FALSE) {
+                return false;
+            }
+        }
+        if (tryOpenAt(player, level, targetPos)) {
+            return true;
+        }
+        return sameLevel
+                && level.getBlockEntity(targetPos) != null
+                && tryUseTargetBlock(player, level, targetPos, hit);
+    }
+
+    private boolean tryOpenAt(ServerPlayer player, ServerLevel level, BlockPos pos) {
+        BlockEntity be = level.getBlockEntity(pos);
+        if (be instanceof MenuProvider menuProvider) {
+            return RemoteMenuAccess.open(player, menuProvider, level, pos, getCurrentGrid());
+        }
+        var provider = level.getBlockState(pos).getMenuProvider(level, pos);
+        return provider != null && RemoteMenuAccess.open(player, provider, level, pos, getCurrentGrid());
+    }
+
+    private boolean tryUseTargetBlock(ServerPlayer player, ServerLevel level, BlockPos targetPos,
+            BlockHitResult hit) {
+        var previousMenu = player.containerMenu;
+        level.getBlockState(targetPos).useWithoutItem(level, player, hit);
+        return RemoteMenuAccess.trackOpenedMenu(player, previousMenu, level, targetPos, getCurrentGrid());
+    }
+
     private static void quickMoveToPlayer(ServerPlayer player, FilteredInternalInventory patternSlot) {
         var playerInventory = new PlayerInternalInventory(player.getInventory());
         PatternSlotTransactions.quickMove(patternSlot, playerInventory);
+    }
+
+    private static void dropFromSlot(
+            ServerPlayer player, FilteredInternalInventory patternSlot, boolean wholeStack) {
+        ItemStack extracted = patternSlot.extractItem(0, wholeStack ? 64 : 1, false);
+        if (!extracted.isEmpty()) {
+            player.drop(extracted, false);
+        }
     }
 
     private void resetForUnavailable() {
@@ -250,7 +424,8 @@ public final class PatternAccessSession {
             trackersById.put(tracker.id, tracker);
             queueFull(tracker);
         }
-        snapshotRequired = false;
+        // An overflow during the rebuild already queued a RESET and asked for a new snapshot.
+        snapshotRequired = queueInvalid;
         lastSnapshotTick = ticks;
     }
 
@@ -298,7 +473,7 @@ public final class PatternAccessSession {
 
     private boolean refreshTrackerMetadata(Tracker tracker, IGrid grid) {
         var container = tracker.container;
-        if (container.getGrid() != grid || !container.isVisibleInTerminal()) {
+        if (container.getGrid() != grid || !includeProvider(container, container.getTerminalPatternInventory())) {
             removeTracker(tracker);
             return false;
         }
@@ -370,10 +545,13 @@ public final class PatternAccessSession {
                     break outer;
                 }
                 if (container == null || seen.put(container, Boolean.TRUE) != null
-                        || container.getGrid() != grid || !container.isVisibleInTerminal()) {
+                        || container.getGrid() != grid) {
                     continue;
                 }
                 var inventory = container.getTerminalPatternInventory();
+                if (!includeProvider(container, inventory)) {
+                    continue;
+                }
                 var group = container.getTerminalGroup();
                 if (inventory == null || group == null || inventory.size() <= 0
                         || inventory.size() > MAX_PROVIDER_SLOTS) {
@@ -410,7 +588,8 @@ public final class PatternAccessSession {
         var chunks = chunk(slots);
         for (int i = 0; i < chunks.size(); i++) {
             queue(PatternProviderListPacket.full(menu.containerId, epoch, tracker.id, tracker.revision,
-                    i, chunks.size(), tracker.inventory.size(), tracker.sortOrder, tracker.group, chunks.get(i)));
+                    i, chunks.size(), tracker.inventory.size(), tracker.sortOrder, tracker.group, chunks.get(i),
+                    PatternProviderLoc.from(tracker.container)));
         }
     }
 
@@ -436,7 +615,10 @@ public final class PatternAccessSession {
      * clientbound custom-payload limit even for patterns with multi-KiB NBT.
      */
     private int estimateEncodedSize(ItemStack stack) {
-        var buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), menu.getPlayer().registryAccess());
+        var buf = new RegistryFriendlyByteBuf(
+                Unpooled.buffer(),
+                menu.getPlayer().registryAccess(),
+                ConnectionType.NEOFORGE);
         try {
             ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, stack);
             return buf.readableBytes();
@@ -477,6 +659,57 @@ public final class PatternAccessSession {
         // Applies to every full-rebuild path (including trackedGrid != null, e.g. after a grid change or
         // a forced re-subscribe) so clients cannot trigger a snapshot rebuild more than once per cooldown.
         return epoch != 0 && ticks - lastSnapshotTick < MIN_RESNAPSHOT_INTERVAL_TICKS;
+    }
+
+    public boolean uploadFromSlot(RestrictedInputSlot encodedSlot, ServerPlayer player) {
+        ItemStack stack = encodedSlot.getItem();
+        if (stack.isEmpty() || !PatternDetailsHelper.isEncodedPattern(stack)) {
+            return false;
+        }
+        for (Tracker tracker : trackers.values()) {
+            if (tracker.inventory == null) {
+                continue;
+            }
+            for (int slot = 0; slot < tracker.inventory.size(); slot++) {
+                if (!tracker.inventory.getStackInSlot(slot).isEmpty()) {
+                    continue;
+                }
+                ItemStack inserting = stack.copyWithCount(1);
+                ItemStack leftover = tracker.inventory.insertItem(slot, inserting, false);
+                if (!leftover.isEmpty()) {
+                    continue;
+                }
+                encodedSlot.remove(1);
+                encodedSlot.setChanged();
+                lastUploadContainer = tracker.container;
+                lastUploadSlot = slot;
+                lastUploadPattern = inserting.copy();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void returnLastUpload(ServerPlayer player) {
+        if (lastUploadContainer == null || lastUploadSlot < 0) {
+            return;
+        }
+        Tracker tracker = trackers.get(lastUploadContainer);
+        if (tracker == null || tracker.inventory == null || lastUploadSlot >= tracker.inventory.size()) {
+            return;
+        }
+        // Only take back the pattern that was uploaded; the slot may have been emptied or reused.
+        ItemStack present = tracker.inventory.extractItem(lastUploadSlot, 1, true);
+        if (!ItemStack.isSameItemSameComponents(present, lastUploadPattern)) {
+            return;
+        }
+        ItemStack extracted = tracker.inventory.extractItem(lastUploadSlot, 1, false);
+        if (!player.getInventory().add(extracted)) {
+            player.drop(extracted, false);
+        }
+        lastUploadContainer = null;
+        lastUploadSlot = -1;
+        lastUploadPattern = ItemStack.EMPTY;
     }
 
     private IGrid getCurrentGrid() {

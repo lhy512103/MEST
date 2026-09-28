@@ -3,16 +3,21 @@ package com.lhy.mest.terminal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Equipable;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CraftingRecipe;
@@ -24,28 +29,48 @@ import net.minecraft.world.item.crafting.StonecutterRecipe;
 
 import it.unimi.dsi.fastutil.ints.IntArraySet;
 import it.unimi.dsi.fastutil.ints.IntSet;
+import appeng.api.storage.StorageHelper;
+import appeng.api.inventories.InternalInventory;
 import appeng.api.networking.IGridNode;
 import appeng.api.stacks.AEItemKey;
+import appeng.api.stacks.AEKey;
 import appeng.api.stacks.GenericStack;
+import appeng.api.storage.MEStorage;
+import appeng.helpers.InventoryAction;
 import appeng.api.crafting.PatternDetailsHelper;
 import appeng.core.definitions.AEItems;
 import appeng.crafting.pattern.AECraftingPattern;
 import appeng.crafting.pattern.AEProcessingPattern;
+import appeng.menu.MenuOpener;
+import appeng.menu.SlotSemantic;
 import appeng.menu.SlotSemantics;
 import appeng.menu.guisync.GuiSync;
 import appeng.menu.implementations.MenuTypeBuilder;
 import appeng.menu.me.items.CraftingTermMenu;
+import appeng.menu.slot.AppEngSlot;
 import appeng.menu.slot.FakeSlot;
 import appeng.menu.slot.PatternTermSlot;
+import appeng.items.contents.NetworkToolMenuHost;
+import appeng.items.tools.NetworkToolItem;
 import appeng.menu.slot.RestrictedInputSlot;
 import appeng.parts.encoding.EncodingMode;
 import appeng.parts.encoding.PatternEncodingLogic;
 import appeng.util.ConfigInventory;
 
+import de.mari_023.ae2wtlib.api.gui.AE2wtlibSlotSemantics;
 import de.mari_023.ae2wtlib.api.terminal.ItemWUT;
+import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
+import de.mari_023.ae2wtlib.wct.ArmorSlot;
+import de.mari_023.ae2wtlib.wct.magnet_card.MagnetHandler;
+import de.mari_023.ae2wtlib.wct.magnet_card.MagnetMode;
 
 import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.compat.MestCraftingPatternAutoUpload;
+import com.lhy.mest.compat.plus.PlusEncodingUpload;
+import com.lhy.mest.compat.UselessPatternBridge;
 import com.lhy.mest.network.PatternAccessSession;
+import com.lhy.mest.network.PatternCacheActionPacket;
+import com.lhy.mest.module.MestModuleSlots;
 
 /**
  * Container for the ME Spliced Terminal. Extends AE2's {@link CraftingTermMenu} (which itself extends
@@ -68,10 +93,19 @@ public class MESTMenu extends CraftingTermMenu {
     private static final String ACTION_SET_PATTERN_FLUID_SUBSTITUTION = "mestSetPatternFluidSubstitution";
     private static final String ACTION_SET_STONECUTTING_RECIPE_ID = "mestSetStonecuttingRecipeId";
     private static final String ACTION_CYCLE_PROCESSING_OUTPUT = "mestCycleProcessingOutput";
+    private static final String ACTION_SCALE_ENCODING = "mestScaleEncoding";
+    private static final String ACTION_UPLOAD_PATTERN = "mestUploadPattern";
+    private static final String ACTION_REQUEST_PROVIDERS = "mestRequestProviders";
+    private static final String ACTION_MAGNET_MENU = "magnetMenu";
+    private static final String ACTION_TRASH_MENU = "trash";
+    private static final String ACTION_CLOSE_TRASH = "closeTrash";
+    private static final String ACTION_SET_TOOLKIT_OPEN = "mestSetToolkitOpen";
+    private static final String ACTION_SET_USELESS_PATTERN = "mestSetUselessPattern";
 
     private final MESTMenuHost host;
     private final PatternAccessSession patternAccessSession;
     private final PatternEncodingLogic patternEncodingLogic;
+    private boolean blankPatternFilled;
     private final FakeSlot[] patternCraftingSlots = new FakeSlot[CRAFTING_GRID_SLOTS];
     private final FakeSlot[] processingInputSlots = new FakeSlot[AEProcessingPattern.MAX_INPUT_SLOTS];
     private final FakeSlot[] processingOutputSlots = new FakeSlot[AEProcessingPattern.MAX_OUTPUT_SLOTS];
@@ -99,6 +133,12 @@ public class MESTMenu extends CraftingTermMenu {
     // lookup runs once at the end of the batch instead of once per slot.
     private boolean patternCraftingOutputDirty;
     private boolean batchingSlotUpdates;
+    @Nullable
+    private ResourceLocation uselessPatternRecipeId;
+    @Nullable
+    private String uselessPatternFingerprint;
+    @Nullable
+    private String uselessPatternSourceId;
 
     @GuiSync(93)
     public EncodingMode patternEncodingMode = EncodingMode.CRAFTING;
@@ -109,6 +149,10 @@ public class MESTMenu extends CraftingTermMenu {
     @GuiSync(90)
     @Nullable
     public ResourceLocation stonecuttingRecipeId;
+    @GuiSync(89)
+    public boolean trashOpen;
+    @GuiSync(88)
+    public boolean toolkitOpen;
 
     public final IntSet patternSlotsSupportingFluidSubstitution = new IntArraySet();
 
@@ -120,14 +164,28 @@ public class MESTMenu extends CraftingTermMenu {
         this.encodedInputsInv = patternEncodingLogic.getEncodedInputInv();
         this.encodedOutputsInv = patternEncodingLogic.getEncodedOutputInv();
 
+        addSlot(new RestrictedInputSlot(
+                        RestrictedInputSlot.PlacableItemType.QE_SINGULARITY,
+                        host.getSubInventory(WTMenuHost.INV_SINGULARITY),
+                        0),
+                AE2wtlibSlotSemantics.SINGULARITY);
+        addCraftingTerminalEquipmentSlots(ip);
+
         addPatternEncodingSlots();
+        addPatternCacheSlots();
+        addTrashSlots();
+        addToolkitSlots();
+        addToolkitNetworkToolSlots();
+        addTerminalNetworkToolkitSlots();
+        // Add-on modules come last so built-in slot indices never shift.
+        MestModuleSlots.addTo(this, host.getItemStack(), this::addSlot);
 
         this.patternEncodingMode = patternEncodingLogic.getMode();
         this.patternSubstitute = patternEncodingLogic.isSubstitution();
         this.patternSubstituteFluids = patternEncodingLogic.isFluidSubstitution();
         this.stonecuttingRecipeId = patternEncodingLogic.getStonecuttingRecipeId();
 
-        registerClientAction(ACTION_ENCODE_PATTERN, this::encodePattern);
+        registerClientAction(ACTION_ENCODE_PATTERN, Boolean.class, this::encodePattern);
         registerClientAction(ACTION_CLEAR_PATTERN, this::clearPatternEncoding);
         registerClientAction(ACTION_SET_PATTERN_MODE, EncodingMode.class, this::setPatternEncodingMode);
         registerClientAction(ACTION_SET_PATTERN_SUBSTITUTION, Boolean.class, this::setPatternSubstitute);
@@ -135,6 +193,14 @@ public class MESTMenu extends CraftingTermMenu {
         registerClientAction(ACTION_SET_STONECUTTING_RECIPE_ID, ResourceLocation.class,
                 this::setStonecuttingRecipeId);
         registerClientAction(ACTION_CYCLE_PROCESSING_OUTPUT, this::cycleProcessingOutput);
+        registerClientAction(ACTION_SCALE_ENCODING, Integer.class, this::scaleEncodingPattern);
+        registerClientAction(ACTION_UPLOAD_PATTERN, Boolean.class, this::uploadEncodedPattern);
+        registerClientAction(ACTION_REQUEST_PROVIDERS, this::requestProviderList);
+        registerClientAction(ACTION_MAGNET_MENU, this::openMagnetMenu);
+        registerClientAction(ACTION_TRASH_MENU, this::openTrashMenu);
+        registerClientAction(ACTION_CLOSE_TRASH, this::closeTrash);
+        registerClientAction(ACTION_SET_TOOLKIT_OPEN, Boolean.class, this::setToolkitOpen);
+        registerClientAction(ACTION_SET_USELESS_PATTERN, String.class, this::setUselessPattern);
 
         updateStonecuttingRecipes();
         updatePatternCraftingOutput();
@@ -150,22 +216,158 @@ public class MESTMenu extends CraftingTermMenu {
         return patternAccessSession;
     }
 
+    /**
+     * True while this menu is the player's open, valid terminal. Covers every client packet that
+     * mutates terminal-owned state but does not need a live ME grid link (pattern cache, trash,
+     * encoding prefs).
+     */
+    public boolean canUseTerminal(ServerPlayer player) {
+        return isServerSide()
+                && getPlayer() == player
+                && player.containerMenu == this
+                && isValidMenu()
+                && stillValid(player)
+                && host.isValid();
+    }
+
     public boolean canUsePatternAccess(ServerPlayer player) {
-        if (!isServerSide()
-                || getPlayer() != player
-                || player.containerMenu != this
-                || !isValidMenu()
-                || !stillValid(player)
-                || !host.isValid()
-                || !getLinkStatus().connected()) {
+        if (!canUseTerminal(player) || !getLinkStatus().connected()) {
             return false;
         }
         var node = getGridNode();
         return node != null && node.isActive() && node.getGrid() != null;
     }
 
+    public MESTMenuHost getMestHost() {
+        return host;
+    }
+
     public boolean isWUT() {
         return host.getItemStack().getItem() instanceof ItemWUT;
+    }
+
+    public MagnetMode getMagnetMode() {
+        return MagnetHandler.getMagnetMode(host.getItemStack());
+    }
+
+    public void openMagnetMenu() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_MAGNET_MENU);
+            return;
+        }
+        MenuOpener.open(MestMagnetMenu.TYPE, getPlayer(), getLocator());
+    }
+
+    public void openTrashMenu() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_TRASH_MENU);
+            return;
+        }
+        trashOpen = true;
+    }
+
+    public void closeTrash() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_CLOSE_TRASH);
+            return;
+        }
+        host.clearTrash();
+        trashOpen = false;
+    }
+
+    public boolean isTrashOpen() {
+        return trashOpen;
+    }
+
+    public void setToolkitOpen(boolean open) {
+        if (isClientSide()) {
+            sendClientAction(ACTION_SET_TOOLKIT_OPEN, open);
+            toolkitOpen = open;
+            return;
+        }
+        toolkitOpen = open;
+    }
+
+    public List<Slot> getTrashSlots() {
+        return getSlots(AE2wtlibSlotSemantics.TRASH);
+    }
+
+    /** Slots an add-on module registered through {@code RegisterMestModuleSlotsEvent}. */
+    public List<Slot> getModuleSlots(String moduleId) {
+        SlotSemantic semantic = MestModuleSlots.semantic(moduleId);
+        return semantic == null ? List.of() : getSlots(semantic);
+    }
+
+    public List<Slot> getToolkitSlots() {
+        return getSlots(MestSlotSemantics.TOOLKIT);
+    }
+
+    /**
+     * A carried vanilla network tool wins, matching AE machines (which keep AE2's own toolbox in
+     * that case); otherwise the panel shows the terminal's built-in upgrade inventory.
+     */
+    public List<Slot> getNetworkToolkitSlots() {
+        List<Slot> vanilla = getSlots(SlotSemantics.TOOLBOX);
+        return vanilla.isEmpty() ? getSlots(MestSlotSemantics.NETWORK_TOOLKIT) : vanilla;
+    }
+
+    public ItemStack getToolkitMemoryStack(int toolkitIndex) {
+        InternalInventory memory = host.getToolkitMemoryInventory();
+        if (toolkitIndex < 0 || toolkitIndex >= memory.size()) {
+            return ItemStack.EMPTY;
+        }
+        return memory.getStackInSlot(toolkitIndex);
+    }
+
+    public boolean hasToolkitMemory(int toolkitIndex) {
+        return !getToolkitMemoryStack(toolkitIndex).isEmpty();
+    }
+
+    public void setToolkitMemorySlot(int toolkitIndex, boolean rememberFromSlot) {
+        InternalInventory memory = host.getToolkitMemoryInventory();
+        InternalInventory toolkit = host.getToolkitInventory();
+        if (toolkitIndex < 0 || toolkitIndex >= memory.size() || toolkitIndex >= toolkit.size()) {
+            return;
+        }
+        if (!rememberFromSlot) {
+            memory.setItemDirect(toolkitIndex, ItemStack.EMPTY);
+            broadcastChanges();
+            return;
+        }
+        ItemStack stack = toolkit.getStackInSlot(toolkitIndex);
+        if (stack.isEmpty()) {
+            return;
+        }
+        memory.setItemDirect(toolkitIndex, stack.copyWithCount(1));
+        broadcastChanges();
+    }
+
+    @Override
+    protected boolean canSlotsBeHidden(SlotSemantic semantic) {
+        return semantic == AE2wtlibSlotSemantics.OFFHAND
+                || semantic == AE2wtlibSlotSemantics.HELMET
+                || semantic == AE2wtlibSlotSemantics.CHESTPLATE
+                || semantic == AE2wtlibSlotSemantics.LEGGINGS
+                || semantic == AE2wtlibSlotSemantics.BOOTS;
+    }
+
+    private void addCraftingTerminalEquipmentSlots(Inventory ip) {
+        addSlot(new ArmorSlot(ip, ArmorSlot.Armor.HEAD) {
+            @Override
+            public boolean mayPlace(ItemStack stack) {
+                Item item = stack.getItem();
+                return item instanceof BlockItem blockItem && blockItem.getBlock() instanceof Equipable
+                        || super.mayPlace(stack);
+            }
+        }, AE2wtlibSlotSemantics.HELMET);
+        addSlot(new ArmorSlot(ip, ArmorSlot.Armor.CHEST), AE2wtlibSlotSemantics.CHESTPLATE);
+        addSlot(new ArmorSlot(ip, ArmorSlot.Armor.LEGS), AE2wtlibSlotSemantics.LEGGINGS);
+        addSlot(new ArmorSlot(ip, ArmorSlot.Armor.FEET), AE2wtlibSlotSemantics.BOOTS);
+        if (Integer.valueOf(40).equals(host.getPlayerInventorySlot())) {
+            addSlot(new ArmorSlot.DisabledOffhandSlot(ip), AE2wtlibSlotSemantics.OFFHAND);
+        } else {
+            addSlot(new ArmorSlot(ip, ArmorSlot.Armor.OFFHAND), AE2wtlibSlotSemantics.OFFHAND);
+        }
     }
 
     public PatternEncodingLogic getPatternEncodingLogic() {
@@ -229,8 +431,12 @@ public class MESTMenu extends CraftingTermMenu {
     }
 
     public void encodePattern() {
+        encodePattern(false);
+    }
+
+    public void encodePattern(boolean shiftDown) {
         if (isClientSide()) {
-            sendClientAction(ACTION_ENCODE_PATTERN);
+            sendClientAction(ACTION_ENCODE_PATTERN, shiftDown);
             return;
         }
 
@@ -255,9 +461,62 @@ public class MESTMenu extends CraftingTermMenu {
             }
 
             this.encodedPatternSlot.set(encodedPattern);
+            if (!shiftDown
+                    && (patternEncodingMode == EncodingMode.CRAFTING
+                    || patternEncodingMode == EncodingMode.SMITHING_TABLE
+                    || patternEncodingMode == EncodingMode.STONECUTTING)
+                    && getPlayer() instanceof ServerPlayer player) {
+                var node = getGridNode();
+                if (node != null) {
+                    MestCraftingPatternAutoUpload.tryUpload(player, encodedPatternSlot, node.getGrid());
+                }
+            }
         } else {
             clearEncodedPatternOnly();
         }
+    }
+
+    public void selectUselessPattern(ResourceLocation recipeId, String fingerprint, String sourceId) {
+        String selection = recipeId + "\u0000" + fingerprint + "\u0000" + sourceId;
+        if (isClientSide()) {
+            setUselessPattern(selection);
+            sendClientAction(ACTION_SET_USELESS_PATTERN, selection);
+        }
+    }
+
+    private void setUselessPattern(String selection) {
+        String[] parts = selection.split("\\u0000", -1);
+        if (parts.length != 3) {
+            return;
+        }
+        ResourceLocation recipeId = ResourceLocation.tryParse(parts[0]);
+        if (recipeId == null || parts[1].isEmpty() || parts[2].isEmpty()) {
+            return;
+        }
+        uselessPatternRecipeId = recipeId;
+        uselessPatternFingerprint = parts[1];
+        uselessPatternSourceId = parts[2];
+    }
+
+    @Nullable
+    public ResourceLocation getUselessPatternRecipeId() {
+        return uselessPatternRecipeId;
+    }
+
+    @Nullable
+    public String getUselessPatternFingerprint() {
+        return uselessPatternFingerprint;
+    }
+
+    @Nullable
+    public String getUselessPatternSourceId() {
+        return uselessPatternSourceId;
+    }
+
+    public void clearUselessPatternSelection() {
+        uselessPatternRecipeId = null;
+        uselessPatternFingerprint = null;
+        uselessPatternSourceId = null;
     }
 
     public void clearPatternEncoding() {
@@ -305,6 +564,134 @@ public class MESTMenu extends CraftingTermMenu {
     public boolean canCycleProcessingOutputs() {
         return patternEncodingMode == EncodingMode.PROCESSING
                 && Arrays.stream(processingOutputSlots).filter(s -> !s.getItem().isEmpty()).count() > 1;
+    }
+
+    /**
+     * EAEP-style processing encoder scale. {@code code}: 2/3/5 multiply, -2/-3/-5 divide,
+     * 0 restore ratio, 1 rotate outputs.
+     */
+    public void scaleEncodingPattern(int code) {
+        if (isClientSide()) {
+            sendClientAction(ACTION_SCALE_ENCODING, code);
+            return;
+        }
+        if (patternEncodingMode != EncodingMode.PROCESSING) {
+            return;
+        }
+        if (code == 1) {
+            cycleProcessingOutput();
+            return;
+        }
+        if (code == 0) {
+            long gcd = PatternEncodingAmounts.sharedGcd(
+                    PatternEncodingAmounts.copyInv(encodedInputsInv), PatternEncodingAmounts.copyInv(encodedOutputsInv));
+            if (gcd > 1L) {
+                writeInv(encodedInputsInv, PatternEncodingAmounts.divideStacks(
+                        PatternEncodingAmounts.copyInv(encodedInputsInv), gcd));
+                writeInv(encodedOutputsInv, PatternEncodingAmounts.divideStacks(
+                        PatternEncodingAmounts.copyInv(encodedOutputsInv), gcd));
+            }
+            broadcastChanges();
+            return;
+        }
+        boolean divide = code < 0;
+        int scale = Math.abs(code);
+        var input = PatternEncodingAmounts.copyInvArray(encodedInputsInv);
+        var output = PatternEncodingAmounts.copyInvArray(encodedOutputsInv);
+        if (!PatternEncodingAmounts.canScale(input, scale, divide)
+                || !PatternEncodingAmounts.canScale(output, scale, divide)) {
+            return;
+        }
+        writeInv(encodedInputsInv, Arrays.asList(PatternEncodingAmounts.scaleStacks(input, scale, divide)));
+        writeInv(encodedOutputsInv, Arrays.asList(PatternEncodingAmounts.scaleStacks(output, scale, divide)));
+        broadcastChanges();
+    }
+
+    public void requestProviderList() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_REQUEST_PROVIDERS);
+            return;
+        }
+        if (PlusEncodingUpload.available() && getPlayer() instanceof ServerPlayer player) {
+            PlusEncodingUpload.sendPickerList(player);
+        }
+    }
+
+    public void uploadEncodedPattern(boolean returnLast) {
+        if (isClientSide()) {
+            sendClientAction(ACTION_UPLOAD_PATTERN, returnLast);
+            return;
+        }
+        if (!(getPlayer() instanceof ServerPlayer player)) {
+            return;
+        }
+        if (returnLast) {
+            patternAccessSession.returnLastUpload(player);
+            return;
+        }
+        if (PlusEncodingUpload.available() && PlusEncodingUpload.beginAndOpenPicker(player, encodedPatternSlot)) {
+            return;
+        }
+        if (!patternAccessSession.uploadFromSlot(encodedPatternSlot, player)) {
+            player.displayClientMessage(
+                    Component.translatable("gui.mesplicedterminal.pattern_upload.no_provider"), true);
+        }
+    }
+
+    private void tryFillBlankPattern() {
+        if (blankPatternFilled || blankPatternSlot == null || !getLinkStatus().connected()) {
+            return;
+        }
+        ItemStack current = blankPatternSlot.getItem();
+        if (!current.isEmpty() && !AEItems.BLANK_PATTERN.is(current)) {
+            return;
+        }
+        int space = Math.min(
+                blankPatternSlot.getMaxStackSize() - current.getCount(),
+                AEItems.BLANK_PATTERN.stack(1).getMaxStackSize());
+        if (space <= 0) {
+            blankPatternFilled = true;
+            return;
+        }
+        var node = getGridNode();
+        if (node == null || node.getGrid() == null) {
+            return;
+        }
+        var storage = node.getGrid().getStorageService().getInventory();
+        var power = node.getGrid().getEnergyService();
+        if (storage == null || power == null) {
+            return;
+        }
+        AEItemKey blankKey = AEItemKey.of(AEItems.BLANK_PATTERN.asItem());
+        long extracted = appeng.api.storage.StorageHelper.poweredExtraction(
+                power, storage, blankKey, space, getActionSource());
+        if (extracted <= 0L) {
+            return;
+        }
+        int toInsert = (int) Math.min(extracted, space);
+        if (current.isEmpty()) {
+            blankPatternSlot.set(AEItems.BLANK_PATTERN.stack(toInsert));
+        } else {
+            current.grow(toInsert);
+            blankPatternSlot.set(current);
+        }
+        long leftover = extracted - toInsert;
+        if (leftover > 0L) {
+            appeng.api.storage.StorageHelper.poweredInsert(
+                    power, storage, blankKey, leftover, getActionSource());
+        }
+        blankPatternFilled = true;
+    }
+
+    private static void writeInv(ConfigInventory inventory, List<GenericStack> stacks) {
+        inventory.beginBatch();
+        try {
+            for (int i = 0; i < inventory.size(); i++) {
+                inventory.setStack(i, i < stacks.size() ? stacks.get(i) : null);
+            }
+        } finally {
+            inventory.endBatch();
+        }
     }
 
     @Contract("null -> false")
@@ -463,6 +850,109 @@ public class MESTMenu extends CraftingTermMenu {
         this.encodedPatternSlot.setStackLimit(1);
     }
 
+    private void addPatternCacheSlots() {
+        var inventory = host.getPatternCacheInventory();
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            var cacheSlot = new RestrictedInputSlot(
+                    RestrictedInputSlot.PlacableItemType.ENCODED_PATTERN, inventory, slot);
+            cacheSlot.setIcon(appeng.client.gui.Icon.BACKGROUND_ENCODED_PATTERN);
+            addSlot(cacheSlot, MestSlotSemantics.PATTERN_CACHE);
+        }
+    }
+
+    public List<Slot> getPatternCacheSlots() {
+        return getSlots(MestSlotSemantics.PATTERN_CACHE);
+    }
+
+    private void addTrashSlots() {
+        InternalInventory inventory = host.getTrashInventory();
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            addSlot(new AppEngSlot(inventory, slot), AE2wtlibSlotSemantics.TRASH);
+        }
+    }
+
+    private void addToolkitSlots() {
+        InternalInventory inventory = host.getToolkitInventory();
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            addSlot(new ToolkitSlot(inventory, slot, this), MestSlotSemantics.TOOLKIT);
+        }
+    }
+
+    /**
+     * Vanilla {@link ToolboxMenu} only searches the player inventory. If the network tool is in
+     * the toolkit, attach the same TOOLBOX slots through {@link ToolkitItemLocator}.
+     */
+    private void addToolkitNetworkToolSlots() {
+        if (getToolbox().isPresent()) {
+            return;
+        }
+        InternalInventory toolkit = host.getToolkitInventory();
+        for (int index = 0; index < toolkit.size(); index++) {
+            ItemStack stack = toolkit.getStackInSlot(index);
+            if (!(stack.getItem() instanceof NetworkToolItem tool)) {
+                continue;
+            }
+            NetworkToolMenuHost<?> toolHost = tool.getMenuHost(getPlayer(), new ToolkitItemLocator(index), null);
+            if (toolHost == null) {
+                continue;
+            }
+            InternalInventory upgrades = toolHost.getInventory();
+            for (int slot = 0; slot < upgrades.size(); slot++) {
+                addSlot(new ToolkitToolboxSlot(upgrades, slot, toolHost), SlotSemantics.TOOLBOX);
+            }
+            return;
+        }
+    }
+
+    /**
+     * AE2's {@code ToolboxMenu.tick} closes the menu once the tool is gone; these slots live in our
+     * menu instead, so they freeze rather than touch whatever stack now sits at that index.
+     */
+    private static final class ToolkitToolboxSlot extends RestrictedInputSlot {
+        private final NetworkToolMenuHost<?> toolHost;
+
+        ToolkitToolboxSlot(InternalInventory upgrades, int slot, NetworkToolMenuHost<?> toolHost) {
+            super(RestrictedInputSlot.PlacableItemType.UPGRADES, upgrades, slot);
+            this.toolHost = toolHost;
+        }
+
+        @Override
+        public ItemStack getItem() {
+            return toolHost.isValid() ? super.getItem() : ItemStack.EMPTY;
+        }
+
+        @Override
+        public boolean mayPlace(ItemStack stack) {
+            return toolHost.isValid() && super.mayPlace(stack);
+        }
+
+        @Override
+        public boolean mayPickup(Player player) {
+            return toolHost.isValid() && super.mayPickup(player);
+        }
+
+        @Override
+        public void set(ItemStack stack) {
+            if (toolHost.isValid()) {
+                super.set(stack);
+            }
+        }
+
+        @Override
+        public ItemStack remove(int amount) {
+            return toolHost.isValid() ? super.remove(amount) : ItemStack.EMPTY;
+        }
+    }
+
+    private void addTerminalNetworkToolkitSlots() {
+        InternalInventory inventory = host.getNetworkToolkitInventory();
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            addSlot(new RestrictedInputSlot(
+                    RestrictedInputSlot.PlacableItemType.UPGRADES, inventory, slot),
+                    MestSlotSemantics.NETWORK_TOOLKIT);
+        }
+    }
+
     private ItemStack updatePatternCraftingOutput() {
         // During super-construction (CraftingTermMenu.<init> calls updateCurrentRecipeAndOutput, which
         // fires onSlotChange before our fields are initialised) encodedInputsInv is still null, and
@@ -601,7 +1091,8 @@ public class MESTMenu extends CraftingTermMenu {
             return null;
         }
 
-        return PatternDetailsHelper.encodeProcessingPattern(Arrays.asList(inputs), Arrays.asList(outputs));
+        ItemStack encoded = PatternDetailsHelper.encodeProcessingPattern(Arrays.asList(inputs), Arrays.asList(outputs));
+        return UselessPatternBridge.convert(this, encoded);
     }
 
     @Nullable
@@ -763,6 +1254,9 @@ public class MESTMenu extends CraftingTermMenu {
         if (patternAccessSession != null) {
             patternAccessSession.serverTick();
         }
+        if (isServerSide()) {
+            tryFillBlankPattern();
+        }
     }
 
     @Override
@@ -806,6 +1300,28 @@ public class MESTMenu extends CraftingTermMenu {
     protected int transferStackToMenu(ItemStack input) {
         int initialCount = input.getCount();
 
+        if (prefersToolkitQuickMove()) {
+            input = insertIntoToolkit(input, true);
+            if (input.isEmpty()) {
+                return initialCount;
+            }
+            input = insertIntoToolkit(input, false);
+            if (input.isEmpty()) {
+                return initialCount;
+            }
+        }
+
+        if (trashOpen) {
+            for (Slot trashSlot : getTrashSlots()) {
+                if (trashSlot.mayPlace(input)) {
+                    input = trashSlot.safeInsert(input);
+                    if (input.isEmpty()) {
+                        return initialCount;
+                    }
+                }
+            }
+        }
+
         if (blankPatternSlot.mayPlace(input)) {
             input = blankPatternSlot.safeInsert(input);
             if (input.isEmpty()) {
@@ -820,7 +1336,244 @@ public class MESTMenu extends CraftingTermMenu {
             }
         }
 
+        if (PatternDetailsHelper.isEncodedPattern(input)) {
+            for (Slot cacheSlot : getPatternCacheSlots()) {
+                if (cacheSlot.mayPlace(input)) {
+                    input = cacheSlot.safeInsert(input);
+                    if (input.isEmpty()) {
+                        return initialCount;
+                    }
+                }
+            }
+        }
+
         int transferred = initialCount - input.getCount();
         return transferred + super.transferStackToMenu(input);
+    }
+
+    @Override
+    protected void handleNetworkInteraction(ServerPlayer player, AEKey clickedKey, InventoryAction action) {
+        if (prefersToolkitQuickMove() && clickedKey instanceof AEItemKey itemKey
+                && itemKey.toStack().getMaxStackSize() <= 1) {
+            if (action == InventoryAction.SHIFT_CLICK) {
+                insertFromNetworkToToolkit(itemKey);
+                return;
+            }
+            if (action == InventoryAction.MOVE_REGION) {
+                int limit = getToolkitSlots().size();
+                for (int i = 0; i < limit && insertFromNetworkToToolkit(itemKey); i++) {
+                }
+                return;
+            }
+        }
+        if (trashOpen && clickedKey instanceof AEItemKey itemKey) {
+            if (action == InventoryAction.SHIFT_CLICK) {
+                insertFromNetworkToTrash(itemKey);
+                return;
+            }
+            if (action == InventoryAction.MOVE_REGION) {
+                int limit = getTrashSlots().size();
+                for (int i = 0; i < limit && insertFromNetworkToTrash(itemKey); i++) {
+                }
+                return;
+            }
+        }
+        super.handleNetworkInteraction(player, clickedKey, action);
+    }
+
+    private boolean prefersToolkitQuickMove() {
+        return toolkitOpen && ToolkitBarState.isQuickMoveEnabled(getPlayer());
+    }
+
+    private ItemStack insertIntoToolkit(ItemStack input, boolean rememberedEmptyOnly) {
+        for (Slot toolkitSlot : getToolkitSlots()) {
+            if (input.isEmpty()) {
+                break;
+            }
+            if (rememberedEmptyOnly) {
+                if (!(toolkitSlot instanceof ToolkitSlot slot)
+                        || toolkitSlot.hasItem()
+                        || !hasToolkitMemory(slot.toolkitIndex())) {
+                    continue;
+                }
+            }
+            if (toolkitSlot.mayPlace(input)) {
+                input = toolkitSlot.safeInsert(input);
+            }
+        }
+        return input;
+    }
+
+    private boolean insertFromNetworkToToolkit(AEItemKey itemKey) {
+        return moveFromNetwork(itemKey, 1, stack -> insertIntoToolkit(insertIntoToolkit(stack, true), false));
+    }
+
+    private boolean insertFromNetworkToTrash(AEItemKey itemKey) {
+        return moveFromNetwork(itemKey, itemKey.getMaxStackSize(), stack -> {
+            for (Slot trashSlot : getTrashSlots()) {
+                if (stack.isEmpty()) {
+                    break;
+                }
+                if (trashSlot.mayPlace(stack)) {
+                    stack = trashSlot.safeInsert(stack);
+                }
+            }
+            return stack;
+        });
+    }
+
+    /**
+     * Extracts first (with power) and only then places the items, so the amount handed out can
+     * never exceed what the network actually gave up. Whatever does not fit goes back.
+     */
+    private boolean moveFromNetwork(AEItemKey itemKey, int amount, UnaryOperator<ItemStack> placer) {
+        IGridNode node = getGridNode();
+        if (node == null || node.getGrid() == null) {
+            return false;
+        }
+        MEStorage storage = node.getGrid().getStorageService().getInventory();
+        var energy = node.getGrid().getEnergyService();
+        long extracted = StorageHelper.poweredExtraction(energy, storage, itemKey, amount, getActionSource());
+        if (extracted <= 0L) {
+            return false;
+        }
+        ItemStack remainder = placer.apply(itemKey.toStack((int) extracted));
+        long placed = extracted - remainder.getCount();
+        if (!remainder.isEmpty()) {
+            long returned = StorageHelper.poweredInsert(
+                    energy, storage, itemKey, remainder.getCount(), getActionSource());
+            remainder.shrink((int) returned);
+            if (!remainder.isEmpty()) {
+                getPlayer().getInventory().placeItemBackInInventory(remainder);
+            }
+        }
+        return placed > 0L;
+    }
+
+    public void handlePatternCacheAction(PatternCacheActionPacket.Action action, boolean value) {
+        switch (action) {
+            case SWAP -> rotateProcessingOutputs();
+            case TIMES_2 -> modifyProcessingPatterns(2, false);
+            case TIMES_3 -> modifyProcessingPatterns(3, false);
+            case TIMES_5 -> modifyProcessingPatterns(5, false);
+            case EQUALS_1 -> restoreProcessingRatios();
+            case DIVIDE_2 -> modifyProcessingPatterns(2, true);
+            case DIVIDE_3 -> modifyProcessingPatterns(3, true);
+            case DIVIDE_5 -> modifyProcessingPatterns(5, true);
+            case TIMES_8 -> modifyProcessingPatterns(8, false);
+            case DIVIDE_8 -> modifyProcessingPatterns(8, true);
+            case TIMES_16 -> modifyProcessingPatterns(16, false);
+            case DIVIDE_16 -> modifyProcessingPatterns(16, true);
+            case TIMES_32 -> modifyProcessingPatterns(32, false);
+            case DIVIDE_32 -> modifyProcessingPatterns(32, true);
+            case ITEM_SUBSTITUTION -> changeCraftingSubstitution(true, value);
+            case FLUID_SUBSTITUTION -> changeCraftingSubstitution(false, value);
+        }
+    }
+
+    private void modifyProcessingPatterns(int scale, boolean divide) {
+        if (scale <= 0) {
+            return;
+        }
+        for (Slot slot : getPatternCacheSlots()) {
+            ItemStack stack = slot.getItem();
+            var details = PatternDetailsHelper.decodePattern(stack, getPlayer().level());
+            if (!(details instanceof AEProcessingPattern process)) {
+                continue;
+            }
+            var input = process.getSparseInputs().toArray(GenericStack[]::new);
+            var output = process.getSparseOutputs().toArray(GenericStack[]::new);
+            if (!PatternEncodingAmounts.canScale(input, scale, divide)
+                    || !PatternEncodingAmounts.canScale(output, scale, divide)) {
+                continue;
+            }
+            slot.set(PatternDetailsHelper.encodeProcessingPattern(
+                    Arrays.asList(PatternEncodingAmounts.scaleStacks(input, scale, divide)),
+                    Arrays.asList(PatternEncodingAmounts.scaleStacks(output, scale, divide))));
+        }
+        broadcastChanges();
+    }
+
+    private void restoreProcessingRatios() {
+        for (Slot slot : getPatternCacheSlots()) {
+            ItemStack stack = slot.getItem();
+            var details = PatternDetailsHelper.decodePattern(stack, getPlayer().level());
+            if (!(details instanceof AEProcessingPattern process)) {
+                continue;
+            }
+            long gcd = PatternEncodingAmounts.sharedGcd(process.getSparseInputs(), process.getSparseOutputs());
+            if (gcd <= 1L) {
+                continue;
+            }
+            slot.set(PatternDetailsHelper.encodeProcessingPattern(
+                    PatternEncodingAmounts.divideStacks(process.getSparseInputs(), gcd),
+                    PatternEncodingAmounts.divideStacks(process.getSparseOutputs(), gcd)));
+        }
+        broadcastChanges();
+    }
+
+    private void rotateProcessingOutputs() {
+        for (Slot slot : getPatternCacheSlots()) {
+            ItemStack stack = slot.getItem();
+            var details = PatternDetailsHelper.decodePattern(stack, getPlayer().level());
+            if (!(details instanceof AEProcessingPattern process)) {
+                continue;
+            }
+            slot.set(PatternDetailsHelper.encodeProcessingPattern(
+                    process.getSparseInputs(),
+                    Arrays.asList(PatternEncodingAmounts.rotateOutputs(
+                            process.getSparseOutputs().toArray(GenericStack[]::new)))));
+        }
+        broadcastChanges();
+    }
+
+    private void changeCraftingSubstitution(boolean itemSubstitution, boolean value) {
+        for (Slot slot : getPatternCacheSlots()) {
+            ItemStack stack = slot.getItem();
+            var details = PatternDetailsHelper.decodePattern(stack, getPlayer().level());
+            if (!(details instanceof AECraftingPattern craft)) {
+                continue;
+            }
+            var recipe = craftingRecipeFor(craft);
+            if (recipe == null) {
+                continue;
+            }
+            try {
+                slot.set(PatternDetailsHelper.encodeCraftingPattern(
+                        recipe,
+                        itemize(craft.getSparseInputs()),
+                        itemize(craft.getOutputs().isEmpty() ? null : craft.getOutputs().getFirst()),
+                        itemSubstitution ? value : craft.canSubstitute(),
+                        itemSubstitution ? craft.canSubstituteFluids() : value));
+            } catch (RuntimeException ignored) {
+            }
+        }
+        broadcastChanges();
+    }
+
+    @Nullable
+    private RecipeHolder<CraftingRecipe> craftingRecipeFor(AECraftingPattern craft) {
+        var items = itemize(craft.getSparseInputs());
+        if (items.length != 9) {
+            return null;
+        }
+        return getPlayer().level().getRecipeManager()
+                .getRecipeFor(RecipeType.CRAFTING, CraftingInput.of(3, 3, Arrays.asList(items)), getPlayer().level())
+                .orElse(null);
+    }
+
+    private static ItemStack[] itemize(List<GenericStack> stacks) {
+        var items = new ItemStack[stacks.size()];
+        for (int i = 0; i < stacks.size(); i++) {
+            items[i] = itemize(stacks.get(i));
+        }
+        return items;
+    }
+
+    private static ItemStack itemize(@Nullable GenericStack stack) {
+        if (stack != null && stack.what() instanceof AEItemKey itemKey) {
+            return itemKey.toStack((int) stack.amount());
+        }
+        return ItemStack.EMPTY;
     }
 }

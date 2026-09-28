@@ -1,14 +1,23 @@
 package com.lhy.mest.client.panel;
 
+import com.lhy.mest.client.MestGuiIcons;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.renderer.Rect2i;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.Slot;
 
 import appeng.api.client.AEKeyRendering;
@@ -20,63 +29,119 @@ import appeng.api.stacks.AEKeyType;
 import appeng.api.stacks.AEKeyTypes;
 import appeng.api.stacks.AmountFormat;
 import appeng.api.util.IConfigManager;
+import appeng.client.Point;
 import appeng.client.gui.me.common.Repo;
+import appeng.client.gui.me.common.PendingCraftingJobs;
+import appeng.client.gui.me.common.PinnedKeys;
 import appeng.client.gui.me.common.RepoSlot;
 import appeng.client.gui.me.common.StackSizeRenderer;
-import appeng.client.gui.widgets.IScrollSource;
+import appeng.client.gui.style.Blitter;
+import appeng.client.gui.widgets.AETextField;
 import appeng.client.gui.widgets.ISortSource;
+import appeng.client.gui.widgets.ITooltip;
+import appeng.client.gui.widgets.Scrollbar;
+import appeng.client.gui.widgets.TabButton;
+import appeng.core.AEConfig;
+import appeng.core.AppEng;
+import appeng.core.localization.GuiText;
+import appeng.integration.abstraction.ItemListMod;
 import appeng.menu.me.common.GridInventoryEntry;
 
+import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.client.MestPinnedKeysCap;
+import com.lhy.mest.client.TerminalSearchRestore;
 import com.lhy.mest.client.dock.ModulePanel;
-import com.lhy.mest.client.dock.Scrollbar;
 import com.lhy.mest.terminal.MESTMenu;
 
 /**
- * Floating panel that shows the ME network inventory. It reuses AE2's {@link Repo} (incremental
- * client-side snapshot + search/sort) and {@link RepoSlot}s, but lays them out in this panel's
- * resizable content area and self-manages scrolling, so it is fully decoupled from AE2's fixed
- * {@code MEStorageScreen} layout.
- *
- * <p>Slot <em>rendering</em> is delegated by the hosting screen (see the screen's {@code renderSlot}
- * override calling {@link #renderRepoSlot}), and slot <em>clicks</em> route through
- * {@link MESTMenu#handleInteraction} via the screen.
+ * Floating ME inventory that reuses AE2's {@link Repo}, {@link AETextField}, big scroller and
+ * terminal.png row art so the module tracks the stock wireless terminal instead of a custom grid.
  */
-public class MEListPanel extends ModulePanel implements ISortSource, IScrollSource {
+public class MEListPanel extends ModulePanel implements ISortSource {
     private static final int SLOT = 18;
-    /** Deduplicates renderRepoSlot failure logging so a broken key renderer cannot spam every frame. */
+    private static final int SEARCH_WIDTH = 89;
+    private static final int RAIL_WIDTH = 20;
+    private static final int RAIL_SPRITE_WIDTH = 21;
+    private static final int RAIL_OVERLAP = 2;
+    private static final int RAIL_SHIFT_X = 2;
+    private static final int SCROLLBAR_INSET = 2;
+    private static final int TRACK_WIDTH = 12;
+    private static final int INSIDE_TRACK_GAP = 6;
+    private static final int INSIDE_GUTTER = INSIDE_TRACK_GAP + TRACK_WIDTH;
+    private static final ResourceLocation RAIL_SPRITE = ResourceLocation.fromNamespaceAndPath(
+            MESplicedterminal.MODID, "vertical_buttons_bg");
+    private static final int NATIVE_SLOT_COLS = 9;
+    private static final int CRAFT_STATUS_SIZE = 20;
+    private static final int CRAFT_STATUS_OVERHANG = 4;
+    private static final int TITLE_SEARCH_TOP = 4;
+    /** Pinned-row strip inside {@code guis/terminal.png}: 9 slots wide, one row tall, at y=204. */
+    private static final int PINNED_ROW_SRC_Y = 204;
+    private static final int PINNED_ROW_NATIVE_WIDTH = 162;
+    private static final Blitter TERMINAL = Blitter.texture("guis/terminal.png", 256, 256);
     private static final Set<String> REPORTED_RENDER_FAILURES = new HashSet<>();
+
+    private static String rememberedSearch = "";
 
     private final MESTMenu menu;
     private final IConfigManager configSrc;
     private final Repo repo;
     private final List<RepoSlot> repoSlots = new ArrayList<>();
+    private final Set<Slot> repoSlotSet = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Scrollbar scrollbar = new Scrollbar(Scrollbar.BIG);
+
+    private AETextField searchField;
+    private TabButton craftingStatusBtn;
+    private CraftingTerminalPanel utilitySource;
+    private boolean scrollbarDragging;
 
     private int cols = 9;
     private int rows = 4;
-    private int scrollOffset; // current scroll, in rows
-
-    private final Scrollbar scrollbar = new Scrollbar();
-
-    private String searchText = "";
-    private boolean searchFocused;
-    /** Cursor/selection offsets are UTF-16 indices, matching Java's String API. */
-    private int cursorPosition;
-    private int selectionAnchor = -1;
-
-    private static final int SETTING_BUTTON_WIDTH = 18;
-    private static final int SETTING_BUTTON_COUNT = 3;
-    private static final int TITLE_CONTROLS_INSET = SETTING_BUTTON_WIDTH * SETTING_BUTTON_COUNT + 4;
 
     public MEListPanel(MESTMenu menu) {
         this.menu = menu;
         this.configSrc = menu.getConfigManager();
-        this.repo = new Repo(this, this);
+        this.scrollbar.setCaptureMouseWheel(false);
+        this.repo = new Repo(scrollbar, this);
         menu.setClientRepo(this.repo);
         this.repo.setRowSize(cols);
     }
 
     public Repo repo() {
         return repo;
+    }
+
+    public void attachSearch(AETextField field) {
+        this.searchField = field;
+        field.setPlaceholder(GuiText.SearchPlaceholder.text());
+        field.setResponder(this::onSearchChanged);
+        field.setTooltipMessage(List.of(
+                GuiText.SearchTooltip.text(),
+                GuiText.SearchTooltipModId.text(),
+                GuiText.SearchTooltipTag.text(),
+                GuiText.SearchTooltipToolTips.text(),
+                GuiText.SearchTooltipItemId.text()));
+        String restore = TerminalSearchRestore.valueToRestore(
+                rememberedSearch,
+                menu.isReturnedFromSubScreen(),
+                AEConfig.instance().isRememberLastSearch());
+        if (!restore.isEmpty()) {
+            field.setValue(restore);
+            field.selectAll();
+            onSearchChanged(restore);
+        }
+    }
+
+    public void attachCraftingStatus(TabButton button) {
+        this.craftingStatusBtn = button;
+    }
+
+    public void setUtilitySource(CraftingTerminalPanel source) {
+        this.utilitySource = source;
+    }
+
+    @Override
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        MestGuiIcons.blit(g, 0, 0, x, y, w, h, opacity);
     }
 
     @Override
@@ -91,74 +156,108 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
 
     @Override
     public int defaultWidth() {
-        return 2 * CONTENT_PADDING + 9 * SLOT;
+        return 2 * CONTENT_PADDING + 9 * SLOT + preferredContentRightInset();
     }
 
     @Override
     public int defaultHeight() {
-        return TITLE_BAR_HEIGHT + 2 * CONTENT_PADDING + SEARCH_HEIGHT + 4 * SLOT;
+        return TITLE_BAR_HEIGHT + CONTENT_PADDING + 4 * SLOT;
     }
-
-    @Override
-    protected int titleRightInset() {
-        return TITLE_CONTROLS_INSET;
-    }
-
-    private static final int SEARCH_HEIGHT = 12;
 
     @Override
     public int minWidth() {
-        return 2 * CONTENT_PADDING + 3 * SLOT + SCROLLBAR_WIDTH;
+        return 2 * CONTENT_PADDING + 3 * SLOT + preferredContentRightInset();
     }
 
     @Override
     public int minHeight() {
-        return TITLE_BAR_HEIGHT + 2 * CONTENT_PADDING + SEARCH_HEIGHT + 2 * SLOT;
+        return TITLE_BAR_HEIGHT + CONTENT_PADDING + 2 * SLOT;
     }
 
-    private static final int SCROLLBAR_WIDTH = 12;
+    @Override
+    public boolean expandsVertically() {
+        return true;
+    }
 
-    // --- Layout -----------------------------------------------------------
+    @Override
+    public boolean fillsContentArea() {
+        return true;
+    }
+
+    @Override
+    protected int titleRightInset() {
+        return SEARCH_WIDTH + 8 + chromeButtonsReserve()
+                + (contentChromeVisible() ? 28 : 0) + utilityBarWidth();
+    }
+
+    @Override
+    public int outsideHitWidth() {
+        if (!scrollerOutside()) {
+            return 0;
+        }
+        return Math.max(0, railLeft() - 2 + RAIL_SPRITE_WIDTH - (x + width));
+    }
+
+    @Override
+    public boolean hasJoinableOutsideRail() {
+        return scrollerOutside();
+    }
+
+    @Override
+    public int preferredContentRightInset() {
+        return visible && !scrollerOutside() ? INSIDE_GUTTER : 0;
+    }
+
+    @Override
+    public int outsideHitTop() {
+        return visible && craftingStatusBtn != null ? CRAFT_STATUS_OVERHANG : 0;
+    }
 
     @Override
     public void layoutSlots() {
-        // RepoSlots are client-only. Keep stable instances while moving the panel and only rebuild
-        // when the grid dimensions actually change.
         List<Slot> slots = menu.slots;
         if (!visible) {
             slots.removeAll(repoSlots);
             repoSlots.clear();
+            repoSlotSet.clear();
+            hideChrome();
             return;
         }
 
-        // Derive grid dimensions from the content area.
-        int gridWidth = contentWidth() - SCROLLBAR_WIDTH;
-        int gridHeight = contentHeight() - SEARCH_HEIGHT;
+        int gridWidth = contentWidth();
+        int gridHeight = contentHeight();
+        int previousCols = this.cols;
         this.cols = Math.max(1, gridWidth / SLOT);
         this.rows = Math.max(1, gridHeight / SLOT);
         this.repo.setRowSize(cols);
+        MestPinnedKeysCap.setVisibleColumns(cols);
+        if (previousCols != this.cols) {
+            this.repo.updateView();
+        }
 
         int requiredSlots = rows * cols;
         if (repoSlots.size() != requiredSlots) {
             slots.removeAll(repoSlots);
             repoSlots.clear();
+            repoSlotSet.clear();
             for (int repoIndex = 0; repoIndex < requiredSlots; repoIndex++) {
                 var repoSlot = new RepoSlot(this.repo, repoIndex, 0, 0);
                 repoSlots.add(repoSlot);
+                repoSlotSet.add(repoSlot);
                 slots.add(repoSlot);
             }
         }
 
         int gridLeft = contentLeft();
-        int gridTop = contentTop() + SEARCH_HEIGHT;
+        int gridTop = contentTop();
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < cols; col++) {
                 RepoSlot slot = repoSlots.get(row * cols + col);
-                slot.x = gridLeft + col * SLOT + 1;
-                slot.y = gridTop + row * SLOT + 1;
+                placeSlot(slot, gridLeft + col * SLOT + 1, gridTop + row * SLOT + 1);
             }
         }
-        clampScroll();
+        layoutChrome();
+        updateScrollbar();
     }
 
     @Override
@@ -170,107 +269,94 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
 
     @Override
     public boolean ownsSlot(Slot slot) {
-        for (RepoSlot repoSlot : repoSlots) {
-            if (repoSlot == slot) {
-                return true;
-            }
-        }
-        return false;
+        return repoSlotSet.contains(slot);
     }
 
-    private int totalRows() {
-        return (repo.size() + cols - 1) / cols;
-    }
-
-    private int maxScroll() {
-        return Math.max(0, totalRows() - rows);
-    }
-
-    private void clampScroll() {
-        if (scrollOffset > maxScroll()) {
-            scrollOffset = maxScroll();
-        }
-        if (scrollOffset < 0) {
-            scrollOffset = 0;
-        }
-        scrollbar.setScroll(scrollOffset);
-    }
-
-    // --- Per-frame --------------------------------------------------------
-
-    /** Called by the screen each frame before rendering. */
     public void tick(boolean paused) {
-        // The repo only yields entries when enabled; AE2 gates this on grid connectivity.
         repo.setEnabled(menu.getLinkStatus().connected());
         repo.setPaused(paused);
-        clampScroll();
-    }
-
-    // --- Rendering --------------------------------------------------------
-
-    @Override
-    public void renderBackgroundContent(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
-        // AE2's native terminal search-field texture and palette.
-        int searchLeft = contentLeft();
-        int searchTop = contentTop();
-        int searchWidth = contentWidth();
-        ModulePanel.drawTextField(g, searchLeft, searchTop, searchWidth, searchFocused);
-
-        int textLeft = searchLeft + 3;
-        int textTop = searchTop + 2;
-        if (searchText.isEmpty() && !searchFocused) {
-            g.drawString(font, Component.translatable("gui.ae2.search"), textLeft, textTop, 0xFFDEDFE3, false);
-        } else {
-            int availableWidth = Math.max(0, searchWidth - 6);
-            SearchWindow window = searchWindow(font, availableWidth);
-            String shown = searchText.substring(window.start(), window.end());
-
-            // Draw the selection first so the text remains legible on top of the highlight.
-            if (hasSearchSelection()) {
-                int selectionStart = Math.max(window.start(), searchSelectionStart());
-                int selectionEnd = Math.min(window.end(), searchSelectionEnd());
-                if (selectionEnd > selectionStart) {
-                    int highlightLeft = textLeft + font.width(
-                            searchText.substring(window.start(), selectionStart));
-                    int highlightRight = textLeft + font.width(
-                            searchText.substring(window.start(), selectionEnd));
-                    g.fill(highlightLeft, textTop - 1, Math.max(highlightLeft + 1, highlightRight),
-                            textTop + 10, 0xFF4A6A8A);
-                }
-            }
-            g.drawString(font, shown, textLeft, textTop, 0xFFFFFFFF, false);
-
-            if (searchFocused && (System.currentTimeMillis() / 500) % 2 == 0) {
-                int cursor = Math.max(window.start(), Math.min(window.end(), cursorPosition));
-                int cursorX = textLeft + font.width(searchText.substring(window.start(), cursor));
-                g.fill(cursorX, textTop - 1, cursorX + 1, textTop + 9, 0xFFFFFFFF);
-            }
-        }
-
-        // Slot cells (AE2 recessed slot art).
-        int gridLeft = contentLeft();
-        int gridTop = contentTop() + SEARCH_HEIGHT;
-        for (int row = 0; row < rows; row++) {
-            for (int col = 0; col < cols; col++) {
-                ModulePanel.drawSlot(g, gridLeft + col * SLOT, gridTop + row * SLOT);
-            }
-        }
-
-        renderScrollbar(g);
-    }
-
-    private void renderScrollbar(GuiGraphics g) {
-        int barLeft = contentLeft() + contentWidth() - SCROLLBAR_WIDTH + 2;
-        int barTop = contentTop() + SEARCH_HEIGHT;
-        int barWidth = SCROLLBAR_WIDTH - 4;
-        int barHeight = rows * SLOT;
-        scrollbar.render(g, barLeft, barTop, barWidth, barHeight, maxScroll());
+        layoutChrome();
+        updateExternalSearch();
+        updateScrollbar();
     }
 
     /**
-     * Render a single RepoSlot's content (item/fluid icon + amount label). Called by the host screen's
-     * {@code renderSlot} override. Mirrors {@code MEStorageScreen.renderSlot}.
+     * AE2's {@code MEStorageScreen.storeState()}: always snapshot the current search so a later
+     * constructor can restore it (sub-screen return, or "remember last search").
      */
+    public void storeSearch() {
+        if (searchField != null) {
+            rememberedSearch = searchField.getValue();
+        }
+    }
+
+    @Override
+    public void renderBackgroundContent(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
+        layoutChrome();
+        updateScrollbar();
+        drawTerminalRows(g);
+        drawPinnedRowStrip(g);
+        drawScrollerRail(g);
+        // blitSprite is batched; flush so the well/handle are not covered by the rail.
+        g.flush();
+        drawScrollerTrack(g);
+        if (craftingStatusBtn != null && craftingStatusBtn.visible) {
+            craftingStatusBtn.render(g, mouseX, mouseY, partialTicks);
+            int jobs = menu.activeCraftingJobs;
+            if (jobs != -1) {
+                int x = craftingStatusBtn.getX() + (craftingStatusBtn.getWidth() - 18) / 2;
+                int y = craftingStatusBtn.getY() + (craftingStatusBtn.getHeight() - 18) / 2;
+                StackSizeRenderer.renderSizeLabel(g, font, x, y, String.valueOf(jobs));
+            }
+        }
+        if (utilitySource != null && utilitySource.hostUtilitiesOnMeList()) {
+            utilitySource.renderUtilities(g, mouseX, mouseY, partialTicks);
+        }
+        if (searchField != null && searchField.isVisible()) {
+            searchField.render(g, mouseX, mouseY, partialTicks);
+        }
+        scrollbar.drawForegroundLayer(g, new Rect2i(0, 0, 0, 0), new Point(mouseX, mouseY));
+    }
+
+    @Override
+    public void renderForegroundContent(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
+        if (hosted) {
+            return;
+        }
+        renderPinnedRowDecorations(g);
+        AbstractWidget hovered = hoveredChrome(mouseX, mouseY);
+        if (hovered == craftingStatusBtn) {
+            return;
+        }
+        if (hovered instanceof ITooltip tooltip && !tooltip.getTooltipMessage().isEmpty()) {
+            g.renderComponentTooltip(font, tooltip.getTooltipMessage(), mouseX, mouseY);
+        }
+    }
+
+    /**
+     * The "pinned crafted items" row background: AE2's {@code MEStorageScreen} paints an animated
+     * molecular-assembler light over every slot whose item is currently being crafted. Replicated
+     * here because this screen is a custom dock UI and cannot inherit that screen.
+     */
+    private void renderPinnedRowDecorations(GuiGraphics g) {
+        if (!repo.hasPinnedRow()) {
+            return;
+        }
+        var atlas = Minecraft.getInstance().getTextureAtlas(InventoryMenu.BLOCK_ATLAS);
+        for (RepoSlot repoSlot : repoSlots) {
+            GridInventoryEntry entry = repoSlot.getEntry();
+            if (entry == null || !PendingCraftingJobs.hasPendingJob(entry.getWhat())) {
+                continue;
+            }
+            TextureAtlasSprite sprite = atlas.apply(AppEng.makeId("block/molecular_assembler_lights"));
+            Blitter.sprite(sprite)
+                    .src(sprite.getX() + 2, sprite.getY() + 2,
+                            sprite.contents().width() - 4, sprite.contents().height() - 4)
+                    .dest(repoSlot.x - 1, repoSlot.y - 1, 18, 18)
+                    .blit(g);
+        }
+    }
+
     public void renderRepoSlot(GuiGraphics g, Font font, RepoSlot slot) {
         if (!menu.getLinkStatus().connected()) {
             return;
@@ -280,9 +366,8 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
             return;
         }
         try {
-            AEKeyRendering.drawInGui(Minecraft.getInstance(), g, slot.x, slot.y, entry.getWhat());
+            AEKeyRendering.drawInGui(Minecraft.getInstance(), g, slotScreenX(slot), slotScreenY(slot), entry.getWhat());
         } catch (Exception e) {
-            // Log once per key id instead of once per frame; a broken renderer would otherwise spam.
             String keyId = entry.getWhat().getId().toString();
             if (REPORTED_RENDER_FAILURES.add(keyId)) {
                 com.lhy.mest.MESplicedterminal.LOGGER.warn(
@@ -293,465 +378,164 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
         long storedAmount = entry.getStoredAmount();
         boolean craftable = entry.isCraftable();
         if (craftable && (isViewOnlyCraftable() || storedAmount <= 0)) {
-            StackSizeRenderer.renderSizeLabel(g, font, slot.x, slot.y, "+");
+            StackSizeRenderer.renderSizeLabel(g, font, slotScreenX(slot), slotScreenY(slot), "+");
         } else {
             String text = entry.getWhat().formatAmount(storedAmount, AmountFormat.SLOT);
-            StackSizeRenderer.renderSizeLabel(g, font, slot.x, slot.y, text, false);
+            StackSizeRenderer.renderSizeLabel(g, font, slotScreenX(slot), slotScreenY(slot), text, false);
             if (craftable) {
-                StackSizeRenderer.renderSizeLabel(g, font, slot.x - 11, slot.y - 11, "+", false);
+                StackSizeRenderer.renderSizeLabel(g, font, slotScreenX(slot) - 11, slotScreenY(slot) - 11, "+", false);
             }
         }
     }
 
-    /** Mirrors MEStorageScreen's craftable-only display and click mode. */
     public boolean isViewOnlyCraftable() {
         return getSortDisplay() == ViewItems.CRAFTABLE;
     }
 
-    /** True if (mx,my) is inside the slot grid (used to claim scroll-wheel events). */
     public boolean inGrid(double mx, double my) {
         int gridLeft = contentLeft();
-        int gridTop = contentTop() + SEARCH_HEIGHT;
+        int gridTop = contentTop();
         return mx >= gridLeft && mx < gridLeft + cols * SLOT
                 && my >= gridTop && my < gridTop + rows * SLOT;
     }
 
     @Override
     public boolean mouseScrolled(double mx, double my, double scrollY) {
-        if (!visible || scrollY == 0 || !inGrid(mx, my)) {
+        if (!visible || scrollY == 0 || (!inGrid(mx, my) && !inScroller(mx, my))) {
             return false;
         }
-        scrollOffset -= (int) Math.signum(scrollY);
-        clampScroll();
+        scrollbar.setCurrentScroll(scrollbar.getCurrentScroll() - (int) Math.signum(scrollY));
         return true;
     }
 
-    // --- Scrollbar drag interaction -------------------------------------
-
-    private int scrollbarTrackX() {
-        return contentLeft() + contentWidth() - SCROLLBAR_WIDTH + 2;
+    public boolean inTitleBarControls(double mx, double my) {
+        return super.inTitleBarControls(mx, my) || inSearchField(mx, my) || hoveredUtility(mx, my) != null;
     }
 
-    private int scrollbarTrackY() {
-        return contentTop() + SEARCH_HEIGHT;
+    public boolean inSearchField(double mx, double my) {
+        return searchField != null && searchField.visible && searchField.isMouseOver(mx, my);
     }
 
-    private int scrollbarTrackW() {
-        return SCROLLBAR_WIDTH - 4;
+    public void setSearchValue(String value) {
+        if (searchField == null || value == null) {
+            return;
+        }
+        searchField.setValue(value);
+        repo.setSearchString(value);
+        repo.updateView();
     }
 
-    private int scrollbarTrackH() {
-        return rows * SLOT;
+    public void setSearchFocused(boolean focused) {
+        if (searchField == null) {
+            return;
+        }
+        searchField.setFocused(focused);
+        if (Minecraft.getInstance().screen instanceof com.lhy.mest.client.MESTScreen screen) {
+            if (focused) {
+                screen.setFocused(searchField);
+            } else if (screen.getFocused() == searchField) {
+                screen.setFocused(null);
+            }
+        }
     }
 
-    /** True if (mx,my) is over the scrollbar track. */
-    public boolean inScrollbar(double mx, double my) {
-        return mx >= scrollbarTrackX() && mx < scrollbarTrackX() + scrollbarTrackW()
-                && my >= scrollbarTrackY() && my < scrollbarTrackY() + scrollbarTrackH();
+    public boolean isSearchFocused() {
+        return searchField != null && searchField.isFocused();
     }
 
-    /** Begin a scrollbar drag (or page-jump). Returns true if consumed. */
+    public boolean searchCharTyped(char character, int modifiers) {
+        return isSearchFocused() && searchField.charTyped(character, modifiers);
+    }
+
+    public boolean searchKeyPressed(int keyCode, int scanCode, int modifiers) {
+        return isSearchFocused() && searchField.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    public boolean mouseClicked(double mx, double my, int button) {
+        if (!visible) {
+            return false;
+        }
+        layoutChrome();
+        if (searchField != null && searchField.visible && searchField.isMouseOver(mx, my)) {
+            if (button == 1) {
+                searchField.setValue("");
+                onSearchChanged("");
+                searchField.setFocused(true);
+                return true;
+            }
+            searchField.mouseClicked(mx, my, button);
+            searchField.setFocused(true);
+            return true;
+        }
+        if (utilitySource != null && utilitySource.mouseClickedUtilities(mx, my, button)) {
+            return true;
+        }
+        setSearchFocused(false);
+        if (craftingStatusBtn != null && craftingStatusBtn.visible
+                && craftingStatusBtn.mouseClicked(mx, my, button)) {
+            return true;
+        }
+        return false;
+    }
+
+    public boolean inChrome(double mx, double my) {
+        if (!visible) {
+            return false;
+        }
+        if (inSearchField(mx, my) || hoveredUtility(mx, my) != null) {
+            return true;
+        }
+        return craftingStatusBtn != null && craftingStatusBtn.visible && craftingStatusBtn.isMouseOver(mx, my);
+    }
+
     @Override
     public boolean scrollbarPressed(double mx, double my) {
         if (!visible || !inScrollbar(mx, my)) {
             return false;
         }
-        scrollbar.setScroll(scrollOffset);
-        boolean consumed = scrollbar.mousePressed(mx, my,
-                scrollbarTrackX(), scrollbarTrackY(), scrollbarTrackW(), scrollbarTrackH(),
-                rows, maxScroll());
-        if (consumed) {
-            scrollOffset = scrollbar.scroll();
-        }
+        boolean consumed = scrollbar.onMouseDown(new Point((int) mx, (int) my), 0);
+        scrollbarDragging = consumed;
         return consumed;
     }
 
     @Override
     public boolean scrollbarDragged(double mx, double my) {
-        if (!scrollbar.isDragging()) {
+        if (!scrollbarDragging) {
             return false;
         }
-        scrollbar.mouseDragged(my,
-                scrollbarTrackY(), scrollbarTrackH(),
-                maxScroll());
-        scrollOffset = scrollbar.scroll();
-        return true;
+        return scrollbar.onMouseDrag(new Point((int) mx, (int) my), 0);
     }
 
     @Override
     public void scrollbarReleased() {
-        scrollbar.mouseReleased();
+        if (scrollbarDragging) {
+            scrollbar.onMouseUp(Point.ZERO, 0);
+        }
+        scrollbarDragging = false;
     }
 
     @Override
     public boolean scrollbarDragging() {
-        return scrollbar.isDragging();
+        return scrollbarDragging;
     }
 
-    public void setSearch(String text) {
-        String normalized = text == null ? "" : text;
-        updateSearchText(normalized);
-        cursorPosition = normalized.length();
-        selectionAnchor = -1;
-    }
-
-    // --- Search field interaction ----------------------------------------
-
-    public boolean inSearchField(double mx, double my) {
-        int left = contentLeft();
-        int top = contentTop();
-        return mx >= left && mx < left + contentWidth() && my >= top && my < top + SEARCH_HEIGHT;
-    }
-
-    public void setSearchFocused(boolean focused) {
-        this.searchFocused = focused;
-        if (!focused) {
-            selectionAnchor = -1;
-        } else {
-            cursorPosition = clampIndex(cursorPosition, searchText);
-        }
-    }
-
-    public boolean isSearchFocused() {
-        return searchFocused;
-    }
-
-    /** Handle a typed character while the search field is focused. Returns true if consumed. */
-    public boolean searchCharTyped(char c) {
-        if (!searchFocused || Character.isISOControl(c)) {
-            return false;
-        }
-        replaceSelection(String.valueOf(c));
-        return true;
-    }
-
-    /** Handle backspace while the search field is focused. Returns true if consumed. */
-    public boolean searchBackspace() {
-        if (!searchFocused) {
-            return false;
-        }
-        if (hasSearchSelection()) {
-            replaceSelection("");
-            return true;
-        }
-        if (cursorPosition <= 0) {
-            return true;
-        }
-        int start = previousCodePointIndex(searchText, cursorPosition);
-        replaceRange(start, cursorPosition, "");
-        return true;
-    }
-
-    /** Delete the code point to the right of the cursor (or the current selection). */
-    public boolean searchDeleteForward() {
-        if (!searchFocused) {
-            return false;
-        }
-        if (hasSearchSelection()) {
-            replaceSelection("");
-            return true;
-        }
-        if (cursorPosition >= searchText.length()) {
-            return true;
-        }
-        int end = nextCodePointIndex(searchText, cursorPosition);
-        replaceRange(cursorPosition, end, "");
-        return true;
-    }
-
-    /** Move the search cursor by one or more code points. */
-    public boolean searchMoveCursor(int direction, boolean selecting) {
-        if (!searchFocused) {
-            return false;
-        }
-        if (!selecting && hasSearchSelection()) {
-            cursorPosition = direction < 0 ? searchSelectionStart() : searchSelectionEnd();
-            selectionAnchor = -1;
-            return true;
-        }
-        int next = cursorPosition;
-        if (direction < 0) {
-            next = previousCodePointIndex(searchText, cursorPosition);
-        } else if (direction > 0) {
-            next = nextCodePointIndex(searchText, cursorPosition);
-        }
-        updateCursor(next, selecting);
-        return true;
-    }
-
-    public boolean searchMoveHome(boolean selecting) {
-        if (!searchFocused) {
-            return false;
-        }
-        updateCursor(0, selecting);
-        return true;
-    }
-
-    public boolean searchMoveEnd(boolean selecting) {
-        if (!searchFocused) {
-            return false;
-        }
-        updateCursor(searchText.length(), selecting);
-        return true;
-    }
-
-    /** Select the complete query. */
-    public boolean searchSelectAll() {
-        if (!searchFocused) {
-            return false;
-        }
-        selectionAnchor = 0;
-        cursorPosition = searchText.length();
-        return true;
-    }
-
-    /** Copy the current selection to Minecraft's clipboard. */
-    public boolean searchCopySelection() {
-        if (!searchFocused) {
-            return false;
-        }
-        if (hasSearchSelection()) {
-            Minecraft.getInstance().keyboardHandler.setClipboard(
-                    searchText.substring(searchSelectionStart(), searchSelectionEnd()));
-        }
-        return true;
-    }
-
-    /** Cut the current selection to Minecraft's clipboard. */
-    public boolean searchCutSelection() {
-        if (!searchFocused) {
-            return false;
-        }
-        if (hasSearchSelection()) {
-            Minecraft.getInstance().keyboardHandler.setClipboard(
-                    searchText.substring(searchSelectionStart(), searchSelectionEnd()));
-            replaceSelection("");
-        }
-        return true;
-    }
-
-    /** Paste a printable clipboard string at the cursor, replacing the current selection. */
-    public boolean searchPasteClipboard() {
-        if (!searchFocused) {
-            return false;
-        }
-        String clipboard = Minecraft.getInstance().keyboardHandler.getClipboard();
-        if (clipboard == null || clipboard.isEmpty()) {
-            return true;
-        }
-        StringBuilder printable = new StringBuilder(clipboard.length());
-        clipboard.codePoints().forEach(codePoint -> {
-            if (!Character.isISOControl(codePoint)) {
-                printable.appendCodePoint(codePoint);
-            }
-        });
-        if (printable.length() > 0) {
-            replaceSelection(printable.toString());
-        }
-        return true;
-    }
-
-    /** True when a non-empty search selection exists. */
-    public boolean hasSearchSelection() {
-        return selectionAnchor >= 0 && selectionAnchor != cursorPosition;
-    }
-
-    public int searchCursorPosition() {
-        return cursorPosition;
-    }
-
-    public int searchSelectionStart() {
-        return hasSearchSelection() ? Math.min(selectionAnchor, cursorPosition) : cursorPosition;
-    }
-
-    public int searchSelectionEnd() {
-        return hasSearchSelection() ? Math.max(selectionAnchor, cursorPosition) : cursorPosition;
-    }
-
-    /**
-     * Place the cursor at the nearest text boundary to a mouse coordinate. The screen can call this
-     * after focusing the field so a click edits at the clicked position rather than always appending.
-     */
-    public void placeSearchCursor(double mouseX, Font font) {
-        if (!searchFocused) {
-            return;
-        }
-        int availableWidth = Math.max(0, contentWidth() - 6);
-        SearchWindow window = searchWindow(font, availableWidth);
-        int localX = (int) Math.round(mouseX - (contentLeft() + 3));
-        int best = window.start();
-        int bestDistance = Integer.MAX_VALUE;
-        for (int index = window.start(); index <= window.end();) {
-            int textX = font.width(searchText.substring(window.start(), index));
-            int distance = Math.abs(textX - localX);
-            if (distance < bestDistance) {
-                best = index;
-                bestDistance = distance;
-            }
-            if (index == window.end()) {
-                break;
-            }
-            index = nextCodePointIndex(searchText, index);
-        }
-        cursorPosition = best;
-        selectionAnchor = -1;
-    }
-
-    private void updateSearchText(String text) {
-        if (searchText.equals(text)) {
-            return;
-        }
-        searchText = text;
-        repo.setSearchString(text);
-        repo.updateView();
-        clampScroll();
-    }
-
-    private void replaceSelection(String replacement) {
-        int start = searchSelectionStart();
-        int end = searchSelectionEnd();
-        replaceRange(start, end, replacement);
-    }
-
-    private void replaceRange(int start, int end, String replacement) {
-        start = Math.max(0, Math.min(start, searchText.length()));
-        end = Math.max(start, Math.min(end, searchText.length()));
-        String next = searchText.substring(0, start) + replacement + searchText.substring(end);
-        updateSearchText(next);
-        cursorPosition = start + replacement.length();
-        selectionAnchor = -1;
-    }
-
-    private void updateCursor(int position, boolean selecting) {
-        int next = clampIndex(position, searchText);
-        if (selecting) {
-            if (selectionAnchor < 0) {
-                selectionAnchor = cursorPosition;
-            }
-        } else {
-            selectionAnchor = -1;
-        }
-        cursorPosition = next;
-    }
-
-    private static int clampIndex(int index, String text) {
-        int result = Math.max(0, Math.min(index, text.length()));
-        if (result > 0 && result < text.length()
-                && Character.isLowSurrogate(text.charAt(result))
-                && Character.isHighSurrogate(text.charAt(result - 1))) {
-            result--;
-        }
-        return result;
-    }
-
-    private static int previousCodePointIndex(String text, int index) {
-        int result = Math.max(0, Math.min(index, text.length()));
-        if (result > 0) {
-            result--;
-            if (result > 0 && Character.isLowSurrogate(text.charAt(result))
-                    && Character.isHighSurrogate(text.charAt(result - 1))) {
-                result--;
-            }
-        }
-        return result;
-    }
-
-    private static int nextCodePointIndex(String text, int index) {
-        int result = Math.max(0, Math.min(index, text.length()));
-        if (result < text.length()) {
-            result += Character.charCount(text.codePointAt(result));
-        }
-        return result;
-    }
-
-    private SearchWindow searchWindow(Font font, int availableWidth) {
-        int length = searchText.length();
-        if (length == 0 || font.width(searchText) <= availableWidth) {
-            return new SearchWindow(0, length);
-        }
-
-        int start = fitSuffixStart(font, length, availableWidth);
-        int end = length;
-        if (cursorPosition < start) {
-            end = cursorPosition;
-            start = fitSuffixStart(font, end, availableWidth);
-            end = fitEnd(font, start, availableWidth);
-        }
-        return new SearchWindow(start, end);
-    }
-
-    private int fitSuffixStart(Font font, int end, int availableWidth) {
-        int start = end;
-        while (start > 0) {
-            int previous = previousCodePointIndex(searchText, start);
-            if (font.width(searchText.substring(previous, end)) > availableWidth) {
-                break;
-            }
-            start = previous;
-        }
-        return start;
-    }
-
-    private int fitEnd(Font font, int start, int availableWidth) {
-        int end = start;
-        while (end < searchText.length()) {
-            int next = nextCodePointIndex(searchText, end);
-            if (font.width(searchText.substring(start, next)) > availableWidth) {
-                break;
-            }
-            end = next;
-        }
-        return end;
-    }
-
-    private record SearchWindow(int start, int end) {
-    }
-
-    // --- Tooltip support --------------------------------------------------
-
-    /** Returns the ME entry under the given mouse position, or null. */
     public GridInventoryEntry entryAt(double mx, double my) {
-        if (!menu.getLinkStatus().connected()) {
-            return null;
-        }
-        int gridLeft = contentLeft();
-        int gridTop = contentTop() + SEARCH_HEIGHT;
-        if (mx < gridLeft || my < gridTop) {
-            return null;
-        }
-        int col = (int) ((mx - gridLeft) / SLOT);
-        int row = (int) ((my - gridTop) / SLOT);
-        if (col < 0 || col >= cols || row < 0 || row >= rows) {
-            return null;
-        }
-        int repoIndex = (row + scrollOffset) * cols + col;
-        if (repoIndex < 0 || repoIndex >= repo.size()) {
-            return null;
-        }
-        return repo.get(repoIndex);
+        RepoSlot slot = repoSlotAt(mx, my);
+        return slot == null ? null : slot.getEntry();
     }
 
-    /** Returns the actual virtual slot under the cursor using vanilla's 16x16 slot hit area. */
     public RepoSlot repoSlotAt(double mx, double my) {
         if (!visible) {
             return null;
         }
         for (RepoSlot slot : repoSlots) {
-            if (mx >= slot.x && mx < slot.x + 16 && my >= slot.y && my < slot.y + 16) {
+            if (mx >= slotScreenX(slot) && mx < slotScreenX(slot) + 16
+                    && my >= slotScreenY(slot) && my < slotScreenY(slot) + 16) {
                 return slot;
             }
         }
         return null;
     }
-
-    // --- IScrollSource ----------------------------------------------------
-
-    @Override
-    public int getCurrentScroll() {
-        return scrollOffset;
-    }
-
-    // --- ISortSource ------------------------------------------------------
 
     @Override
     public SortOrder getSortBy() {
@@ -770,8 +554,6 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
 
     @Override
     public Set<AEKeyType> getSortKeyTypes() {
-        // AEKeyTypes registration is frozen before any screen can open; Repo calls this on every
-        // view update, so build the set once instead of reallocating an identical one each time.
         Set<AEKeyType> cached = sortKeyTypesCache;
         if (cached == null) {
             cached = Set.copyOf(new HashSet<>(AEKeyTypes.getAll()));
@@ -781,4 +563,255 @@ public class MEListPanel extends ModulePanel implements ISortSource, IScrollSour
     }
 
     private Set<AEKeyType> sortKeyTypesCache;
+
+    private void onSearchChanged(String text) {
+        repo.setSearchString(text == null ? "" : text);
+        repo.updateView();
+        updateScrollbar();
+    }
+
+    private void updateScrollbar() {
+        int maxScroll = Math.max(0, totalRows() - rows);
+        scrollbar.setRange(0, maxScroll, Math.max(1, rows / 6));
+        scrollbar.setHeight(Math.max(1, rows * SLOT - 2));
+        scrollbar.setPosition(new Point(trackLeft(), contentTop() + 1));
+    }
+
+    private int totalRows() {
+        if (cols == 0) {
+            return 0;
+        }
+        int total = (repo.size() + cols - 1) / cols;
+        if (repo.hasPinnedRow()) {
+            total++;
+        }
+        return total;
+    }
+
+    public void markFinishedCraftingPinsPrunable() {
+        for (GridInventoryEntry entry : repo.getPinnedEntries()) {
+            PinnedKeys.PinInfo info = PinnedKeys.getPinInfo(entry.getWhat());
+            if (info != null && info.reason == PinnedKeys.PinReason.CRAFTING
+                    && !PendingCraftingJobs.hasPendingJob(entry.getWhat())) {
+                info.canPrune = true;
+            }
+        }
+    }
+
+    private boolean scrollerOutside() {
+        return visible && rightmostInWindow;
+    }
+
+    private int railLeft() {
+        if (scrollerOutside()) {
+            return x + width - RAIL_OVERLAP + RAIL_SHIFT_X;
+        }
+        return trackLeft() - SCROLLBAR_INSET;
+    }
+
+    private int trackLeft() {
+        if (scrollerOutside()) {
+            return railLeft() + SCROLLBAR_INSET;
+        }
+        return contentLeft() + cols * SLOT + INSIDE_TRACK_GAP;
+    }
+
+    private int trackHeight() {
+        return Math.max(1, rows * SLOT - 2);
+    }
+
+    private boolean inScroller(double mx, double my) {
+        if (inScrollbar(mx, my)) {
+            return true;
+        }
+        if (scrollerOutside()) {
+            int left = railLeft() - 2;
+            return mx >= left && mx < left + RAIL_SPRITE_WIDTH
+                    && my >= y - 1 && my < y + height;
+        }
+        int left = trackLeft();
+        int top = contentTop() + 1;
+        int trackH = trackHeight();
+        return mx >= left && mx < left + TRACK_WIDTH
+                && my >= top && my < top + trackH;
+    }
+
+    private boolean inScrollbar(double mx, double my) {
+        Rect2i bounds = scrollbar.getBounds();
+        return mx >= bounds.getX() && mx < bounds.getX() + bounds.getWidth()
+                && my >= bounds.getY() && my < bounds.getY() + bounds.getHeight();
+    }
+
+    private void layoutChrome() {
+        boolean show = visible;
+        if (searchField != null) {
+            boolean external = AEConfig.instance().isUseExternalSearch();
+            searchField.setVisible(show && !external);
+            int searchX = contentLeft() + cols * SLOT - SEARCH_WIDTH;
+            int searchY = y + TITLE_SEARCH_TOP;
+            if (searchField.visible) {
+                searchField.move(new Point(searchX, searchY));
+            }
+            if (utilitySource != null && utilitySource.hostUtilitiesOnMeList()) {
+                utilitySource.layoutUtilitiesOnSearch(
+                        searchX, searchY, CraftingTerminalPanel.SEARCH_BUTTON);
+            }
+        }
+        if (craftingStatusBtn != null) {
+            craftingStatusBtn.visible = show;
+            craftingStatusBtn.setWidth(CRAFT_STATUS_SIZE);
+            craftingStatusBtn.setHeight(CRAFT_STATUS_SIZE);
+            craftingStatusBtn.setX(scrollerOutside()
+                    ? railLeft() + RAIL_WIDTH - 24
+                    : trackLeft() + TRACK_WIDTH - CRAFT_STATUS_SIZE);
+            craftingStatusBtn.setY(y - CRAFT_STATUS_OVERHANG);
+        }
+    }
+
+    private void hideChrome() {
+        if (searchField != null) {
+            searchField.setVisible(false);
+            searchField.setFocused(false);
+        }
+        if (craftingStatusBtn != null) {
+            craftingStatusBtn.visible = false;
+        }
+    }
+
+    private void updateExternalSearch() {
+        if (searchField == null) {
+            return;
+        }
+        var config = AEConfig.instance();
+        if (config.isUseExternalSearch()) {
+            searchField.setVisible(false);
+            String externalSearchText = ItemListMod.getSearchText();
+            if (!Objects.equals(repo.getSearchString(), externalSearchText)) {
+                onSearchChanged(externalSearchText);
+            }
+            return;
+        }
+        if (visible) {
+            searchField.setVisible(true);
+        }
+        if (config.isSyncWithExternalSearch()) {
+            if (searchField.isFocused()) {
+                ItemListMod.setSearchText(searchField.getValue());
+            } else if (ItemListMod.hasSearchFocus()) {
+                String externalSearchText = ItemListMod.getSearchText();
+                if (!Objects.equals(externalSearchText, searchField.getValue())) {
+                    searchField.setValue(externalSearchText);
+                }
+            }
+        }
+    }
+
+    private void drawTerminalRows(GuiGraphics g) {
+        int gridLeft = contentLeft();
+        int gridTop = contentTop();
+        int nativeCols = Math.min(cols, NATIVE_SLOT_COLS);
+        for (int row = 0; row < rows; row++) {
+            int srcY = rowSrcY(row);
+            int destY = gridTop + row * SLOT;
+            int nativeWidth = cols <= NATIVE_SLOT_COLS ? nativeCols * SLOT : nativeCols * SLOT - 1;
+            TERMINAL.src(7, srcY, nativeWidth, SLOT)
+                    .dest(gridLeft, destY)
+                    .blit(g);
+            for (int col = nativeCols; col < cols; col++) {
+                TERMINAL.src(7 + SLOT, srcY, SLOT, SLOT)
+                        .dest(gridLeft + col * SLOT, destY)
+                        .blit(g);
+            }
+            if (cols > NATIVE_SLOT_COLS) {
+                g.vLine(gridLeft + cols * SLOT - 1, destY, destY + SLOT - 1, 0xFFF2F2F2);
+            }
+        }
+    }
+
+    /**
+     * The pinned row's background strip, as AE2's {@code MEStorageScreen.drawBG} blits it:
+     * {@code guis/terminal.png} at (0, 204), one row tall, over the row backgrounds. AE2 only ever
+     * needs the native nine columns; wider terminals repeat the 162px art (18px periodic, so the
+     * cells stay on the same grid as the row backgrounds) and close it with the same right rule
+     * {@link #drawTerminalRows} draws.
+     */
+    private void drawPinnedRowStrip(GuiGraphics g) {
+        if (!repo.hasPinnedRow() || cols <= 0 || rows <= 0) {
+            return;
+        }
+        int gridLeft = contentLeft();
+        int gridTop = contentTop();
+        int width = cols * SLOT;
+        for (int x = 0; x < width; x += PINNED_ROW_NATIVE_WIDTH) {
+            int chunk = Math.min(PINNED_ROW_NATIVE_WIDTH, width - x);
+            TERMINAL.copy()
+                    .src(0, PINNED_ROW_SRC_Y, chunk, SLOT)
+                    .dest(gridLeft + x, gridTop)
+                    .blit(g);
+        }
+        if (cols > NATIVE_SLOT_COLS) {
+            g.vLine(gridLeft + width - 1, gridTop, gridTop + SLOT - 1, 0xFFF2F2F2);
+        }
+    }
+
+    /** Right-hand rail. Outside chrome unless a sibling occupies this leaf's right edge. */
+    private void drawScrollerRail(GuiGraphics g) {
+        if (!scrollerOutside() || !drawOutsideRail) {
+            return;
+        }
+        g.blitSprite(
+                RAIL_SPRITE,
+                railLeft() - 2,
+                joinedRailY,
+                RAIL_SPRITE_WIDTH,
+                joinedRailH);
+    }
+
+    private void drawScrollerTrack(GuiGraphics g) {
+        com.lhy.mest.client.dock.Scrollbar.drawTerminalTrack(
+                g,
+                trackLeft(),
+                contentTop() + 1,
+                trackHeight());
+    }
+
+    private int rowSrcY(int row) {
+        if (row == 0) {
+            return 17;
+        }
+        if (row + 1 == rows) {
+            return 53;
+        }
+        return 35;
+    }
+
+    public ITooltip hoveredCraftingStatusTooltip(int mouseX, int mouseY) {
+        if (craftingStatusBtn != null && craftingStatusBtn.visible
+                && craftingStatusBtn.isMouseOver(mouseX, mouseY)) {
+            return craftingStatusBtn;
+        }
+        return null;
+    }
+
+    private AbstractWidget hoveredChrome(int mouseX, int mouseY) {
+        if (searchField != null && searchField.visible && searchField.isMouseOver(mouseX, mouseY)) {
+            return searchField;
+        }
+        if (craftingStatusBtn != null && craftingStatusBtn.visible
+                && craftingStatusBtn.isMouseOver(mouseX, mouseY)) {
+            return craftingStatusBtn;
+        }
+        return hoveredUtility(mouseX, mouseY);
+    }
+
+    private AbstractWidget hoveredUtility(double mx, double my) {
+        return utilitySource == null ? null : utilitySource.hoveredUtility((int) mx, (int) my);
+    }
+
+    private int utilityBarWidth() {
+        if (utilitySource == null || !utilitySource.hostUtilitiesOnMeList()) {
+            return 0;
+        }
+        return utilitySource.utilityBarWidth(CraftingTerminalPanel.SEARCH_BUTTON);
+    }
 }

@@ -16,6 +16,8 @@ public final class MestRecipeTransferContext {
     private static Object menuIdentity;
     private static int containerId = -1;
     private static Target target = Target.CRAFTING;
+    private static boolean encodingVisible;
+    private static boolean craftingVisible;
 
     private MestRecipeTransferContext() {
     }
@@ -30,9 +32,19 @@ public final class MestRecipeTransferContext {
         select(menu, menu.containerId, newTarget);
     }
 
+    public static void updateAvailability(MESTMenu menu, boolean encodingPanelVisible, boolean craftingPanelVisible) {
+        Objects.requireNonNull(menu, "menu");
+        updateAvailability(menu, menu.containerId, encodingPanelVisible, craftingPanelVisible);
+    }
+
     public static Target targetFor(MESTMenu menu) {
         Objects.requireNonNull(menu, "menu");
         return targetFor(menu, menu.containerId);
+    }
+
+    public static boolean bothRecipeModulesVisible(MESTMenu menu) {
+        Objects.requireNonNull(menu, "menu");
+        return bothRecipeModulesVisible(menu, menu.containerId);
     }
 
     public static void clear(MESTMenu menu) {
@@ -82,6 +94,28 @@ public final class MestRecipeTransferContext {
             menuIdentity = newMenuIdentity;
             containerId = newContainerId;
             target = Target.CRAFTING;
+            encodingVisible = false;
+            craftingVisible = false;
+        }
+    }
+
+    static synchronized void updateAvailability(
+            Object currentMenuIdentity,
+            int currentContainerId,
+            boolean encodingPanelVisible,
+            boolean craftingPanelVisible) {
+        Objects.requireNonNull(currentMenuIdentity, "currentMenuIdentity");
+        if (menuIdentity != currentMenuIdentity || containerId != currentContainerId) {
+            return;
+        }
+        encodingVisible = encodingPanelVisible;
+        craftingVisible = craftingPanelVisible;
+        if (target == Target.PATTERN_ENCODING && !encodingVisible && craftingVisible) {
+            target = Target.CRAFTING;
+        } else if (target == Target.CRAFTING && !craftingVisible && encodingVisible) {
+            target = Target.PATTERN_ENCODING;
+        } else if (!craftingVisible && encodingVisible) {
+            target = Target.PATTERN_ENCODING;
         }
     }
 
@@ -96,8 +130,32 @@ public final class MestRecipeTransferContext {
     static synchronized Target targetFor(Object currentMenuIdentity, int currentContainerId) {
         Objects.requireNonNull(currentMenuIdentity, "currentMenuIdentity");
         return menuIdentity == currentMenuIdentity && containerId == currentContainerId
-                ? target
+                ? effectiveTarget()
                 : Target.CRAFTING;
+    }
+
+    static synchronized boolean bothRecipeModulesVisible(Object currentMenuIdentity, int currentContainerId) {
+        Objects.requireNonNull(currentMenuIdentity, "currentMenuIdentity");
+        return menuIdentity == currentMenuIdentity
+                && containerId == currentContainerId
+                && encodingVisible
+                && craftingVisible;
+    }
+
+    private static Target effectiveTarget() {
+        if (target == Target.PATTERN_ENCODING && encodingVisible) {
+            return Target.PATTERN_ENCODING;
+        }
+        if (target == Target.CRAFTING && craftingVisible) {
+            return Target.CRAFTING;
+        }
+        if (encodingVisible) {
+            return Target.PATTERN_ENCODING;
+        }
+        if (craftingVisible) {
+            return Target.CRAFTING;
+        }
+        return target;
     }
 
     static synchronized void clear(Object closingMenuIdentity, int closingContainerId) {
@@ -106,6 +164,8 @@ public final class MestRecipeTransferContext {
             menuIdentity = null;
             containerId = -1;
             target = Target.CRAFTING;
+            encodingVisible = false;
+            craftingVisible = false;
         }
     }
 }

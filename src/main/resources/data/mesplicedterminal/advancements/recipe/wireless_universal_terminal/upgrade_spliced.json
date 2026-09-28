@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:recipes/root",
+  "rewards": {
+    "recipes": [
+      "mesplicedterminal:wireless_universal_terminal/upgrade_spliced"
+    ]
+  },
+  "criteria": {
+    "has_spliced_terminal": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "mesplicedterminal:spliced_terminal"
+          }
+        ]
+      }
+    },
+    "has_the_recipe": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "mesplicedterminal:wireless_universal_terminal/upgrade_spliced"
+      }
+    }
+  },
+  "requirements": [
+    [
+      "has_spliced_terminal",
+      "has_the_recipe"
+    ]
+  ]
+}

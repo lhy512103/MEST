@@ -1,0 +1,26 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.lhy.mest.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "RemoteMenuMixin",
+    "ToolkitInventoryMixin",
+    "ToolkitPlayerMixin",
+    "ToolkitMenuLocatorsMixin",
+    "ToolkitDropMixin",
+    "ToolboxMenuMixin",
+    "NetworkToolFindMixin",
+    "AEBaseMenuAccessor"
+  ],
+  "client": [
+    "GuiRestockMixin",
+    "ToolkitHotbarGuiMixin",
+    "WidgetContainerAccessor",
+    "NetworkToolboxScreenMixin",
+    "PinnedKeysMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

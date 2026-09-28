@@ -3,10 +3,12 @@ package com.lhy.mest.client.dock.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -46,7 +48,8 @@ class DockWorkspaceEditorTest {
         DockWorkspace joined = editor.insertSplit(
                 workspace(), "leaf-a", "leaf-b", DockEdge.LEFT, "split-ab", 0.5);
 
-        DockWorkspace hidden = editor.setLeafVisible(joined, "leaf-a", false);
+        DockWorkspace hidden = editor.setLeafVisible(
+                joined, "leaf-a", false, joined.roots().getFirst().bounds(), null, null);
         SplitNode split = assertInstanceOf(SplitNode.class, hidden.roots().getFirst().content());
         assertEquals("split-ab", split.nodeId(), "visibility must not rewrite the tree");
         assertTrue(((LeafNode) split.first()).visible(), "tree visibility is normalized structural data");
@@ -59,6 +62,33 @@ class DockWorkspaceEditorTest {
         assertEquals(
                 hidden.roots().getFirst().bounds(),
                 projection.visibleLeaf("leaf-b").orElseThrow().bounds());
+    }
+
+    @Test
+    void hidingASplicedLeafShrinksTheHostAndShowingRestoresStandaloneSize() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        DockWorkspace joined = editor.insertSplit(
+                new DockWorkspace(List.of(
+                        new FloatingRoot("root-a", new DockRect(10, 20, 200, 80), new LeafNode("leaf-a", "a", true)),
+                        new FloatingRoot("root-b", new DockRect(240, 20, 90, 60), new LeafNode("leaf-b", "b", true)))),
+                "leaf-b", "leaf-a", DockEdge.RIGHT, "split-ab", 0.31);
+        joined = editor.setRootBounds(joined, "root-a", new DockRect(10, 20, 294, 80));
+
+        DockWorkspace hidden = editor.setLeafVisible(
+                joined, "leaf-b", false, new DockRect(214, 20, 90, 80), null, null);
+        assertEquals(1, hidden.roots().size());
+        assertEquals(new DockRect(10, 20, 204, 80), hidden.roots().getFirst().bounds());
+        assertEquals(new DockSize(90, 80), hidden.restoreSizes().get("leaf-b"));
+        assertFalse(hidden.policyFor("b").visible());
+
+        DockWorkspace shown = editor.setLeafVisible(
+                hidden, "leaf-b", true, null, "root-b2", new DockRect(214, 20, 80, 80));
+        assertEquals(2, shown.roots().size());
+        assertEquals(new DockRect(10, 20, 204, 80), shown.roots().getFirst().bounds());
+        assertEquals(new DockRect(214, 20, 90, 80), shown.roots().getLast().bounds());
+        assertTrue(shown.policyFor("b").visible());
+        assertEquals("leaf-b", shown.roots().getLast().content().nodeId());
     }
 
     @Test
@@ -126,6 +156,90 @@ class DockWorkspaceEditorTest {
         assertEquals("split-be", detached.roots().getLast().content().nodeId());
     }
 
+    @Test
+    void centersNamedRootsAsOneGroupAndLeavesOthersPut() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b", "c");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-a", new DockRect(0, 10, 100, 80), new LeafNode("leaf-a", "a", true)),
+                new FloatingRoot("root-b", new DockRect(100, 10, 100, 80), new LeafNode("leaf-b", "b", true)),
+                new FloatingRoot("root-c", new DockRect(20, 200, 80, 60), new LeafNode("leaf-c", "c", true))));
+
+        DockWorkspace centered = editor.centerRoots(workspace, List.of("root-a", "root-b"), 400, 240);
+
+        assertEquals(new DockRect(100, 80, 100, 80), centered.roots().get(0).bounds());
+        assertEquals(new DockRect(200, 80, 100, 80), centered.roots().get(1).bounds());
+        assertEquals(new DockRect(20, 200, 80, 60), centered.roots().get(2).bounds());
+    }
+
+    @Test
+    void centerRootsIsANoOpWhenTheGroupIsAlreadyCentered() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-a", new DockRect(150, 80, 100, 80), new LeafNode("leaf-a", "a", true))));
+
+        DockWorkspace centered = editor.centerRoots(workspace, List.of("root-a"), 400, 240);
+
+        assertEquals(workspace, centered);
+    }
+
+    @Test
+    void batchRootBoundsPreservesOrderAndReturnsIdentityForNoOp() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        DockWorkspace initial = new DockWorkspace(List.of(
+                ModelTestFixtures.root("root-a", "leaf-a", "a", 0),
+                ModelTestFixtures.root("root-b", "leaf-b", "b", 20)));
+
+        assertSame(initial, editor.setRootBounds(initial, Map.of()));
+        DockWorkspace moved = editor.setRootBounds(initial, Map.of(
+                "root-a", new DockRect(30, 40, 100, 80),
+                "root-b", new DockRect(50, 60, 100, 80)));
+        assertEquals(List.of("root-a", "root-b"), moved.roots().stream().map(FloatingRoot::rootId).toList());
+        assertEquals(new DockRect(50, 60, 100, 80), moved.roots().get(1).bounds());
+    }
+
+    @Test
+    void centerRootsUsesProvidedChromeUnionNotTheFullRoot() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-a", new DockRect(0, 10, 122, 80), new LeafNode("leaf-a", "a", true))));
+
+        DockWorkspace centered = editor.centerRoots(
+                workspace, List.of("root-a"), new DockRect(0, 10, 100, 80), 400, 240);
+
+        assertEquals(new DockRect(150, 80, 122, 80), centered.roots().getFirst().bounds());
+    }
+
+    @Test
+    void spliceRemembersStandaloneSizesForLaterDetach() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        DockWorkspace initial = new DockWorkspace(List.of(
+                new FloatingRoot("root-a", new DockRect(10, 20, 200, 80), new LeafNode("leaf-a", "a", true)),
+                new FloatingRoot("root-b", new DockRect(240, 30, 90, 60), new LeafNode("leaf-b", "b", true))));
+
+        DockWorkspace joined = editor.insertSplit(
+                initial, "leaf-b", "leaf-a", DockEdge.RIGHT, "split-ab", 0.31);
+        joined = editor.setRootBounds(joined, "root-a", new DockRect(10, 20, 294, 80));
+
+        assertEquals(new DockSize(200, 80), joined.restoreSizes().get("leaf-a"));
+        assertEquals(new DockSize(90, 60), joined.restoreSizes().get("leaf-b"));
+        assertEquals(
+                new DockRect(214, 20, 90, 60),
+                joined.restoredBounds("leaf-b", new DockRect(214, 20, 80, 80)));
+        assertEquals(
+                new DockRect(10, 20, 200, 80),
+                joined.restoredBounds("leaf-a", new DockRect(10, 20, 294, 80)));
+
+        DockWorkspace detached = editor.detach(
+                joined, "leaf-b", "root-b2", new DockRect(214, 20, 80, 80));
+        assertEquals(new DockRect(214, 20, 90, 60), detached.roots().getLast().bounds());
+        assertEquals("leaf-a", detached.roots().getFirst().content().nodeId());
+    }
+
     private static DockWorkspace workspace() {
         return new DockWorkspace(List.of(
                 ModelTestFixtures.root("root-a", "leaf-a", "a", 0),
@@ -135,5 +249,81 @@ class DockWorkspaceEditorTest {
 
     private static List<String> rootIds(DockWorkspace workspace) {
         return workspace.roots().stream().map(FloatingRoot::rootId).toList();
+    }
+
+    @Test
+    void windowModeFollowsTheWindowThroughSpliceAndDetach() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b", "c");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        DockWorkspace floated = editor.setRootMode(workspace(), "root-b", true, true);
+        assertTrue(floated.roots().get(1).floating());
+        assertTrue(floated.roots().get(1).pinned());
+
+        // Splicing an anchored window into a floating one keeps the host's mode.
+        DockWorkspace joined = editor.insertSplit(floated, "leaf-a", "leaf-b", DockEdge.LEFT, "split-ab", 0.5);
+        FloatingRoot host = joined.roots().getFirst();
+        assertEquals("root-b", host.rootId());
+        assertTrue(host.floating());
+
+        // A section taken out of an anchored window floats on its own.
+        DockWorkspace docked = editor.setRootMode(joined, "root-b", false, true);
+        assertFalse(docked.roots().getFirst().floating());
+        assertFalse(docked.roots().getFirst().pinned(), "docking drops the pin");
+        DockWorkspace detached = editor.detach(docked, "leaf-a", "root-a2", new DockRect(0, 0, 80, 60));
+        assertFalse(detached.roots().getFirst().floating());
+        assertTrue(detached.roots().getLast().floating());
+    }
+
+    @Test
+    void threeSplicedFloatingModulesToggleIndependently() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b", "c", "d", "e", "f", "g");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        var roots = new java.util.ArrayList<FloatingRoot>();
+        for (int i = 0; i < 7; i++) {
+            String id = String.valueOf((char) ('a' + i));
+            roots.add(new FloatingRoot("root-" + id, new DockRect(i * 120, 0, 110, 80),
+                    new LeafNode("leaf-" + id, id, true), i != 0, false));
+        }
+        DockWorkspace joined = new DockWorkspace(roots);
+        joined = editor.insertSplit(joined, "leaf-c", "leaf-b", DockEdge.RIGHT, "split-bc", 0.5);
+        joined = editor.insertSplit(joined, "leaf-e", "leaf-d", DockEdge.RIGHT, "split-de", 0.5);
+        joined = editor.insertSplit(joined, "leaf-g", "leaf-f", DockEdge.RIGHT, "split-fg", 0.5);
+        for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
+            joined = editor.setRootGroup(joined, "root-" + (char) ('a' + group * 2 - 1), group);
+        }
+        assertEquals(List.of(0, 1, 2, 3), joined.roots().stream().map(FloatingRoot::group).toList());
+
+        DockWorkspace hidden = editor.setRootHidden(joined, "root-d", true);
+        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 4)).project(hidden);
+        assertTrue(projection.isEffectivelyVisible("leaf-b"));
+        assertTrue(projection.isEffectivelyVisible("leaf-c"));
+        assertFalse(projection.isEffectivelyVisible("leaf-d"));
+        assertFalse(projection.isEffectivelyVisible("leaf-e"));
+        assertTrue(projection.isEffectivelyVisible("leaf-f"));
+        assertTrue(projection.isEffectivelyVisible("leaf-g"));
+        assertEquals(2, editor.setRootHidden(hidden, "root-d", false).roots().get(2).group());
+    }
+
+    @Test
+    void combinedModuleSlotsAreUniqueAndOnlyForFloatingWindows() {
+        ModuleCatalog catalog = ModelTestFixtures.catalog("a", "b", "c");
+        DockWorkspaceEditor editor = new DockWorkspaceEditor(catalog);
+        DockWorkspace floated = editor.setRootMode(
+                editor.setRootMode(workspace(), "root-a", true, false), "root-b", true, false);
+
+        DockWorkspace first = editor.setRootGroup(floated, "root-a", 1);
+        DockWorkspace moved = editor.setRootGroup(first, "root-b", 1);
+        assertEquals(0, moved.roots().get(0).group(), "slot 1 moves to the newer window");
+        assertEquals(1, moved.roots().get(1).group());
+
+        DockWorkspace anchored = editor.setRootGroup(floated, "root-c", 2);
+        assertEquals(0, anchored.roots().get(2).group(), "an anchored window cannot be a combined module");
+
+        DockWorkspace hidden = editor.setRootHidden(moved, "root-b", true);
+        assertTrue(hidden.roots().get(1).hidden());
+        DockWorkspace released = editor.setRootGroup(hidden, "root-b", 0);
+        assertFalse(released.roots().get(1).hidden(), "releasing a slot shows the window again");
+        DockWorkspace docked = editor.setRootMode(hidden, "root-b", false, false);
+        assertEquals(0, docked.roots().get(1).group(), "docking back drops the slot");
     }
 }

@@ -16,6 +16,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
+import net.neoforged.neoforge.network.connection.ConnectionType;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 class PatternProviderPacketCodecTest {
@@ -125,11 +126,11 @@ class PatternProviderPacketCodecTest {
         assertFalse(PatternProviderListPacket.reset(1, 0).isWellFormed());
         assertFalse(new PatternProviderListPacket(
                 1, 2, PatternProviderListPacket.Operation.DELTA,
-                3, 4, 1, 1, 0, 0, null, new Int2ObjectArrayMap<>()).isWellFormed());
+                3, 4, 1, 1, 0, 0, null, new Int2ObjectArrayMap<>(), null).isWellFormed());
         assertFalse(new PatternProviderListPacket(
                 1, 2, PatternProviderListPacket.Operation.FULL,
                 3, 4, 0, 1, PatternProviderClientState.MAX_INVENTORY_SIZE + 1,
-                0, null, new Int2ObjectArrayMap<>()).isWellFormed());
+                0, null, new Int2ObjectArrayMap<>(), null).isWellFormed());
     }
 
     @Test
@@ -177,8 +178,9 @@ class PatternProviderPacketCodecTest {
 
     @Test
     void requestValidationRejectsNegativeContainerId() {
-        assertTrue(new PatternProviderListPacket.Request(0, true).isWellFormed());
-        assertFalse(new PatternProviderListPacket.Request(-1, false).isWellFormed());
+        assertTrue(new PatternProviderListPacket.Request(0, true, (byte) 0).isWellFormed());
+        assertFalse(new PatternProviderListPacket.Request(-1, false, (byte) 0).isWellFormed());
+        assertFalse(new PatternProviderListPacket.Request(0, true, (byte) 3).isWellFormed());
     }
 
     private static void writeActionEnvelope(ByteBuf buf) {
@@ -190,6 +192,7 @@ class PatternProviderPacketCodecTest {
     }
 
     private static RegistryFriendlyByteBuf registryBuffer() {
-        return new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+        return new RegistryFriendlyByteBuf(
+                Unpooled.buffer(), RegistryAccess.EMPTY, ConnectionType.OTHER);
     }
 }

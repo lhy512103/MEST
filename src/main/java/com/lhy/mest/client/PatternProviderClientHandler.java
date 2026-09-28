@@ -18,6 +18,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
 import com.lhy.mest.network.PatternProviderClientState;
 import com.lhy.mest.network.PatternProviderListPacket;
+import com.lhy.mest.network.PatternProviderLoc;
 import com.lhy.mest.terminal.MESTMenu;
 
 /** Owns all client-only state and UI routing for pattern-provider synchronization. */
@@ -50,7 +51,7 @@ public final class PatternProviderClientHandler {
 
         ClientApplyResult result = STATE.apply(packet);
         if (result.requestResync()) {
-            PacketDistributor.sendToServer(new PatternProviderListPacket.Request(menu.containerId, true));
+            PacketDistributor.sendToServer(new PatternProviderListPacket.Request(menu.containerId, true, (byte) 0));
         }
         if (result.entries() != null) {
             screen.updatePatternProviders(result.entries());
@@ -73,7 +74,8 @@ public final class PatternProviderClientHandler {
             PatternContainerGroup group,
             int inventorySize,
             long sortOrder,
-            Int2ObjectMap<ItemStack> slots) {
+            Int2ObjectMap<ItemStack> slots,
+            @Nullable PatternProviderLoc loc) {
     }
 
     private static final class ClientState {
@@ -104,17 +106,22 @@ public final class PatternProviderClientHandler {
                 });
         @Nullable
         private MESTMenu activeMenu;
+        private final java.util.HashMap<Long, PatternProviderLoc> locations = new java.util.HashMap<>();
 
         void beginSession(MESTMenu menu) {
             boolean continueExistingEpoch = activeMenu == menu;
             activeMenu = menu;
             state.beginSession(menu.containerId, continueExistingEpoch);
+            if (!continueExistingEpoch) {
+                locations.clear();
+            }
         }
 
         void endSession(MESTMenu menu) {
             if (activeMenu == menu) {
                 activeMenu = null;
                 state.endSession();
+                locations.clear();
             }
         }
 
@@ -136,6 +143,13 @@ public final class PatternProviderClientHandler {
                     packet.group(),
                     slots);
             var result = state.apply(update);
+            if (packet.operation() == PatternProviderListPacket.Operation.RESET) {
+                locations.clear();
+            } else if (packet.operation() == PatternProviderListPacket.Operation.REMOVE) {
+                locations.remove(packet.providerId());
+            } else if (packet.operation() == PatternProviderListPacket.Operation.FULL && packet.loc() != null) {
+                locations.put(packet.providerId(), packet.loc());
+            }
             boolean requestResync = result.outcome() == PatternProviderClientState.Outcome.RESYNC_REQUIRED;
             if (result.outcome() != PatternProviderClientState.Outcome.CHANGED) {
                 return new ClientApplyResult(null, requestResync);
@@ -154,7 +168,8 @@ public final class PatternProviderClientHandler {
                         provider.metadata(),
                         provider.inventorySize(),
                         provider.sortOrder(),
-                        providerSlots);
+                        providerSlots,
+                        locations.get(provider.providerId()));
                 sortableEntries.add(new SortableEntry(entry.group().name().getString(), entry));
             }
             sortableEntries.sort(ENTRY_ORDER);

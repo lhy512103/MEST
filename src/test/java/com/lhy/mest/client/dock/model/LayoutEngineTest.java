@@ -35,8 +35,9 @@ class LayoutEngineTest {
                 catalog,
                 new LayoutStyle(DockInsets.NONE, 4)).project(workspace);
 
-        assertEquals(new DockRect(0, 0, 78, 100), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
-        assertEquals(new DockRect(82, 0, 118, 100), projection.visibleLeaf("leaf-c").orElseThrow().bounds());
+        // Both sides get their 80px preferred width; the 36px of slack is split 0.4 / 0.6.
+        assertEquals(new DockRect(0, 0, 94, 100), projection.visibleLeaf("leaf-a").orElseThrow().bounds());
+        assertEquals(new DockRect(98, 0, 102, 100), projection.visibleLeaf("leaf-c").orElseThrow().bounds());
         assertTrue(projection.visibleLeaf("leaf-b").isEmpty());
         assertTrue(projection.isEffectivelyVisible("split-inner"));
         assertFalse(projection.isEffectivelyVisible("leaf-b"));
@@ -44,7 +45,7 @@ class LayoutEngineTest {
     }
 
     @Test
-    void clampsBothChildrenToTheirMinimumWhenSpaceIsSufficient() {
+    void preferredWidthsComeFirstAndOnlySlackFollowsTheRatio() {
         var metrics = new LinkedHashMap<String, ModuleMetrics>();
         metrics.put("wide", new ModuleMetrics(new DockSize(70, 20), new DockSize(70, 20)));
         metrics.put("narrow", new ModuleMetrics(new DockSize(20, 20), new DockSize(20, 20)));
@@ -62,9 +63,10 @@ class LayoutEngineTest {
                 catalog,
                 new LayoutStyle(DockInsets.NONE, 4)).project(workspace);
 
-        assertEquals(70, projection.visibleLeaf("leaf-wide").orElseThrow().bounds().width());
-        assertEquals(26, projection.visibleLeaf("leaf-narrow").orElseThrow().bounds().width());
-        assertEquals(new DockRect(70, 0, 4, 40), projection.dividers().getFirst().bounds());
+        // A 0.1 ratio cannot squeeze "wide" below its preferred 70px; it only gets 10% of the slack.
+        assertEquals(71, projection.visibleLeaf("leaf-wide").orElseThrow().bounds().width());
+        assertEquals(25, projection.visibleLeaf("leaf-narrow").orElseThrow().bounds().width());
+        assertEquals(new DockRect(71, 0, 4, 40), projection.dividers().getFirst().bounds());
     }
 
     @Test
@@ -87,5 +89,80 @@ class LayoutEngineTest {
                 projection.visibleLeavesInPaintOrder().stream()
                         .map(LayoutProjection.LeafPlacement::moduleId)
                         .toList());
+    }
+
+    @Test
+    void splicedWindowFillsTheRootAsARectangleAndGivesLeftoverToTheExpandingLeaf() {
+        var metrics = new LinkedHashMap<String, ModuleMetrics>();
+        metrics.put("fixed", new ModuleMetrics(new DockSize(50, 40), new DockSize(80, 60)));
+        metrics.put("flex", new ModuleMetrics(new DockSize(40, 30), new DockSize(90, 80), true));
+        ModuleCatalog catalog = new ModuleCatalog(metrics);
+        LayoutNode split = new SplitNode(
+                "split-main",
+                DockAxis.VERTICAL,
+                0.5,
+                new LeafNode("leaf-fixed", "fixed", true),
+                new LeafNode("leaf-flex", "flex", true));
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-main", new DockRect(0, 0, 200, 200), split)));
+
+        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
+                .project(workspace);
+
+        DockRect fixed = projection.visibleLeaf("leaf-fixed").orElseThrow().bounds();
+        DockRect flex = projection.visibleLeaf("leaf-flex").orElseThrow().bounds();
+        assertEquals(new DockRect(0, 0, 200, 60), fixed);
+        assertEquals(new DockRect(0, 60, 200, 140), flex);
+        assertEquals(fixed.right(), flex.right());
+        assertEquals(fixed.bottom(), flex.y());
+        assertEquals(200, flex.bottom());
+        assertEquals(1, projection.dividers().size());
+    }
+
+    @Test
+    void splicedWindowKeepsANestedRowRectangularInsteadOfLShaped() {
+        var metrics = new LinkedHashMap<String, ModuleMetrics>();
+        metrics.put("crafting", new ModuleMetrics(new DockSize(100, 60), new DockSize(200, 80)));
+        metrics.put("inventory", new ModuleMetrics(new DockSize(80, 60), new DockSize(100, 100)));
+        metrics.put("access", new ModuleMetrics(new DockSize(60, 60), new DockSize(150, 100)));
+        metrics.put("encoding", new ModuleMetrics(new DockSize(80, 60), new DockSize(120, 80)));
+        ModuleCatalog catalog = new ModuleCatalog(metrics);
+        LayoutNode left = new SplitNode(
+                "split-left",
+                DockAxis.VERTICAL,
+                0.5,
+                new LeafNode("leaf-crafting", "crafting", true),
+                new SplitNode(
+                        "split-lower",
+                        DockAxis.HORIZONTAL,
+                        0.5,
+                        new LeafNode("leaf-inventory", "inventory", true),
+                        new LeafNode("leaf-access", "access", true)));
+        LayoutNode rootNode = new SplitNode(
+                "split-root",
+                DockAxis.HORIZONTAL,
+                0.5,
+                left,
+                new LeafNode("leaf-encoding", "encoding", true));
+        DockWorkspace workspace = new DockWorkspace(List.of(
+                new FloatingRoot("root-main", new DockRect(0, 0, 450, 180), rootNode)));
+
+        LayoutProjection projection = new LayoutEngine(catalog, new LayoutStyle(DockInsets.NONE, 0))
+                .project(workspace);
+
+        DockRect crafting = projection.visibleLeaf("leaf-crafting").orElseThrow().bounds();
+        DockRect inventory = projection.visibleLeaf("leaf-inventory").orElseThrow().bounds();
+        DockRect access = projection.visibleLeaf("leaf-access").orElseThrow().bounds();
+        DockRect encoding = projection.visibleLeaf("leaf-encoding").orElseThrow().bounds();
+        assertEquals(crafting.right(), encoding.x());
+        assertEquals(inventory.right(), access.x());
+        assertEquals(crafting.bottom(), inventory.y());
+        assertEquals(inventory.y(), access.y());
+        assertEquals(inventory.bottom(), access.bottom());
+        assertEquals(encoding.bottom(), inventory.bottom());
+        assertEquals(0, crafting.x());
+        assertEquals(0, crafting.y());
+        assertEquals(450, encoding.right());
+        assertEquals(180, encoding.bottom());
     }
 }

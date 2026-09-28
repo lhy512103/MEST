@@ -1,16 +1,26 @@
 package com.lhy.mest.terminal;
 
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 
 import appeng.api.features.GridLinkables;
+import appeng.api.upgrades.Upgrades;
+import appeng.core.localization.GuiText;
+import appeng.items.materials.EnergyCardItem;
 import appeng.items.tools.powered.WirelessTerminalItem;
 import appeng.items.tools.powered.powersink.PoweredItemCapabilities;
+import appeng.menu.locator.MenuLocators;
 
+import de.mari_023.ae2wtlib.api.AE2wtlibAPI;
 import de.mari_023.ae2wtlib.api.gui.Icon;
 import de.mari_023.ae2wtlib.api.registration.AddTerminalEvent;
 
+import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.compat.MestAddonUpgrades;
 import com.lhy.mest.registry.ModItems;
 
 /**
@@ -21,23 +31,35 @@ public final class MestTerminal {
 
     /** Internal terminal name used by AE2WTLib's registry/hotkey/universal-terminal systems. */
     public static final String TERMINAL_NAME = "spliced";
+    /** AE2WTLib's default hotkey id for {@link #TERMINAL_NAME}; its key mapping is {@code key.ae2.<id>}. */
+    public static final String HOTKEY_NAME = "wireless_" + TERMINAL_NAME + "_terminal";
+    private static final Icon SPLICED_TERMINAL_ICON = new Icon(
+            0,
+            0,
+            16,
+            16,
+            new Icon.Texture(
+                    ResourceLocation.fromNamespaceAndPath(
+                            MESplicedterminal.MODID, "textures/guis/spliced_terminal_icon.png"),
+                    16,
+                    16));
 
     /**
-     * Enqueue our terminal definition. This only adds a callback to AddTerminalEvent's handler list;
-     * the callback runs later when AE2WTLib fires AddTerminalEvent.run() during the ITEM RegisterEvent.
-     * By then the ItemMEST instance created by the deferred register already exists, which is all the
-     * builder needs (it captures the item object, not its registry entry).
+     * Enqueue our terminal definition. AE2WTLib fires {@code AddTerminalEvent.run()} during its
+     * own ITEM {@code RegisterEvent}, before this mod's DeferredItem is bound, so the builder
+     * must receive the eager item instance rather than {@code DeferredHolder.get()}.
      */
     public static void registerTerminal() {
         AddTerminalEvent.register(event -> event
-                .builder(TERMINAL_NAME, MESTMenuHost::new, MESTMenu.TYPE, ModItems.SPLICED_TERMINAL.get(), Icon.CRAFTING)
+                .builder(TERMINAL_NAME, MESTMenuHost::new, MESTMenu.TYPE, ModItems.splicedTerminalItem(), SPLICED_TERMINAL_ICON)
+                .hotkeyName(HOTKEY_NAME)
                 .upgradeCount(3)
                 .addTerminal());
     }
 
     /** AE2 powered items must expose an energy capability for the wireless battery to work. */
     public static void onRegisterCapabilities(RegisterCapabilitiesEvent event) {
-        var item = ModItems.SPLICED_TERMINAL.get();
+        var item = ModItems.splicedTerminalItem();
         event.registerItem(Capabilities.EnergyStorage.ITEM,
                 (stack, ctx) -> new PoweredItemCapabilities(stack, item), item);
     }
@@ -49,8 +71,23 @@ public final class MestTerminal {
      */
     public static void onCommonSetup(FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
-            var item = ModItems.SPLICED_TERMINAL.get();
+            var item = ModItems.splicedTerminalItem();
             GridLinkables.register(item, WirelessTerminalItem.LINKABLE_HANDLER);
+            String group = GuiText.WirelessTerminals.getTranslationKey();
+            for (var card : BuiltInRegistries.ITEM) {
+                if (card instanceof EnergyCardItem) {
+                    Upgrades.add(card, item, 3, group);
+                }
+            }
+            var magnet = BuiltInRegistries.ITEM.get(AE2wtlibAPI.id("magnet_card"));
+            if (magnet != Items.AIR) {
+                Upgrades.add(magnet, item, 1, group);
+            }
+            MestAddonUpgrades.register();
+            MenuLocators.register(
+                    ToolkitItemLocator.class,
+                    ToolkitItemLocator::writeToPacket,
+                    ToolkitItemLocator::readFromPacket);
         });
     }
 }

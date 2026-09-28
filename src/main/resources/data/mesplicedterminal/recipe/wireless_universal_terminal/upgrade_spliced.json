@@ -1,0 +1,7 @@
+{
+  "type": "ae2wtlib:upgrade",
+  "terminal": {
+    "item": "mesplicedterminal:spliced_terminal"
+  },
+  "terminalName": "spliced"
+}

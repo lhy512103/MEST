@@ -3,6 +3,7 @@ package com.lhy.mest.client.dock;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.Rect2i;
 
+import appeng.client.gui.style.Blitter;
 import appeng.core.AppEng;
 
 /**
@@ -16,6 +17,9 @@ import appeng.core.AppEng;
  */
 public class Scrollbar {
     private static final int HANDLE_HEIGHT = 15;
+    private static final int TRACK_SRC_X = 175;
+    private static final int TRACK_SRC_W = 12;
+    private static final Blitter TERMINAL = Blitter.texture("guis/terminal.png", 256, 256);
 
     private int scroll;
     private boolean dragging;
@@ -55,14 +59,44 @@ public class Scrollbar {
         return new Rect2i(trackX, thumbY, trackW, thumbH);
     }
 
-    /** Draw the same fixed-size AE2 scroller handle used by stock terminal widgets. */
+    /** Draw the AE2 scroller handle at native sprite size. The track belongs in the panel texture. */
     public void render(GuiGraphics g, int trackX, int trackY, int trackW, int trackH, int maxScroll) {
-        g.fill(trackX, trackY, trackX + trackW, trackY + trackH, ModulePanel.COLOR_DARK);
-        g.fill(trackX + 1, trackY, trackX + trackW - 1, trackY + trackH, ModulePanel.COLOR_LIGHT);
+        render(g, trackX, trackY, trackW, trackH, maxScroll, false);
+    }
+
+    public void render(GuiGraphics g, int trackX, int trackY, int trackW, int trackH, int maxScroll,
+            boolean drawTrack) {
+        if (drawTrack) {
+            drawTerminalTrack(g, trackX, trackY, trackH);
+        }
         int thumbH = thumbHeight(trackH);
         int thumbY = thumbY(trackY, trackH, thumbH, scroll, maxScroll);
-        String sprite = maxScroll <= 0 ? "small_scroller_disabled" : "small_scroller";
-        g.blitSprite(AppEng.makeId(sprite), trackX, thumbY, trackW, thumbH);
+        var sprite = AppEng.makeId(maxScroll <= 0 ? "small_scroller_disabled" : "small_scroller");
+        Blitter.guiSprite(sprite).dest(trackX, thumbY).blit(g);
+    }
+
+    public static void drawTerminalTrack(GuiGraphics g, int x, int y, int height) {
+        int remaining = height;
+        int destY = y;
+        int top = Math.min(18, remaining);
+        TERMINAL.src(TRACK_SRC_X, 17, TRACK_SRC_W, top).dest(x, destY, TRACK_SRC_W, top).blit(g);
+        destY += top;
+        remaining -= top;
+        if (remaining <= 0) {
+            return;
+        }
+        int bottom = Math.min(18, remaining);
+        int middle = remaining - bottom;
+        while (middle > 0) {
+            int slice = Math.min(18, middle);
+            TERMINAL.src(TRACK_SRC_X, 35, TRACK_SRC_W, slice).dest(x, destY, TRACK_SRC_W, slice).blit(g);
+            destY += slice;
+            middle -= slice;
+        }
+        if (bottom > 0) {
+            TERMINAL.src(TRACK_SRC_X, 53 + 18 - bottom, TRACK_SRC_W, bottom)
+                    .dest(x, destY, TRACK_SRC_W, bottom).blit(g);
+        }
     }
 
     /**

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -15,13 +16,15 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
-import com.google.gson.JsonPrimitive;
 
+import com.lhy.mest.client.dock.model.ContentOffset;
 import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockRect;
+import com.lhy.mest.client.dock.model.DockSize;
 import com.lhy.mest.client.dock.model.DockWorkspace;
 import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.dock.model.LayoutNode;
+import com.lhy.mest.client.dock.model.LayoutTrees;
 import com.lhy.mest.client.dock.model.LeafNode;
 import com.lhy.mest.client.dock.model.ModuleCatalog;
 import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
@@ -39,10 +42,19 @@ import com.lhy.mest.client.dock.workspace.DockLayoutDto.SplitDto;
 public final class DockLayoutCodec {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Set<String> V2_FIELDS = Set.of("version", "roots");
-    private static final Set<String> V3_FIELDS = Set.of("version", "roots", "policies");
-    private static final Set<String> POLICY_FIELDS = Set.of("visible", "movable", "resizable");
-    private static final Set<String> ROOT_FIELDS = Set.of("rootId", "bounds", "content");
+    /**
+     * {@code spliceMode} and the older {@code compactSplice} are no longer written; they are still
+     * accepted so pre-v6 documents decode and can tell whether they were already a shell.
+     */
+    private static final Set<String> V3_FIELDS =
+            Set.of("version", "roots", "policies", "restoreSizes", "name", "spliceMode", "compactSplice",
+                    "contentOffsets");
+    private static final Set<String> OFFSET_FIELDS = Set.of("x", "y");
+    private static final Set<String> POLICY_FIELDS =
+            Set.of("visible", "movable", "resizable", "floating", "pinned", "showTerminalButton");
+    private static final Set<String> ROOT_FIELDS = Set.of("rootId", "bounds", "content", "floating", "pinned", "group", "hidden");
     private static final Set<String> BOUNDS_FIELDS = Set.of("x", "y", "width", "height");
+    private static final Set<String> SIZE_FIELDS = Set.of("width", "height");
     private static final Set<String> LEAF_FIELDS = Set.of("type", "nodeId", "moduleId", "visible");
     private static final Set<String> SPLIT_FIELDS = Set.of("type", "nodeId", "axis", "ratio", "first", "second");
     private static final Set<String> V1_ENTRY_FIELDS =
@@ -50,10 +62,21 @@ public final class DockLayoutCodec {
 
     private final ModuleCatalog catalog;
     private final LegacyMigrationContext migrationContext;
+    private final UnaryOperator<DockWorkspace> shellFit;
 
     public DockLayoutCodec(ModuleCatalog catalog, LegacyMigrationContext migrationContext) {
+        this(catalog, migrationContext, UnaryOperator.identity());
+    }
+
+    /**
+     * @param shellFit applied to documents saved in the removed stretch or compact splice modes,
+     *                 whose windows were sized for those modes rather than for their content
+     */
+    public DockLayoutCodec(ModuleCatalog catalog, LegacyMigrationContext migrationContext,
+            UnaryOperator<DockWorkspace> shellFit) {
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.migrationContext = Objects.requireNonNull(migrationContext, "migrationContext");
+        this.shellFit = Objects.requireNonNull(shellFit, "shellFit");
     }
 
     public String encode(DockWorkspace workspace) {
@@ -73,14 +96,21 @@ public final class DockLayoutCodec {
             if (object.has("version")) {
                 DockLayoutDto dto = readVersioned(object);
                 Reconciliation reconciliation = reconcile(fromDtoRaw(dto));
+                DockWorkspace workspace = wasShell(object, dto.version())
+                        ? reconciliation.workspace()
+                        : shellFit.apply(reconciliation.workspace());
+                if (dto.version() < 7) {
+                    workspace = deriveWindowModes(workspace);
+                }
                 return new DecodedLayout(
-                        reconciliation.workspace(),
+                        workspace,
                         dto.version(),
                         false,
                         dto.version() != DockLayoutDto.CURRENT_VERSION || reconciliation.changed());
             }
             Reconciliation reconciliation = reconcile(migrateV1(object));
-            return new DecodedLayout(reconciliation.workspace(), 1, true, reconciliation.changed());
+            return new DecodedLayout(
+                    deriveWindowModes(shellFit.apply(reconciliation.workspace())), 1, true, reconciliation.changed());
         } catch (DockLayoutFormatException e) {
             throw e;
         } catch (JsonParseException | ArithmeticException | ClassCastException e) {
@@ -94,25 +124,69 @@ public final class DockLayoutCodec {
         WorkspaceValidator.validateStrict(workspace, catalog);
         var roots = new ArrayList<RootDto>();
         for (FloatingRoot root : workspace.roots()) {
-            roots.add(new RootDto(root.rootId(), root.bounds(), toDto(root.content())));
+            roots.add(new RootDto(root.rootId(), root.bounds(), toDto(root.content()), root.floating(), root.pinned(),
+                    root.group(), root.hidden()));
         }
         var policies = new java.util.LinkedHashMap<String, PolicyDto>();
         for (String moduleId : catalog.moduleIds()) {
             ModuleLayoutPolicy policy = workspace.policyFor(moduleId);
-            policies.put(moduleId, new PolicyDto(policy.visible(), policy.movable(), policy.resizable()));
+            policies.put(moduleId, new PolicyDto(
+                    policy.visible(),
+                    policy.movable(),
+                    policy.resizable(),
+                    policy.floating(),
+                    policy.pinned(),
+                    policy.showTerminalButton()));
         }
-        return new DockLayoutDto(DockLayoutDto.CURRENT_VERSION, roots, policies);
+        return new DockLayoutDto(
+                DockLayoutDto.CURRENT_VERSION,
+                roots,
+                policies,
+                workspace.restoreSizes(),
+                workspace.contentOffsets());
     }
 
     public DockWorkspace fromDto(DockLayoutDto dto) throws DockLayoutFormatException {
         return reconcile(fromDtoRaw(dto)).workspace();
     }
 
+    /**
+     * Placement tweaks: an older document may hold the network-tool panel further right than the
+     * current default. Only a window holding nothing but that panel is moved; one it was spliced
+     * into was arranged by the player, and shifting it would drag every other module along.
+     */
+    /** A hand-edited file may reuse a combined-module slot; the first window keeps it. */
+    private static void dropDuplicateGroups(List<FloatingRoot> roots) {
+        var used = new java.util.HashSet<Integer>();
+        for (int i = 0; i < roots.size(); i++) {
+            FloatingRoot root = roots.get(i);
+            if (root.group() != 0 && !used.add(root.group())) {
+                roots.set(i, root.withGroup(0));
+            }
+        }
+    }
+
+    private static void migrateNetworkToolkitPlacement(List<FloatingRoot> roots, int version) {
+        int shift = DockWorkspaceDefaults.networkToolkitShiftFrom(version);
+        if (shift <= 0) {
+            return;
+        }
+        for (int index = 0; index < roots.size(); index++) {
+            FloatingRoot root = roots.get(index);
+            if (root.content() instanceof LeafNode leaf
+                    && DockWorkspaceDefaults.NETWORK_TOOLKIT_MODULE.equals(leaf.moduleId())) {
+                roots.set(index, root.withBounds(
+                        DockWorkspaceDefaults.networkToolkitBounds(root.bounds(), shift)));
+            }
+        }
+    }
+
     private DockWorkspace fromDtoRaw(DockLayoutDto dto) throws DockLayoutFormatException {
         if (dto == null) {
             throw new DockLayoutFormatException("layout DTO must not be null");
         }
-        if (dto.version() != 2 && dto.version() != DockLayoutDto.CURRENT_VERSION) {
+        if (dto.version() < DockLayoutDto.MIN_SUPPORTED_VERSION
+                || dto.version() > DockLayoutDto.CURRENT_VERSION) {
             throw new DockLayoutFormatException("unsupported layout version: " + dto.version());
         }
         if (dto.roots() == null) {
@@ -129,8 +203,14 @@ public final class DockLayoutCodec {
                 roots.add(new FloatingRoot(
                         root.rootId(),
                         root.bounds(),
-                        fromDto(root.content(), budget, 1)));
+                        fromDto(root.content(), budget, 1),
+                        root.floating(),
+                        root.pinned(),
+                        root.group(),
+                        root.hidden()));
             }
+            dropDuplicateGroups(roots);
+            migrateNetworkToolkitPlacement(roots, dto.version());
             if (dto.version() == 2) {
                 DockWorkspace workspace = new DockWorkspace(roots);
                 WorkspaceValidator.validateStructure(workspace);
@@ -141,11 +221,20 @@ public final class DockLayoutCodec {
                 dto.policies().forEach((moduleId, policy) -> {
                     if (policy != null) {
                         policies.put(moduleId, new ModuleLayoutPolicy(
-                                policy.visible(), policy.movable(), policy.resizable()));
+                                policy.visible(),
+                                policy.movable(),
+                                policy.resizable(),
+                                policy.floating(),
+                                policy.pinned(),
+                                policy.showTerminalButton()));
                     }
                 });
             }
-            DockWorkspace workspace = new DockWorkspace(roots, policies);
+            DockWorkspace workspace = new DockWorkspace(
+                    roots,
+                    policies,
+                    DockWorkspace.retainRestoreSizes(dto.restoreSizes(), roots),
+                    dto.contentOffsets());
             WorkspaceValidator.validateStructure(workspace);
             return workspace;
         } catch (IllegalArgumentException | NullPointerException e) {
@@ -185,7 +274,11 @@ public final class DockLayoutCodec {
         for (String moduleId : catalog.moduleIds()) {
             retainedPolicies.put(moduleId, source.policyFor(moduleId));
         }
-        var result = new DockWorkspace(retainedRoots, retainedPolicies);
+        var result = new DockWorkspace(
+                retainedRoots,
+                retainedPolicies,
+                DockWorkspace.retainRestoreSizes(source.restoreSizes(), retainedRoots),
+                source.contentOffsets());
         var usedModules = WorkspaceValidator.validateStructure(result);
         var usedIdentifiers = collectIdentifiers(result);
         int defaultIndex = retainedRoots.size();
@@ -197,13 +290,24 @@ public final class DockLayoutCodec {
             usedIdentifiers.add(rootId);
             String leafId = uniqueIdentifier(DockWorkspaceDefaults.leafNodeId(moduleId), usedIdentifiers, "leaf");
             usedIdentifiers.add(leafId);
+            var defaults = catalog.metrics(moduleId).defaults();
+            boolean visible = defaults.visible();
+            retainedPolicies.put(moduleId, defaults.policy());
             retainedRoots.add(new FloatingRoot(
                     rootId,
-                    migrationContext.defaultRootBounds(catalog.metrics(moduleId), defaultIndex++),
-                    new LeafNode(leafId, moduleId, true)));
+                    DockWorkspaceDefaults.defaultBounds(
+                            moduleId,
+                            migrationContext.defaultRootBounds(catalog.metrics(moduleId), defaultIndex++)),
+                    new LeafNode(leafId, moduleId, visible),
+                    defaults.floating(),
+                    defaults.pinned()));
         }
 
-        result = new DockWorkspace(retainedRoots, retainedPolicies);
+        result = new DockWorkspace(
+                retainedRoots,
+                retainedPolicies,
+                DockWorkspace.retainRestoreSizes(source.restoreSizes(), retainedRoots),
+                source.contentOffsets());
         try {
             WorkspaceValidator.validateStrict(result, catalog);
         } catch (RuntimeException e) {
@@ -295,6 +399,18 @@ public final class DockLayoutCodec {
             rootObject.addProperty("rootId", root.rootId());
             rootObject.add("bounds", writeBounds(root.bounds()));
             rootObject.add("content", writeNode(root.content()));
+            if (root.floating()) {
+                rootObject.addProperty("floating", true);
+            }
+            if (root.pinned()) {
+                rootObject.addProperty("pinned", true);
+            }
+            if (root.group() != 0) {
+                rootObject.addProperty("group", root.group());
+            }
+            if (root.hidden()) {
+                rootObject.addProperty("hidden", true);
+            }
             roots.add(rootObject);
         }
         object.add("roots", roots);
@@ -304,9 +420,30 @@ public final class DockLayoutCodec {
             policy.addProperty("visible", entry.getValue().visible());
             policy.addProperty("movable", entry.getValue().movable());
             policy.addProperty("resizable", entry.getValue().resizable());
+            policy.addProperty("floating", entry.getValue().floating());
+            policy.addProperty("pinned", entry.getValue().pinned());
+            policy.addProperty("showTerminalButton", entry.getValue().showTerminalButton());
             policies.add(entry.getKey(), policy);
         }
         object.add("policies", policies);
+        if (dto.restoreSizes() != null && !dto.restoreSizes().isEmpty()) {
+            var restoreSizes = new JsonObject();
+            for (var entry : dto.restoreSizes().entrySet()) {
+                restoreSizes.add(entry.getKey(), writeSize(entry.getValue()));
+            }
+            object.add("restoreSizes", restoreSizes);
+        }
+        if (dto.contentOffsets() != null && !dto.contentOffsets().isEmpty()) {
+            var offsets = new JsonObject();
+            for (var entry : dto.contentOffsets().entrySet()) {
+                if (entry.getValue() != null && !entry.getValue().isZero()) {
+                    offsets.add(entry.getKey(), writeOffset(entry.getValue()));
+                }
+            }
+            if (!offsets.entrySet().isEmpty()) {
+                object.add("contentOffsets", offsets);
+            }
+        }
         return object;
     }
 
@@ -316,6 +453,20 @@ public final class DockLayoutCodec {
         object.addProperty("y", bounds.y());
         object.addProperty("width", bounds.width());
         object.addProperty("height", bounds.height());
+        return object;
+    }
+
+    private JsonObject writeSize(DockSize size) {
+        var object = new JsonObject();
+        object.addProperty("width", size.width());
+        object.addProperty("height", size.height());
+        return object;
+    }
+
+    private JsonObject writeOffset(ContentOffset offset) {
+        var object = new JsonObject();
+        object.addProperty("x", offset.x());
+        object.addProperty("y", offset.y());
         return object;
     }
 
@@ -340,7 +491,7 @@ public final class DockLayoutCodec {
 
     private DockLayoutDto readVersioned(JsonObject object) throws DockLayoutFormatException {
         int version = integer(object, "version", "document");
-        if (version != 2 && version != DockLayoutDto.CURRENT_VERSION) {
+        if (version < DockLayoutDto.MIN_SUPPORTED_VERSION || version > DockLayoutDto.CURRENT_VERSION) {
             throw new DockLayoutFormatException("unsupported layout version: " + version);
         }
         requireOnlyFields(object, version == 2 ? V2_FIELDS : V3_FIELDS, "document");
@@ -354,7 +505,11 @@ public final class DockLayoutCodec {
             roots.add(new RootDto(
                     string(root, "rootId", path),
                     readBounds(objectField(root, "bounds", path), path + ".bounds"),
-                    readNode(objectField(root, "content", path), path + ".content", budget, 1)));
+                    readNode(objectField(root, "content", path), path + ".content", budget, 1),
+                    optionalBoolean(root, "floating", false, path),
+                    optionalBoolean(root, "pinned", false, path),
+                    root.has("group") ? integer(root, "group", path) : 0,
+                    optionalBoolean(root, "hidden", false, path)));
         }
         if (version == 2) {
             return new DockLayoutDto(version, roots);
@@ -368,9 +523,53 @@ public final class DockLayoutCodec {
             policies.put(entry.getKey(), new PolicyDto(
                     bool(policy, "visible", path),
                     bool(policy, "movable", path),
-                    bool(policy, "resizable", path)));
+                    bool(policy, "resizable", path),
+                    policy.has("floating") && bool(policy, "floating", path),
+                    policy.has("pinned") && bool(policy, "pinned", path),
+                    policy.has("showTerminalButton")
+                            ? bool(policy, "showTerminalButton", path)
+                            : !catalog.contains(entry.getKey())
+                                    || catalog.metrics(entry.getKey()).defaults().showTerminalButton()));
         }
-        return new DockLayoutDto(version, roots, policies);
+        return new DockLayoutDto(
+                version,
+                roots,
+                policies,
+                readRestoreSizes(object),
+                readContentOffsets(object));
+    }
+
+    /**
+     * Before v7 a window's mode followed its modules: it was anchored while any visible module was
+     * non-floating, and pinned while a visible floating module was pinned. Keeps old layouts as-is.
+     */
+    static DockWorkspace deriveWindowModes(DockWorkspace workspace) {
+        var roots = new ArrayList<FloatingRoot>();
+        for (FloatingRoot root : workspace.roots()) {
+            List<LeafNode> leaves = LayoutTrees.leaves(root.content());
+            List<LeafNode> shown = leaves.stream()
+                    .filter(leaf -> workspace.policyFor(leaf.moduleId()).visible())
+                    .toList();
+            List<LeafNode> considered = shown.isEmpty() ? leaves : shown;
+            boolean floating = considered.stream().allMatch(leaf -> workspace.policyFor(leaf.moduleId()).floating());
+            boolean pinned = floating
+                    && considered.stream().anyMatch(leaf -> workspace.policyFor(leaf.moduleId()).pinned());
+            roots.add(root.withMode(floating, pinned));
+        }
+        return workspace.withRoots(roots);
+    }
+
+    /**
+     * Whether the document already laid its windows out as shells. Before v6 that was only true
+     * for {@code "spliceMode": "shell"}; the stretch and compact modes (including the older
+     * {@code compactSplice} flag) sized windows differently.
+     */
+    private static boolean wasShell(JsonObject document, int version) {
+        if (version >= 6) {
+            return true;
+        }
+        JsonElement mode = document.get("spliceMode");
+        return mode != null && mode.isJsonPrimitive() && "shell".equalsIgnoreCase(mode.getAsString().trim());
     }
 
     private DockRect readBounds(JsonObject object, String path) throws DockLayoutFormatException {
@@ -383,6 +582,48 @@ public final class DockLayoutCodec {
             throw new DockLayoutFormatException(path + " width and height must be positive");
         }
         return new DockRect(x, y, width, height);
+    }
+
+    private Map<String, ContentOffset> readContentOffsets(JsonObject document) throws DockLayoutFormatException {
+        if (!document.has("contentOffsets")) {
+            return Map.of();
+        }
+        JsonObject object = objectField(document, "contentOffsets", "document");
+        var offsets = new java.util.LinkedHashMap<String, ContentOffset>();
+        for (var entry : object.entrySet()) {
+            String path = "contentOffsets." + entry.getKey();
+            JsonObject offset = object(entry.getValue(), path);
+            requireOnlyFields(offset, OFFSET_FIELDS, path);
+            int x = integer(offset, "x", path);
+            int y = integer(offset, "y", path);
+            if (x < 0 || y < 0) {
+                throw new DockLayoutFormatException(path + " x and y must be non-negative");
+            }
+            if (x != 0 || y != 0) {
+                offsets.put(entry.getKey(), new ContentOffset(x, y));
+            }
+        }
+        return offsets;
+    }
+
+    private Map<String, DockSize> readRestoreSizes(JsonObject document) throws DockLayoutFormatException {
+        if (!document.has("restoreSizes")) {
+            return Map.of();
+        }
+        JsonObject object = objectField(document, "restoreSizes", "document");
+        var restoreSizes = new java.util.LinkedHashMap<String, DockSize>();
+        for (var entry : object.entrySet()) {
+            String path = "restoreSizes." + entry.getKey();
+            JsonObject size = object(entry.getValue(), path);
+            requireOnlyFields(size, SIZE_FIELDS, path);
+            int width = integer(size, "width", path);
+            int height = integer(size, "height", path);
+            if (width <= 0 || height <= 0) {
+                throw new DockLayoutFormatException(path + " width and height must be positive");
+            }
+            restoreSizes.put(entry.getKey(), new DockSize(width, height));
+        }
+        return restoreSizes;
     }
 
     private NodeDto readNode(JsonObject object, String path, DecodeBudget budget, int depth)

@@ -8,20 +8,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
+import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.LeafNode;
 import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
 import com.lhy.mest.client.dock.model.SplitNode;
 
 class DockLayoutCodecTest {
     @Test
-    void roundTripsV3WithoutLosingRootOrderTreeStateOrPolicies() throws Exception {
+    void roundTripsCurrentVersionWithoutLosingRootOrderTreeStateOrPolicies() throws Exception {
         DockLayoutCodec codec = codec();
         var original = WorkspacePersistenceFixtures.workspace();
 
         String encoded = codec.encode(original);
         DockLayoutCodec.DecodedLayout decoded = codec.decode(encoded);
 
-        assertEquals(3, decoded.sourceVersion());
+        assertEquals(DockLayoutDto.CURRENT_VERSION, decoded.sourceVersion());
         assertFalse(decoded.migrated());
         assertFalse(decoded.reconciled());
         assertFalse(decoded.needsRewrite());
@@ -40,6 +41,177 @@ class DockLayoutCodecTest {
 
         assertEquals(new ModuleLayoutPolicy(true, false, true), decoded.policyFor("a"));
         assertEquals(ModuleLayoutPolicy.defaults(), decoded.policyFor("b"));
+    }
+
+    @Test
+    void roundTripsRestoreSizes() throws Exception {
+        var base = WorkspacePersistenceFixtures.workspace();
+        var restoreSizes = new java.util.LinkedHashMap<String, com.lhy.mest.client.dock.model.DockSize>();
+        restoreSizes.put("leaf-a", new com.lhy.mest.client.dock.model.DockSize(100, 80));
+        restoreSizes.put("leaf-b", new com.lhy.mest.client.dock.model.DockSize(90, 60));
+        var original = new com.lhy.mest.client.dock.model.DockWorkspace(
+                base.roots(), base.policies(), restoreSizes);
+
+        String encoded = codec().encode(original);
+        var decoded = codec().decode(encoded).workspace();
+
+        assertEquals(original.restoreSizes(), decoded.restoreSizes());
+        assertTrue(encoded.contains("restoreSizes"));
+        assertFalse(codec().decode(encoded).needsRewrite());
+    }
+
+    @Test
+    void roundTripsWindowModes() throws Exception {
+        var base = WorkspacePersistenceFixtures.workspace();
+        var roots = new java.util.ArrayList<>(base.roots());
+        roots.set(0, roots.getFirst().withMode(true, true));
+        var original = base.withRoots(roots);
+
+        String encoded = codec().encode(original);
+        var decoded = codec().decode(encoded);
+
+        assertTrue(decoded.workspace().roots().getFirst().floating());
+        assertTrue(decoded.workspace().roots().getFirst().pinned());
+        assertFalse(decoded.workspace().roots().getLast().floating());
+        assertFalse(decoded.needsRewrite());
+    }
+
+    @Test
+    void roundTripsCombinedModulesAndDropsDuplicateSlots() throws Exception {
+        var base = WorkspacePersistenceFixtures.workspace();
+        var roots = new java.util.ArrayList<>(base.roots());
+        roots.set(0, roots.getFirst().withMode(true, false).withGroup(2).withHidden(true));
+        String encoded = codec().encode(base.withRoots(roots));
+
+        var decoded = codec().decode(encoded).workspace().roots().getFirst();
+        assertEquals(2, decoded.group());
+        assertTrue(decoded.hidden());
+
+        int last = encoded.lastIndexOf("\"rootId\"");
+        String duplicated = encoded.substring(0, last)
+                + "\"group\": 2, \"floating\": true, " + encoded.substring(last);
+        var twice = codec().decode(duplicated).workspace().roots();
+        assertEquals(1, twice.stream().filter(root -> root.group() == 2).count());
+    }
+
+    @Test
+    void olderLayoutsTakeTheirWindowModeFromTheModules() throws Exception {
+        String persisted = """
+                {
+                  "version": 6,
+                  "roots": [{
+                    "rootId": "root-a",
+                    "bounds": {"x": 0, "y": 0, "width": 100, "height": 80},
+                    "content": {"type": "leaf", "nodeId": "leaf-a", "moduleId": "a", "visible": true}
+                  }, {
+                    "rootId": "root-bc",
+                    "bounds": {"x": 160, "y": 40, "width": 220, "height": 140},
+                    "content": {
+                      "type": "split", "nodeId": "split-bc", "axis": "VERTICAL", "ratio": 0.35,
+                      "first": {"type": "leaf", "nodeId": "leaf-b", "moduleId": "b", "visible": true},
+                      "second": {"type": "leaf", "nodeId": "leaf-c", "moduleId": "c", "visible": true}
+                    }
+                  }],
+                  "policies": {
+                    "a": {"visible": true, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true},
+                    "b": {"visible": true, "movable": true, "resizable": true, "floating": true, "pinned": true, "showTerminalButton": true},
+                    "c": {"visible": false, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true}
+                  }
+                }
+                """;
+
+        var decoded = codec().decode(persisted);
+
+        assertFalse(decoded.workspace().roots().getFirst().floating());
+        // "c" is hidden, so only the visible, pinned "b" decides the window's mode.
+        assertTrue(decoded.workspace().roots().getLast().floating());
+        assertTrue(decoded.workspace().roots().getLast().pinned());
+        assertTrue(decoded.needsRewrite());
+    }
+
+    @Test
+    void noLongerWritesASpliceMode() throws Exception {
+        String encoded = codec().encode(WorkspacePersistenceFixtures.workspace());
+
+        assertFalse(encoded.contains("spliceMode"));
+        assertFalse(encoded.contains("compactSplice"));
+        assertFalse(codec().decode(encoded).needsRewrite());
+    }
+
+    @Test
+    void roundTripsContentOffsets() throws Exception {
+        var original = WorkspacePersistenceFixtures.workspace().withContentOffsets(java.util.Map.of(
+                "a", new com.lhy.mest.client.dock.model.ContentOffset(6, 2)));
+
+        String encoded = codec().encode(original);
+        var decoded = codec().decode(encoded).workspace();
+
+        assertEquals(original.contentOffsets(), decoded.contentOffsets());
+        assertTrue(encoded.contains("contentOffsets"));
+        assertEquals(6, decoded.contentOffset("a").x());
+        assertEquals(2, decoded.contentOffset("a").y());
+        assertEquals(com.lhy.mest.client.dock.model.ContentOffset.ZERO, decoded.contentOffset("b"));
+    }
+
+    @Test
+    void missingContentOffsetsDecodeAsEmpty() throws Exception {
+        var original = WorkspacePersistenceFixtures.workspace();
+        String encoded = codec().encode(original);
+        assertFalse(encoded.contains("contentOffsets"));
+        assertTrue(codec().decode(encoded).workspace().contentOffsets().isEmpty());
+    }
+
+    @Test
+    void fitsOnlyLayoutsSavedOutsideTheShellMode() throws Exception {
+        String stretch = legacySplicedDocument("");
+        String compact = legacySplicedDocument(", \"compactSplice\": true");
+        String shell = legacySplicedDocument(", \"spliceMode\": \"shell\"");
+        var fitted = new java.util.ArrayList<com.lhy.mest.client.dock.model.DockWorkspace>();
+        var codec = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog(),
+                WorkspacePersistenceFixtures.migrationContext(),
+                workspace -> {
+                    fitted.add(workspace);
+                    return workspace;
+                });
+
+        codec.decode(stretch);
+        codec.decode(compact);
+        assertEquals(2, fitted.size());
+
+        codec.decode(shell);
+        var current = codec.decode(codec.encode(fitted.getFirst()));
+        assertEquals(2, fitted.size(), "shell and current-version documents keep their window sizes");
+        assertFalse(current.needsRewrite());
+        assertTrue(codec.decode(stretch).needsRewrite(), "legacy documents are rewritten as v6");
+    }
+
+    private static String legacySplicedDocument(String modeField) {
+        return """
+                {
+                  "version": 5,
+                  "roots": [{
+                    "rootId": "root-a",
+                    "bounds": {"x": 0, "y": 0, "width": 100, "height": 80},
+                    "content": {
+                      "type": "leaf", "nodeId": "leaf-a", "moduleId": "a", "visible": true
+                    }
+                  }, {
+                    "rootId": "root-bc",
+                    "bounds": {"x": 160, "y": 40, "width": 220, "height": 140},
+                    "content": {
+                      "type": "split", "nodeId": "split-bc", "axis": "VERTICAL", "ratio": 0.35,
+                      "first": {"type": "leaf", "nodeId": "leaf-b", "moduleId": "b", "visible": true},
+                      "second": {"type": "leaf", "nodeId": "leaf-c", "moduleId": "c", "visible": true}
+                    }
+                  }],
+                  "policies": {
+                    "a": {"visible": true, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true},
+                    "b": {"visible": true, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true},
+                    "c": {"visible": true, "movable": true, "resizable": true, "floating": false, "pinned": false, "showTerminalButton": true}
+                  }%s
+                }
+                """.formatted(modeField);
     }
 
     @Test
@@ -66,6 +238,76 @@ class DockLayoutCodecTest {
         assertTrue(decoded.needsRewrite());
         assertTrue(leaf.visible(), "v3 normalizes structural leaf visibility");
         assertFalse(decoded.workspace().policyFor("a").visible());
+    }
+
+    @Test
+    void migratesOlderLayoutsToTheCurrentNetworkToolkitPlacement() throws Exception {
+        String persisted = """
+                {
+                  "version": 3,
+                  "roots": [{
+                    "rootId": "root-nt",
+                    "bounds": {"x": 501, "y": 284, "width": 71, "height": 66},
+                    "content": {
+                      "type": "leaf", "nodeId": "leaf-nt", "moduleId": "network_toolkit",
+                      "visible": true
+                    }
+                  }],
+                  "policies": {
+                    "network_toolkit": {"visible": true, "movable": true, "resizable": true,
+                                        "floating": true, "pinned": true, "showTerminalButton": true}
+                  }
+                }
+                """;
+        DockLayoutCodec codec = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog("network_toolkit"),
+                WorkspacePersistenceFixtures.migrationContext());
+
+        DockLayoutCodec.DecodedLayout decoded = codec.decode(persisted);
+
+        assertEquals(3, decoded.sourceVersion());
+        assertTrue(decoded.needsRewrite());
+        DockRect migrated = decoded.workspace().roots().getFirst().bounds();
+        assertEquals(501 - DockWorkspaceDefaults.NETWORK_TOOLKIT_SHIFT_X, migrated.x());
+        assertEquals(284, migrated.y());
+        assertEquals(71, migrated.width());
+        assertEquals(66, migrated.height());
+
+        // The migrated position is persisted, so the shift is only ever applied once.
+        DockLayoutCodec.DecodedLayout again = codec.decode(codec.encode(decoded.workspace()));
+        assertFalse(again.needsRewrite());
+        assertEquals(migrated, again.workspace().roots().getFirst().bounds());
+    }
+
+    @Test
+    void leavesASplicedNetworkToolkitWindowWhereThePlayerPutIt() throws Exception {
+        String persisted = """
+                {
+                  "version": 3,
+                  "roots": [{
+                    "rootId": "root-mixed",
+                    "bounds": {"x": 501, "y": 284, "width": 160, "height": 66},
+                    "content": {
+                      "type": "split", "nodeId": "split-mixed", "axis": "HORIZONTAL", "ratio": 0.5,
+                      "first": {"type": "leaf", "nodeId": "leaf-nt", "moduleId": "network_toolkit", "visible": true},
+                      "second": {"type": "leaf", "nodeId": "leaf-a", "moduleId": "a", "visible": true}
+                    }
+                  }],
+                  "policies": {
+                    "network_toolkit": {"visible": true, "movable": true, "resizable": true,
+                                        "floating": false, "pinned": false, "showTerminalButton": true},
+                    "a": {"visible": true, "movable": true, "resizable": true,
+                          "floating": false, "pinned": false, "showTerminalButton": true}
+                  }
+                }
+                """;
+        DockLayoutCodec codec = new DockLayoutCodec(
+                WorkspacePersistenceFixtures.catalog("network_toolkit", "a"),
+                WorkspacePersistenceFixtures.migrationContext());
+
+        DockRect bounds = codec.decode(persisted).workspace().roots().getFirst().bounds();
+
+        assertEquals(501, bounds.x());
     }
 
     @Test

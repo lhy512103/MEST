@@ -107,11 +107,6 @@ repositories {
     }
 }
 
-// Resolve every build and development-run configuration against committed versions.
-dependencyLocking {
-    lockAllConfigurations()
-}
-
 tasks.withType(AbstractArchiveTask).configureEach {
     preserveFileTimestamps = false
     reproducibleFileOrder = true
@@ -133,6 +128,9 @@ configurations {
         exclude group: "curse.maven", module: "just-enough-characters-250702"
     }
     clientLocalRuntime
+    // Dedicated EMI-on client launch classpath. Do not inherit
+    // clientLocalRuntime: that configuration excludes EMI when mestRunEmi is off.
+    clientLocalRuntimeEmi
     runtimeClasspath.extendsFrom localRuntime
 }
 
@@ -140,6 +138,10 @@ sourceSets {
     clientRuntime {
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
         runtimeClasspath += output + compileClasspath + sourceSets.main.runtimeClasspath + configurations.clientLocalRuntime
+    }
+    clientRuntimeEmi {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath + sourceSets.main.runtimeClasspath + configurations.clientLocalRuntimeEmi
     }
 }
 
@@ -171,6 +173,15 @@ neoForge {
             gameDirectory = project.file('run/client')
 
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        // Same as client, but always includes EMI. Distinct sourceSet so the
+        // Gradle task tree can launch either classpath without -P flags.
+        clientEmi {
+            client()
+            sourceSet = sourceSets.clientRuntimeEmi
+            gameDirectory = project.file('run/client')
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
@@ -225,12 +236,50 @@ neoForge {
         "${mod_id}" {
             sourceSet(sourceSets.main)
             sourceSet(sourceSets.clientRuntime)
+            sourceSet(sourceSets.clientRuntimeEmi)
         }
     }
 }
 
 // Mod dependencies are declared in a separate file for readability.
 apply from: "$rootDir/dependencies.gradle"
+
+// Verify the optional viewer launch matrix without resolving the full mod graph. This checks the
+// declarations that feed the two client run source sets; actual artifact compatibility still needs
+// a client launch (see docs/compatibility-verification.md).
+tasks.register("checkViewerLaunchClasspaths") {
+    group = "verification"
+    description = "Checks JEI/EMI declarations for the client launch classpath matrix."
+    def clientDependencies = configurations.named("clientLocalRuntime").map { configuration ->
+        configuration.allDependencies.collect { dependency ->
+            "${dependency.group}:${dependency.name}".toString()
+        } as Set
+    }
+    def clientEmiDependencies = configurations.named("clientLocalRuntimeEmi").map { configuration ->
+        configuration.allDependencies.collect { dependency ->
+            "${dependency.group}:${dependency.name}".toString()
+        } as Set
+    }
+    inputs.property("clientDependencies", clientDependencies)
+    inputs.property("clientEmiDependencies", clientEmiDependencies)
+    def expectedJei = providers.gradleProperty("mestRunJei").map { it.toBoolean() }.getOrElse(true)
+    def expectedEmi = providers.gradleProperty("mestRunEmi").map { it.toBoolean() }.getOrElse(false)
+    def jeiApi = "mezz.jei:jei-${minecraft_version}-neoforge-api".toString()
+    doLast {
+        def client = clientDependencies.get()
+        def clientEmi = clientEmiDependencies.get()
+        def hasJei = { Set values -> values.any { it.startsWith("mezz.jei:jei-") } }
+        def hasEmi = { Set values -> values.contains("dev.emi:emi-neoforge") }
+
+        assert hasJei(client) == expectedJei : "clientLocalRuntime JEI declaration does not match mestRunJei"
+        assert hasEmi(client) == expectedEmi : "clientLocalRuntime EMI declaration does not match mestRunEmi"
+        assert hasEmi(clientEmi) : "clientLocalRuntimeEmi must declare EMI"
+        assert hasJei(clientEmi) == expectedJei : "clientLocalRuntimeEmi JEI declaration does not match mestRunJei"
+        assert !client.contains(jeiApi) : "JEI API must remain compileOnly"
+    }
+}
+
+tasks.named("check") { dependsOn("checkViewerLaunchClasspaths") }
 
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
