@@ -13,8 +13,8 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import appeng.api.stacks.AEKey;
@@ -27,9 +27,9 @@ import appeng.client.gui.widgets.Scrollbar;
 import appeng.core.localization.GuiText;
 
 import com.lhy.mest.client.MESTScreen;
+import com.lhy.mest.client.MestGuiIcons;
 import com.lhy.mest.client.PinyinSearch;
 import com.lhy.mest.client.dock.ModulePanel;
-import com.lhy.mest.compat.plus.PlusPatternAccess;
 import com.lhy.mest.client.dock.model.ModuleDefaults;
 import com.lhy.mest.network.DriveCellActionPacket;
 import com.lhy.mest.network.DriveCellListPacket;
@@ -66,8 +66,7 @@ public final class DrivePanel extends ModulePanel {
     private static final int SEARCH_ROW = 16;
     private static final int SEARCH_WIDTH = 65;
     private static final int SEARCH_HEIGHT = 10;
-    private static final int MATCH_HIGHLIGHT = 0x66ACE9FF;
-    private static final int UNMATCHED_DIM = 0x6A000000;
+    private static final long RAINBOW_PERIOD_MS = 4000L;
     private static final int SLOT_HOVER_FILL = 0x669CD3FF;
     private static final int SLOT_HOVER_BORDER = 0xFFDAFFFF;
 
@@ -118,6 +117,11 @@ public final class DrivePanel extends ModulePanel {
     @Override
     public Icon icon() {
         return Icon.BACKGROUND_STORAGE_CELL;
+    }
+
+    @Override
+    public void renderIcon(GuiGraphics g, int x, int y, int w, int h, float opacity) {
+        MestGuiIcons.blit(g, 12, 0, x, y, w, h, opacity);
     }
 
     @Override
@@ -618,23 +622,15 @@ public final class DrivePanel extends ModulePanel {
                 g.renderItem(row.stack(), px + 1, py + 1);
                 drawCellState(g, row, px, py, group.powered());
             }
-            boolean searching = !search.isBlank();
+            boolean matched = !search.isBlank() && matches.get(firstSlot + slot);
             boolean hovering = rowIndex >= 0 && rowIndex == hovered;
-            if (!searching && !hovering) {
+            if (!matched && !hovering) {
                 continue;
             }
             g.pose().pushPose();
             g.pose().translate(0, 0, 250);
-            if (searching) {
-                if (matches.get(firstSlot + slot)) {
-                    if (ModList.get().isLoaded("extendedae_plus")) {
-                        PlusPatternAccess.drawSlotRainbowHighlight(g, px + 1, py + 1);
-                    } else {
-                        g.fill(px, py, px + SLOT, py + SLOT, MATCH_HIGHLIGHT);
-                    }
-                } else {
-                    g.fill(px + 1, py + 1, px + SLOT - 1, py + SLOT - 1, UNMATCHED_DIM);
-                }
+            if (matched) {
+                drawRainbowHighlight(g, px + 1, py + 1);
             }
             if (hovering) {
                 int ix = px + 1;
@@ -660,6 +656,18 @@ public final class DrivePanel extends ModulePanel {
         g.fill(x0, y1 - 1, x1, y1, COLOR_LIGHT);
         g.fill(x0, y0, x0 + 1, y1, COLOR_LIGHT);
         g.fill(x1 - 1, y0, x1, y1, COLOR_LIGHT);
+    }
+
+    /** Same look as ExtendedAE Plus's pattern search highlight, without depending on it. */
+    private static void drawRainbowHighlight(GuiGraphics g, int x, int y) {
+        float hue = (System.currentTimeMillis() % RAINBOW_PERIOD_MS) / (float) RAINBOW_PERIOD_MS;
+        int rgb = Mth.hsvToRgb(hue, 1.0F, 1.0F) & 0xFFFFFF;
+        int border = 0xA0000000 | rgb;
+        g.fill(x - 1, y - 1, x + 17, y, border);
+        g.fill(x - 1, y + 16, x + 17, y + 17, border);
+        g.fill(x - 1, y, x, y + 16, border);
+        g.fill(x + 16, y, x + 17, y + 16, border);
+        g.fill(x, y, x + 16, y + 16, 0x3C000000 | rgb);
     }
 
     private static void drawSlotCell(GuiGraphics g, int x, int y, int col, int columns) {

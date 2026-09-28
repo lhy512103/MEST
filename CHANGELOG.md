@@ -16,8 +16,9 @@
 10. Changed: The cell usage bar spans the slot width and sits at the bottom of the slot.
 11. Fixed: The drive module can shrink until it fits five slots with no spare space on the right.
 12. Fixed: Cell tooltips in the drive module show the same full contents and item preview as the AE2 drive screen.
-13. Added: The drive module has a search box that finds cells holding matching items, highlights them, and scrolls to the first match.
+13. Added: The drive module has a search box that finds cells holding matching items, highlights them with a rainbow outline (no ExtendedAE Plus required), and scrolls to the first match.
 14. Changed: The drive slot hover highlight matches the other panels, with a brighter fill and a border.
+15. Changed: The drive module button uses its own drive icon.
 
 ### 中文
 
@@ -33,8 +34,9 @@
 10. 调整：元件容量条长度与槽位一致，紧贴槽位底部。
 11. 修复：驱动器模块可缩小到正好容纳五个槽位，右侧不再留有空白。
 12. 修复：驱动器模块中的元件 tooltip 与 AE2 驱动器界面一致，显示完整内容与物品预览。
-13. 新增：驱动器模块搜索框，可搜索元件内的物品，高亮对应元件并自动定位到第一个匹配项。
+13. 新增：驱动器模块搜索框，可搜索元件内的物品，以彩虹边框高亮对应元件（无需安装 ExtendedAE Plus）并自动定位到第一个匹配项。
 14. 调整：驱动器槽位悬停高亮与其他面板一致，更亮且带边框。
+15. 调整：驱动器模块按钮改用专属驱动器图标。
 
 ## v0.0.3.0
 
