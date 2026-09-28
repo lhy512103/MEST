@@ -1,6 +1,10 @@
 package com.lhy.mest.client.panel;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+
+import net.minecraft.ChatFormatting;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -12,7 +16,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import appeng.client.Point;
 import appeng.client.gui.Icon;
+import appeng.api.storage.cells.CellState;
 import appeng.client.gui.widgets.Scrollbar;
+import appeng.core.localization.GuiText;
 
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.model.ModuleDefaults;
@@ -22,18 +28,22 @@ import com.lhy.mest.network.DriveCellRequestPacket;
 import com.lhy.mest.network.DrivePriorityPacket;
 import com.lhy.mest.terminal.MESTMenu;
 
-/** AE2-style physical cell wells grouped by drive; the server owns the actual inventories. */
+/** AE2-style physical cell wells grouped by drive with state LEDs; the server owns the inventories. */
 public final class DrivePanel extends ModulePanel {
     private static final int SLOT = 18;
-    private static final int BANK_SLOTS = 10;
-    private static final int BANK_WIDTH = 2 * SLOT;
-    private static final int BANK_GAP = 12;
-    private static final int BANK_ROW_GAP = 7;
-    private static final int HEADER = 29;
-    private static final int GROUP_GAP = 9;
-    private static final int PRIORITY_TOP = 15;
-    private static final int PRIORITY_WIDTH = 92;
-    private static final int BUTTON = 12;
+    // Cells flow in runs of five, echoing the five-cell rows of the physical drive face.
+    private static final int SEGMENT = 5;
+    private static final int SEGMENT_WIDTH = SEGMENT * SLOT;
+    private static final int SEGMENT_GAP = 3;
+    private static final int HEADER = 14;
+    private static final int GROUP_GAP = 5;
+    private static final int CONTROL_TOP = 1;
+    private static final int BUTTON = 11;
+    private static final int VALUE_WIDTH = 34;
+    private static final int COLOR_VALUE = 0xFFF4F5F8;
+    private static final int COLOR_VALUE_HOVER = 0xFF4F6FB0;
+    private static final int COLOR_OFFLINE = 0xFFB33A3A;
+    private static final int COLOR_LED_OFF = 0xFF45454D;
     private static final int SCROLL_STEP = 18;
     // The same narrow track and AE2 SMALL thumb used by ProviderSelectPanel.
     private static final int TRACK_WIDTH = 5;
@@ -56,7 +66,12 @@ public final class DrivePanel extends ModulePanel {
     private boolean pending;
     private boolean dragging;
 
-    private record CellHit(int index, ItemStack stack) {
+    private record CellHit(int group, int index, DriveCellListPacket.Row row) {
+    }
+
+    private enum HeaderPart { NAME, MINUS, VALUE, PLUS }
+
+    private record HeaderHit(int group, HeaderPart part) {
     }
 
     public DrivePanel(MESTMenu menu) {
@@ -101,7 +116,7 @@ public final class DrivePanel extends ModulePanel {
 
     @Override
     public int minHeight() {
-        return TITLE_BAR_HEIGHT + CONTENT_PADDING + HEADER + 2 * SLOT + GROUP_GAP;
+        return TITLE_BAR_HEIGHT + CONTENT_PADDING + HEADER + SLOT + GROUP_GAP;
     }
 
     @Override
@@ -193,38 +208,29 @@ public final class DrivePanel extends ModulePanel {
         }
     }
 
-    private int bankColumns() {
-        return Math.max(1, (listWidth() + BANK_GAP) / (BANK_WIDTH + BANK_GAP));
+    private int segmentsPerRow() {
+        return Math.max(1, (listWidth() + SEGMENT_GAP) / (SEGMENT_WIDTH + SEGMENT_GAP));
     }
 
-    private int bankRows(DriveCellListPacket.Group group, int bank) {
-        int slots = Math.min(BANK_SLOTS, group.slots() - bank * BANK_SLOTS);
-        return Math.max(0, (slots + 1) / 2);
+    private int cellsPerRow() {
+        return segmentsPerRow() * SEGMENT;
+    }
+
+    private int cellRows(DriveCellListPacket.Group group) {
+        return (group.slots() + cellsPerRow() - 1) / cellsPerRow();
     }
 
     private int groupHeight(DriveCellListPacket.Group group) {
-        int bankCount = (group.slots() + BANK_SLOTS - 1) / BANK_SLOTS;
-        int height = HEADER + GROUP_GAP;
-        for (int first = 0; first < bankCount; first += bankColumns()) {
-            int count = Math.min(bankColumns(), bankCount - first);
-            int rows = 0;
-            for (int bank = 0; bank < count; bank++) {
-                rows = Math.max(rows, bankRows(group, first + bank));
-            }
-            height += rows * SLOT;
-            if (first + count < bankCount) {
-                height += BANK_ROW_GAP;
-            }
-        }
-        return height;
+        return HEADER + cellRows(group) * SLOT + GROUP_GAP;
     }
 
-    private int groupY(int groupIndex) {
-        int y = contentTop() - scrollPixels();
-        for (int i = 0; i < groupIndex; i++) {
-            y += groupHeight(groups.get(i));
-        }
-        return y;
+    private int cellX(int slot) {
+        int column = slot % cellsPerRow();
+        return contentLeft() + column / SEGMENT * (SEGMENT_WIDTH + SEGMENT_GAP) + column % SEGMENT * SLOT;
+    }
+
+    private int cellY(int groupTop, int slot) {
+        return groupTop + HEADER + slot / cellsPerRow() * SLOT;
     }
 
     private int totalHeight() {
@@ -268,86 +274,179 @@ public final class DrivePanel extends ModulePanel {
         return row.drive() == drive && row.slot() == slot ? index : -1;
     }
 
-    private int groupAt(double mx, double my) {
+    private int listRight() {
+        return contentLeft() + listWidth();
+    }
+
+    private int plusX() {
+        return listRight() - BUTTON;
+    }
+
+    private int valueX() {
+        return plusX() - 1 - VALUE_WIDTH;
+    }
+
+    private int minusX() {
+        return valueX() - 1 - BUTTON;
+    }
+
+    private HeaderHit headerAt(double mx, double my) {
         if (!inList(mx, my)) {
-            return -1;
+            return null;
         }
         int y = contentTop() - scrollPixels();
         for (int i = 0; i < groups.size(); i++) {
-            int bottom = y + groupHeight(groups.get(i));
             if (my >= y && my < y + HEADER) {
-                return i;
+                var group = groups.get(i);
+                if (group.editable() && my >= y + CONTROL_TOP && my < y + CONTROL_TOP + BUTTON) {
+                    if (mx >= plusX()) {
+                        return new HeaderHit(i, HeaderPart.PLUS);
+                    }
+                    if (mx >= valueX() && mx < valueX() + VALUE_WIDTH) {
+                        return new HeaderHit(i, HeaderPart.VALUE);
+                    }
+                    if (mx >= minusX() && mx < minusX() + BUTTON) {
+                        return new HeaderHit(i, HeaderPart.MINUS);
+                    }
+                }
+                return mx < (group.editable() ? minusX() - 2 : listRight()) ? new HeaderHit(i, HeaderPart.NAME) : null;
             }
-            y = bottom;
+            y += groupHeight(groups.get(i));
         }
-        return -1;
+        return null;
     }
 
     private CellHit cellAt(double mx, double my) {
         if (!inList(mx, my)) {
             return null;
         }
+        int relX = (int) mx - contentLeft();
+        int segment = relX / (SEGMENT_WIDTH + SEGMENT_GAP);
+        int within = relX - segment * (SEGMENT_WIDTH + SEGMENT_GAP);
+        if (segment >= segmentsPerRow() || within >= SEGMENT_WIDTH) {
+            return null;
+        }
+        int column = segment * SEGMENT + within / SLOT;
         int y = contentTop() - scrollPixels();
         for (int i = 0; i < groups.size(); i++) {
             var group = groups.get(i);
-            int bottom = y + groupHeight(group);
-            if (my >= y + HEADER && my < bottom - GROUP_GAP) {
-                int firstBank = 0;
-                int bankTop = y + HEADER;
-                int bankCount = (group.slots() + BANK_SLOTS - 1) / BANK_SLOTS;
-                while (firstBank < bankCount) {
-                    int count = Math.min(bankColumns(), bankCount - firstBank);
-                    int height = 0;
-                    for (int n = 0; n < count; n++) {
-                        height = Math.max(height, bankRows(group, firstBank + n) * SLOT);
-                    }
-                    int startX = contentLeft() + (listWidth() - count * BANK_WIDTH - (count - 1) * BANK_GAP) / 2;
-                    for (int n = 0; n < count; n++) {
-                        int bankX = startX + n * (BANK_WIDTH + BANK_GAP);
-                        int column = (int) (mx - bankX) / SLOT;
-                        int row = (int) (my - bankTop) / SLOT;
-                        if (mx >= bankX && mx < bankX + BANK_WIDTH && my >= bankTop
-                                && my < bankTop + bankRows(group, firstBank + n) * SLOT) {
-                            int slot = (firstBank + n) * BANK_SLOTS + row * 2 + column;
-                            if (slot < group.slots() && slot < (firstBank + n + 1) * BANK_SLOTS) {
-                                int index = slotIndex(i, slot);
-                                return index < 0 ? null : new CellHit(index, rows.get(index).stack());
-                            }
-                        }
-                    }
-                    firstBank += count;
-                    bankTop += height + BANK_ROW_GAP;
+            int cellsTop = y + HEADER;
+            if (my >= cellsTop && my < cellsTop + cellRows(group) * SLOT) {
+                int slot = (int) (my - cellsTop) / SLOT * cellsPerRow() + column;
+                if (slot >= group.slots()) {
+                    return null;
                 }
+                int index = slotIndex(i, slot);
+                return index < 0 ? null : new CellHit(i, index, rows.get(index));
             }
-            y = bottom;
+            y += groupHeight(group);
         }
         return null;
     }
 
     private boolean inList(double mx, double my) {
-        return visible && mx >= contentLeft() && mx < contentLeft() + listWidth()
+        return visible && mx >= contentLeft() && mx < listRight()
                 && my >= contentTop() && my < contentTop() + contentHeight();
     }
 
     public ItemStack hoveredItem(int x, int y) {
         CellHit cell = cellAt(x, y);
-        return cell == null ? ItemStack.EMPTY : cell.stack();
+        return cell == null ? ItemStack.EMPTY : cell.row().stack();
+    }
+
+    /** Capacity lines appended below the cell item's own tooltip. */
+    public List<Component> hoveredCellDetails(int x, int y) {
+        CellHit cell = cellAt(x, y);
+        if (cell == null || cell.row().stack().isEmpty()) {
+            return List.of();
+        }
+        var row = cell.row();
+        var lines = new ArrayList<Component>();
+        CellState state = CellState.values()[row.status()];
+        lines.add(Component.translatable("gui.mesplicedterminal.drive.status",
+                Component.translatable("gui.mesplicedterminal.drive.status." + state.name().toLowerCase(Locale.ROOT))
+                        .withColor(state.getStateColor())).withStyle(ChatFormatting.GRAY));
+        if (row.hasCapacity()) {
+            lines.add(Component.translatable("gui.mesplicedterminal.drive.bytes",
+                    number(row.usedBytes()), number(row.totalBytes())).withStyle(ChatFormatting.GRAY));
+            lines.add(Component.translatable("gui.mesplicedterminal.drive.types",
+                    number(row.usedTypes()), number(row.totalTypes())).withStyle(ChatFormatting.GRAY));
+        }
+        if (!groups.get(cell.group()).powered()) {
+            lines.add(Component.translatable("gui.mesplicedterminal.drive.offline").withStyle(ChatFormatting.RED));
+        }
+        return lines;
     }
 
     public List<Component> hoveredText(int x, int y) {
-        int group = groupAt(x, y);
-        if (group < 0 || !groups.get(group).editable()
-                || y < groupY(group) + PRIORITY_TOP || y >= groupY(group) + PRIORITY_TOP + BUTTON) {
+        HeaderHit hit = headerAt(x, y);
+        if (hit == null) {
             return List.of();
         }
-        int right = contentLeft() + listWidth();
-        if (x >= right - PRIORITY_WIDTH && x < right - PRIORITY_WIDTH + BUTTON) {
-            return List.of(Component.translatable("gui.mesplicedterminal.drive.priority.down"));
+        var group = groups.get(hit.group());
+        return switch (hit.part()) {
+            case MINUS -> List.of(Component.translatable("gui.mesplicedterminal.drive.priority.down"), stepHint());
+            case PLUS -> List.of(Component.translatable("gui.mesplicedterminal.drive.priority.up"), stepHint());
+            case VALUE -> List.of(
+                    Component.translatable("gui.mesplicedterminal.drive.priority.value", number(group.priority())),
+                    Component.translatable("gui.mesplicedterminal.drive.priority.wheel")
+                            .withStyle(ChatFormatting.GRAY),
+                    stepHint(),
+                    GuiText.PriorityInsertionHint.text().copy().withStyle(ChatFormatting.DARK_GRAY),
+                    GuiText.PriorityExtractionHint.text().copy().withStyle(ChatFormatting.DARK_GRAY));
+            case NAME -> groupSummary(hit.group(), group);
+        };
+    }
+
+    private List<Component> groupSummary(int index, DriveCellListPacket.Group group) {
+        int cells = 0;
+        long used = 0;
+        long total = 0;
+        for (var row : rows) {
+            if (row.drive() == index && !row.stack().isEmpty()) {
+                cells++;
+                used += row.usedBytes();
+                total += row.totalBytes();
+            }
         }
-        if (x >= right - BUTTON && x < right) {
-            return List.of(Component.translatable("gui.mesplicedterminal.drive.priority.up"));
+        var lines = new ArrayList<Component>();
+        lines.add(group.name());
+        lines.add(Component.translatable(group.powered()
+                ? "gui.mesplicedterminal.drive.online" : "gui.mesplicedterminal.drive.offline")
+                .withStyle(group.powered() ? ChatFormatting.GREEN : ChatFormatting.RED));
+        lines.add(Component.translatable("gui.mesplicedterminal.drive.cells", cells, group.slots())
+                .withStyle(ChatFormatting.GRAY));
+        if (total > 0) {
+            lines.add(Component.translatable("gui.mesplicedterminal.drive.bytes", number(used), number(total))
+                    .withStyle(ChatFormatting.GRAY));
         }
-        return List.of();
+        if (group.editable()) {
+            lines.add(Component.translatable("gui.mesplicedterminal.drive.priority.value", number(group.priority()))
+                    .withStyle(ChatFormatting.GRAY));
+        }
+        return lines;
+    }
+
+    private static Component stepHint() {
+        return Component.translatable("gui.mesplicedterminal.drive.priority.step").withStyle(ChatFormatting.DARK_GRAY);
+    }
+
+    private static String number(long value) {
+        return String.format(Locale.ROOT, "%,d", value);
+    }
+
+    private static int priorityStep() {
+        boolean shift = Screen.hasShiftDown();
+        boolean control = Screen.hasControlDown();
+        return shift && control ? 1000 : control ? 100 : shift ? 10 : 1;
+    }
+
+    private void sendPriority(int group, int direction) {
+        if (revision < 0 || direction == 0 || group < 0 || group >= groups.size() || !groups.get(group).editable()) {
+            return;
+        }
+        PacketDistributor.sendToServer(new DrivePriorityPacket(menu.containerId, revision, group,
+                direction * priorityStep()));
     }
 
     @Override
@@ -357,9 +456,9 @@ public final class DrivePanel extends ModulePanel {
         }
         int left = contentLeft();
         int top = contentTop();
-        int right = left + listWidth();
         int bottom = top + contentHeight();
         CellHit hovered = cellAt(mouseX, mouseY);
+        HeaderHit header = headerAt(mouseX, mouseY);
         g.enableScissor(left, top, left + contentWidth(), bottom);
         try {
             int y = top - scrollPixels();
@@ -367,7 +466,8 @@ public final class DrivePanel extends ModulePanel {
                 var group = groups.get(i);
                 int height = groupHeight(group);
                 if (y + height > top && y < bottom) {
-                    drawGroup(g, font, i, group, y, right, hovered == null ? -1 : hovered.index(), mouseX, mouseY);
+                    drawGroup(g, font, i, group, y, hovered == null ? -1 : hovered.index(),
+                            header != null && header.group() == i ? header.part() : null);
                 }
                 y += height;
             }
@@ -383,57 +483,80 @@ public final class DrivePanel extends ModulePanel {
     }
 
     private void drawGroup(GuiGraphics g, Font font, int index, DriveCellListPacket.Group group,
-            int y, int right, int hovered, int mouseX, int mouseY) {
+            int y, int hovered, HeaderPart headerPart) {
         int left = contentLeft();
-        int textWidth = Math.max(12, listWidth() - 4);
-        g.drawString(font, font.plainSubstrByWidth(group.name().getString(), textWidth),
-                left + 2, y + 3, COLOR_TITLE_TEXT, false);
+        int nameRight = group.editable() ? minusX() - 3 : listRight();
+        if (!group.powered()) {
+            Component offline = Component.translatable("gui.mesplicedterminal.drive.offline");
+            nameRight -= font.width(offline);
+            g.drawString(font, offline, nameRight, y + 3, COLOR_OFFLINE, false);
+            nameRight -= 4;
+        }
+        String name = group.name().getString();
+        int nameWidth = Math.max(0, nameRight - left - 1);
+        String shown = name;
+        if (font.width(name) > nameWidth) {
+            shown = font.plainSubstrByWidth(name, Math.max(0, nameWidth - font.width("..."))) + "...";
+        }
+        g.drawString(font, shown, left + 1, y + 3, group.powered() ? COLOR_TITLE_TEXT : COLOR_MUTED, false);
         if (group.editable()) {
-            int minus = right - PRIORITY_WIDTH;
-            drawButton(g, font, Component.literal("-"), minus, y + PRIORITY_TOP, BUTTON, BUTTON,
-                    groupAt(mouseX, mouseY) == index && mouseY >= y + PRIORITY_TOP
-                            && mouseY < y + PRIORITY_TOP + BUTTON && mouseX >= minus && mouseX < minus + BUTTON);
-            int plus = right - BUTTON;
-            drawButton(g, font, Component.literal("+"), plus, y + PRIORITY_TOP, BUTTON, BUTTON,
-                    groupAt(mouseX, mouseY) == index && mouseY >= y + PRIORITY_TOP
-                            && mouseY < y + PRIORITY_TOP + BUTTON && mouseX >= plus && mouseX < right);
-            String priority = font.plainSubstrByWidth(Integer.toString(group.priority()), PRIORITY_WIDTH - 30);
-            g.drawString(font, priority, minus + BUTTON + (PRIORITY_WIDTH - 2 * BUTTON - font.width(priority)) / 2,
-                    y + PRIORITY_TOP + 2, COLOR_TITLE_TEXT, false);
+            int controlY = y + CONTROL_TOP;
+            drawButton(g, font, Component.literal("-"), minusX(), controlY, BUTTON, BUTTON,
+                    headerPart == HeaderPart.MINUS);
+            drawButton(g, font, Component.literal("+"), plusX(), controlY, BUTTON, BUTTON,
+                    headerPart == HeaderPart.PLUS);
+            int valueX = valueX();
+            g.fill(valueX, controlY, valueX + VALUE_WIDTH, controlY + BUTTON,
+                    headerPart == HeaderPart.VALUE ? COLOR_VALUE_HOVER : COLOR_DARK);
+            g.fill(valueX + 1, controlY + 1, valueX + VALUE_WIDTH - 1, controlY + BUTTON - 1, COLOR_VALUE);
+            String priority = font.plainSubstrByWidth(Integer.toString(group.priority()), VALUE_WIDTH - 4);
+            g.drawString(font, priority, valueX + (VALUE_WIDTH - font.width(priority) + 1) / 2, controlY + 2,
+                    COLOR_TITLE_TEXT, false);
         }
-        int bankTop = y + HEADER;
-        int banks = (group.slots() + BANK_SLOTS - 1) / BANK_SLOTS;
-        for (int first = 0; first < banks; first += bankColumns()) {
-            int count = Math.min(bankColumns(), banks - first);
-            int rowCount = 0;
-            for (int n = 0; n < count; n++) {
-                rowCount = Math.max(rowCount, bankRows(group, first + n));
+        for (int slot = 0; slot < group.slots(); slot++) {
+            int px = cellX(slot);
+            int py = cellY(y, slot);
+            drawSlot(g, px, py);
+            int rowIndex = slotIndex(index, slot);
+            var row = rowIndex >= 0 ? rows.get(rowIndex) : null;
+            if (row == null || row.stack().isEmpty()) {
+                Icon.BACKGROUND_STORAGE_CELL.getBlitter().dest(px + 1, py + 1).blit(g);
+            } else {
+                g.renderItem(row.stack(), px + 1, py + 1);
+                drawCellState(g, row, px, py, group.powered());
             }
-            int startX = left + (listWidth() - count * BANK_WIDTH - (count - 1) * BANK_GAP) / 2;
-            for (int n = 0; n < count; n++) {
-                int bankX = startX + n * (BANK_WIDTH + BANK_GAP);
-                for (int slotInBank = 0; slotInBank < Math.min(BANK_SLOTS, group.slots() - (first + n) * BANK_SLOTS);
-                        slotInBank++) {
-                    int slot = (first + n) * BANK_SLOTS + slotInBank;
-                    int px = bankX + (slotInBank % 2) * SLOT;
-                    int py = bankTop + (slotInBank / 2) * SLOT;
-                    drawSlot(g, px, py);
-                    Icon.BACKGROUND_STORAGE_CELL.getBlitter().dest(px + 1, py + 1).blit(g);
-                    int rowIndex = slotIndex(index, slot);
-                    if (rowIndex >= 0) {
-                        ItemStack stack = rows.get(rowIndex).stack();
-                        if (!stack.isEmpty()) {
-                            g.renderItem(stack, px + 1, py + 1);
-                        }
-                        if (rowIndex == hovered) {
-                            g.fill(px + 1, py + 1, px + SLOT - 1, py + SLOT - 1, 0x669CD3FF);
-                        }
-                    }
-                }
+            if (rowIndex >= 0 && rowIndex == hovered) {
+                g.pose().pushPose();
+                g.pose().translate(0, 0, 250);
+                g.fill(px + 1, py + 1, px + SLOT - 1, py + SLOT - 1, 0x669CD3FF);
+                g.pose().popPose();
             }
-            bankTop += rowCount * SLOT + BANK_ROW_GAP;
         }
-        g.fill(left, y + groupHeight(group) - 3, right, y + groupHeight(group) - 2, SECTION_RULE_COLOR);
+        int rule = y + groupHeight(group) - 3;
+        g.fill(left, rule, listRight(), rule + 1, SECTION_RULE_COLOR);
+    }
+
+    private static void drawCellState(GuiGraphics g, DriveCellListPacket.Row row, int px, int py, boolean powered) {
+        CellState state = CellState.values()[row.status()];
+        int color = powered ? 0xFF000000 | state.getStateColor() : COLOR_LED_OFF;
+        g.pose().pushPose();
+        g.pose().translate(0, 0, 200);
+        // Status LED in the top-right corner, like the light on the physical drive face.
+        g.fill(px + 13, py + 1, px + 17, py + 5, 0xFF1A1A1A);
+        g.fill(px + 14, py + 2, px + 16, py + 4, color);
+        if (row.hasCapacity()) {
+            // Same footprint as the vanilla durability bar.
+            double fraction = Math.min(1.0, row.usedBytes() / (double) row.totalBytes());
+            int width = row.usedBytes() > 0 ? Math.max(1, (int) Math.round(13 * fraction)) : 0;
+            g.fill(px + 3, py + 14, px + 16, py + 16, 0xFF000000);
+            if (width > 0) {
+                g.fill(px + 3, py + 14, px + 3 + width, py + 15, color);
+            }
+        }
+        if (!powered) {
+            g.fill(px + 1, py + 1, px + SLOT - 1, py + SLOT - 1, 0x55303038);
+        }
+        g.pose().popPose();
     }
 
     private static void drawTrack(GuiGraphics g, int x, int y, int height) {
@@ -451,17 +574,16 @@ public final class DrivePanel extends ModulePanel {
         if (!inList(mx, my)) {
             return false;
         }
-        int group = groupAt(mx, my);
-        if (group >= 0 && button == 0 && revision >= 0
-                && groups.get(group).editable() && my >= groupY(group) + PRIORITY_TOP
-                && my < groupY(group) + PRIORITY_TOP + BUTTON) {
-            int right = contentLeft() + listWidth();
-            int delta = mx >= right - BUTTON && mx < right ? 1
-                    : mx >= right - PRIORITY_WIDTH && mx < right - PRIORITY_WIDTH + BUTTON ? -1 : 0;
-            if (delta != 0) {
-                PacketDistributor.sendToServer(new DrivePriorityPacket(menu.containerId, revision, group, delta));
-                return true;
+        HeaderHit header = headerAt(mx, my);
+        if (header != null) {
+            if (button == 0 && header.part() == HeaderPart.PLUS) {
+                sendPriority(header.group(), 1);
+            } else if (button == 0 && header.part() == HeaderPart.MINUS) {
+                sendPriority(header.group(), -1);
+            } else if (header.part() == HeaderPart.VALUE && (button == 0 || button == 1)) {
+                sendPriority(header.group(), button == 0 ? 1 : -1);
             }
+            return true;
         }
         CellHit cell = cellAt(mx, my);
         if (cell != null && (button == 0 || button == 1) && revision >= 0) {
@@ -477,6 +599,11 @@ public final class DrivePanel extends ModulePanel {
     public boolean mouseScrolled(double mx, double my, double scrollY) {
         if (!visible || scrollY == 0 || !contains(mx, my)) {
             return false;
+        }
+        HeaderHit header = headerAt(mx, my);
+        if (header != null && header.part() == HeaderPart.VALUE) {
+            sendPriority(header.group(), (int) Math.signum(scrollY));
+            return true;
         }
         scrollbar.setCurrentScroll(scrollbar.getCurrentScroll() - 3 * (int) Math.signum(scrollY));
         syncWindow();

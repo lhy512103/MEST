@@ -186,5 +186,19 @@
   "gui.mesplicedterminal.float_window": "让该窗口悬浮",
   "gui.mesplicedterminal.combined_module": "组合模块 %s",
   "gui.mesplicedterminal.combine_window": "组成组合模块（点击依次选择 1、2、3）",
-  "gui.mesplicedterminal.combine_window.set": "组合模块 %s（点击切换到下一个，超过 3 则解除）"
+  "gui.mesplicedterminal.combine_window.set": "组合模块 %s（点击切换到下一个，超过 3 则解除）",
+  "gui.mesplicedterminal.drive.priority.value": "优先级：%s",
+  "gui.mesplicedterminal.drive.priority.wheel": "滚轮或点击调整（右键降低）",
+  "gui.mesplicedterminal.drive.priority.step": "Shift ×10，Ctrl ×100，Shift+Ctrl ×1000",
+  "gui.mesplicedterminal.drive.online": "在线",
+  "gui.mesplicedterminal.drive.offline": "离线",
+  "gui.mesplicedterminal.drive.cells": "元件：%s / %s",
+  "gui.mesplicedterminal.drive.bytes": "已用字节：%s / %s",
+  "gui.mesplicedterminal.drive.types": "已用类型：%s / %s",
+  "gui.mesplicedterminal.drive.status": "状态：%s",
+  "gui.mesplicedterminal.drive.status.absent": "无元件",
+  "gui.mesplicedterminal.drive.status.empty": "空",
+  "gui.mesplicedterminal.drive.status.not_empty": "已使用",
+  "gui.mesplicedterminal.drive.status.types_full": "类型已满",
+  "gui.mesplicedterminal.drive.status.full": "已满"
 }

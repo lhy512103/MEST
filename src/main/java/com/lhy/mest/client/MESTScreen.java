@@ -2297,8 +2297,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             }
             ItemStack driveCell = drivePanel.hoveredItem(x, y);
             if (getMenu().getCarried().isEmpty() && driveCell != null && !driveCell.isEmpty()) {
-                g.renderTooltip(font, getTooltipFromContainerItem(driveCell),
-                        driveCell.getTooltipImage(), driveCell, x, y);
+                var tooltip = new ArrayList<>(getTooltipFromContainerItem(driveCell));
+                tooltip.addAll(drivePanel.hoveredCellDetails(x, y));
+                g.renderTooltip(font, tooltip, driveCell.getTooltipImage(), driveCell, x, y);
                 return;
             }
         }

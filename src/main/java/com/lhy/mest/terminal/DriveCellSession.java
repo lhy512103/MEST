@@ -19,19 +19,22 @@ import appeng.api.implementations.blockentities.IChestOrDrive;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridNode;
 import appeng.api.storage.StorageCells;
+import appeng.api.storage.cells.CellState;
 import appeng.blockentity.AEBaseInvBlockEntity;
 import appeng.blockentity.storage.DriveBlockEntity;
 import appeng.helpers.IPriorityHost;
+import appeng.me.cells.BasicCellInventory;
 
 import com.lhy.mest.network.DriveCellActionPacket;
 import com.lhy.mest.network.DriveCellListPacket;
+import com.lhy.mest.network.DrivePriorityPacket;
 
 /** Menu-scoped server snapshot. No remote slots are added to the fixed terminal container. */
 public final class DriveCellSession {
     private static final int MAX_SLOTS_PER_DRIVE = 128;
     private static final long MIN_REQUEST_TICKS = 5;
 
-    private record Drive(IGridNode node, BlockEntity block, IItemHandler inventory, int slots) {
+    private record Drive(IGridNode node, IChestOrDrive host, BlockEntity block, IItemHandler inventory, int slots) {
     }
 
     private record SlotRef(Drive drive, int slot, ItemStack expected) {
@@ -88,7 +91,7 @@ public final class DriveCellSession {
             }
             boolean editable = drive.block() instanceof IPriorityHost;
             int priority = editable ? ((IPriorityHost) drive.block()).getPriority() : 0;
-            groups.add(new DriveCellListPacket.Group(label, drive.slots(), priority, editable));
+            groups.add(new DriveCellListPacket.Group(label, drive.slots(), priority, editable, drive.host().isPowered()));
         }
         int start = Math.min(requestedStart, count);
         int end = (int) Math.min((long) count, (long) start + DriveCellListPacket.MAX_ROWS);
@@ -105,7 +108,7 @@ public final class DriveCellSession {
                 nextRefs.add(new SlotRef(drive, slot, stack));
                 // Cell components may contain a huge inventory; transmit only the item icon.
                 ItemStack icon = stack.isEmpty() ? ItemStack.EMPTY : new ItemStack(stack.getItem());
-                rows.add(new DriveCellListPacket.Row(driveIndex, slot, icon));
+                rows.add(row(drive, driveIndex, slot, icon));
             }
         }
         if (grid != current || windowStart != start || totalSlots != count || truncated != scan.truncated()
@@ -117,6 +120,20 @@ public final class DriveCellSession {
             // Update the full stack action guard without sending redundant icons or cell contents.
             references = List.copyOf(nextRefs);
         }
+    }
+
+    private static DriveCellListPacket.Row row(Drive drive, int driveIndex, int slot, ItemStack icon) {
+        if (icon.isEmpty()) {
+            return new DriveCellListPacket.Row(driveIndex, slot, icon);
+        }
+        CellState state = drive.host().getCellStatus(slot);
+        int status = state == null ? CellState.ABSENT.ordinal() : state.ordinal();
+        if (drive.host().getOriginalCellInventory(slot) instanceof BasicCellInventory cell) {
+            return new DriveCellListPacket.Row(driveIndex, slot, icon, status,
+                    Math.max(0, cell.getUsedBytes()), Math.max(0, cell.getTotalBytes()),
+                    Math.max(0, cell.getStoredItemTypes()), Math.max(0, cell.getTotalItemTypes()));
+        }
+        return new DriveCellListPacket.Row(driveIndex, slot, icon, status, 0, 0, 0, 0);
     }
 
     public void act(ServerPlayer player, int expectedRevision, int row, DriveCellActionPacket.Action action) {
@@ -149,7 +166,7 @@ public final class DriveCellSession {
     }
 
     public void changePriority(ServerPlayer player, int expectedRevision, int driveIndex, int delta) {
-        if (delta != -1 && delta != 1 || expectedRevision != revision || grid == null
+        if (!DrivePriorityPacket.validDelta(delta) || expectedRevision != revision || grid == null
                 || connectedGrid(player) != grid || driveIndex < 0 || driveIndex >= hosts.size()
                 || driveIndex >= previousGroups.size()) {
             return;
@@ -159,12 +176,12 @@ public final class DriveCellSession {
             return;
         }
         int priority = priorityHost.getPriority();
+        long next = Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, (long) priority + delta));
         if (!previousGroups.get(driveIndex).editable() || priority != previousGroups.get(driveIndex).priority()
-                || delta > 0 && priority == Integer.MAX_VALUE
-                || delta < 0 && priority == Integer.MIN_VALUE) {
+                || next == priority) {
             return;
         }
-        priorityHost.setPriority(priority + delta);
+        priorityHost.setPriority((int) next);
         lastRequestTick = -1;
         request(player, windowStart);
     }
@@ -273,7 +290,7 @@ public final class DriveCellSession {
             if (count > MAX_SLOTS_PER_DRIVE) {
                 limited = true;
             }
-            result.add(new Drive(node, block, inventory, slots));
+            result.add(new Drive(node, host, block, inventory, slots));
         }
         result.sort(Comparator.comparing((Drive drive) -> drive.block().getLevel().dimension().location().toString())
                 .thenComparingLong(drive -> drive.block().getBlockPos().asLong()));
@@ -340,7 +357,8 @@ public final class DriveCellSession {
             var before = a.get(i);
             var after = b.get(i);
             if (before.slots() != after.slots() || before.priority() != after.priority()
-                    || before.editable() != after.editable() || !before.name().equals(after.name())) {
+                    || before.editable() != after.editable() || before.powered() != after.powered()
+                    || !before.name().equals(after.name())) {
                 return false;
             }
         }
@@ -355,6 +373,9 @@ public final class DriveCellSession {
             var before = a.get(i);
             var after = b.get(i);
             if (before.drive() != after.drive() || before.slot() != after.slot()
+                    || before.status() != after.status() || before.usedBytes() != after.usedBytes()
+                    || before.totalBytes() != after.totalBytes() || before.usedTypes() != after.usedTypes()
+                    || before.totalTypes() != after.totalTypes()
                     || !ItemStack.matches(before.stack(), after.stack())) {
                 return false;
             }

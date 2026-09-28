@@ -24,10 +24,21 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
             StreamCodec.ofMember(DriveCellListPacket::write, DriveCellListPacket::read);
 
     /** The index within groups is the drive ordinal used by each row and by priority actions. */
-    public record Group(Component name, int slots, int priority, boolean editable) {
+    public record Group(Component name, int slots, int priority, boolean editable, boolean powered) {
     }
 
-    public record Row(int drive, int slot, ItemStack stack) {
+    /** Status is a {@code CellState} ordinal; capacity fields are zero when the cell exposes no byte usage. */
+    public record Row(int drive, int slot, ItemStack stack, int status, long usedBytes, long totalBytes,
+            long usedTypes, long totalTypes) {
+        public static final int STATUS_COUNT = 5;
+
+        public Row(int drive, int slot, ItemStack stack) {
+            this(drive, slot, stack, 0, 0, 0, 0, 0);
+        }
+
+        public boolean hasCapacity() {
+            return totalBytes > 0;
+        }
     }
 
     @Override
@@ -51,12 +62,18 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
             buf.writeVarInt(group.slots());
             buf.writeInt(group.priority());
             buf.writeBoolean(group.editable());
+            buf.writeBoolean(group.powered());
         }
         buf.writeVarInt(rows.size());
         for (Row row : rows) {
             buf.writeVarInt(row.drive());
             buf.writeVarInt(row.slot());
             ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, row.stack());
+            buf.writeByte(row.status());
+            buf.writeVarLong(row.usedBytes());
+            buf.writeVarLong(row.totalBytes());
+            buf.writeVarLong(row.usedTypes());
+            buf.writeVarLong(row.totalTypes());
         }
     }
 
@@ -77,10 +94,11 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
                 int slots = buf.readVarInt();
                 int priority = buf.readInt();
                 boolean editable = buf.readBoolean();
+                boolean powered = buf.readBoolean();
                 if (slots < 1 || slots > 128) {
                     throw new IllegalArgumentException("Invalid drive group");
                 }
-                groups.add(new Group(name, slots, priority, editable));
+                groups.add(new Group(name, slots, priority, editable, powered));
             }
             int size = buf.readVarInt();
             if (!validHeader(container, revision, start, total, groupCount, size)) {
@@ -91,7 +109,12 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
                 int drive = buf.readVarInt();
                 int slot = buf.readVarInt();
                 ItemStack stack = ItemStack.OPTIONAL_STREAM_CODEC.decode(buf);
-                rows.add(new Row(drive, slot, stack));
+                int status = buf.readByte();
+                long usedBytes = buf.readVarLong();
+                long totalBytes = buf.readVarLong();
+                long usedTypes = buf.readVarLong();
+                long totalTypes = buf.readVarLong();
+                rows.add(new Row(drive, slot, stack, status, usedBytes, totalBytes, usedTypes, totalTypes));
             }
             if (!validEntries(groups, rows, start, total) || buf.isReadable()) {
                 throw new IllegalArgumentException("Invalid drive viewport data");
@@ -134,7 +157,10 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
             }
             Row row = rows.get(index);
             if (groupIndex == groups.size() || row.drive() != groupIndex
-                    || row.slot() != absolute - groupStart || row.stack() == null) {
+                    || row.slot() != absolute - groupStart || row.stack() == null
+                    || row.status() < 0 || row.status() >= Row.STATUS_COUNT
+                    || row.usedBytes() < 0 || row.totalBytes() < 0
+                    || row.usedTypes() < 0 || row.totalTypes() < 0) {
                 return false;
             }
         }

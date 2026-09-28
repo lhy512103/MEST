@@ -6,11 +6,15 @@
 
 1. Added: A drive module for connected AE2, ExtendedAE, and compatible public-inventory drives, with quick cell transfers.
 2. Changed: Drive groups now use AE2-style cell slots, continuous scrolling, and per-drive priority controls. Only visible cell icons sync; transfers validate the live network without mixins or reflection.
+3. Changed: The drive module is denser: a one-line header per drive, cells flowing in runs of five, a status LED (AE2 colours) and a byte-usage bar on each cell, and cell tooltips with status, bytes and types used. Offline drives are dimmed and labelled.
+4. Changed: Drive priority matches the AE2 priority screen steps: Shift x10, Ctrl x100, Shift+Ctrl x1000; scroll or click the value to adjust it, with a right-click to lower it.
 
 ### 中文
 
 1. 新增：驱动器模块，可查看当前网络的 AE2、ExtendedAE 及兼容公开元件槽位的驱动器，并快捷放入或取出。
 2. 调整：按驱动器分组显示原版风格槽位，连续滚动并可调节每台优先级；只同步可见元件图标，操作前校验网络，无需 Mixin 或反射。
+3. 调整：驱动器面板更紧凑：每台驱动器标题只占一行，元件按五个一组横向排列；每个元件显示 AE2 同色状态灯和字节占用条，悬停显示状态、已用字节与类型；离线驱动器会变暗并标注。
+4. 调整：优先级调整与 AE2 优先级界面一致：Shift ×10、Ctrl ×100、Shift+Ctrl ×1000；在数值上滚轮或点击即可调整，右键降低。
 
 ## v0.0.3.0
 

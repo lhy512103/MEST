@@ -186,5 +186,19 @@
   "gui.mesplicedterminal.float_window": "Float this window",
   "gui.mesplicedterminal.combined_module": "Combined module %s",
   "gui.mesplicedterminal.combine_window": "Make this window a combined module (click to pick 1, 2 or 3)",
-  "gui.mesplicedterminal.combine_window.set": "Combined module %s (click for the next slot, past 3 to release)"
+  "gui.mesplicedterminal.combine_window.set": "Combined module %s (click for the next slot, past 3 to release)",
+  "gui.mesplicedterminal.drive.priority.value": "Priority: %s",
+  "gui.mesplicedterminal.drive.priority.wheel": "Scroll or click (right-click lowers) to adjust",
+  "gui.mesplicedterminal.drive.priority.step": "Shift x10, Ctrl x100, Shift+Ctrl x1000",
+  "gui.mesplicedterminal.drive.online": "Online",
+  "gui.mesplicedterminal.drive.offline": "Offline",
+  "gui.mesplicedterminal.drive.cells": "Cells: %s / %s",
+  "gui.mesplicedterminal.drive.bytes": "Bytes used: %s / %s",
+  "gui.mesplicedterminal.drive.types": "Types used: %s / %s",
+  "gui.mesplicedterminal.drive.status": "Status: %s",
+  "gui.mesplicedterminal.drive.status.absent": "No cell",
+  "gui.mesplicedterminal.drive.status.empty": "Empty",
+  "gui.mesplicedterminal.drive.status.not_empty": "In use",
+  "gui.mesplicedterminal.drive.status.types_full": "Types full",
+  "gui.mesplicedterminal.drive.status.full": "Full"
 }

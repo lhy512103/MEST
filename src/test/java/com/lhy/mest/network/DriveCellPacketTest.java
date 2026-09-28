@@ -59,6 +59,16 @@ class DriveCellPacketTest {
     }
 
     @Test
+    void priorityAcceptsAe2Steps() {
+        for (int delta : new int[] { 1, -1, 10, -10, 100, -100, 1000, -1000 }) {
+            assertTrue(DrivePriorityPacket.validDelta(delta));
+        }
+        for (int delta : new int[] { 0, 2, 50, 1001, Integer.MIN_VALUE }) {
+            assertTrue(!DrivePriorityPacket.validDelta(delta));
+        }
+    }
+
+    @Test
     void priorityRejectsInvalidDeltaAndTrailingData() {
         RegistryFriendlyByteBuf buf = registryBuffer();
         try {

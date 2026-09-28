@@ -19,6 +19,12 @@ public record DrivePriorityPacket(int containerId, int revision, int drive, int 
             StreamCodec.ofMember(DrivePriorityPacket::write, DrivePriorityPacket::read);
     private static final PlayerTickBudgets BUDGETS = new PlayerTickBudgets(8);
 
+    /** Mirrors the AE2 priority screen steps: 1, 10, 100 and 1000 in either direction. */
+    public static boolean validDelta(int delta) {
+        int magnitude = Math.abs(delta);
+        return magnitude == 1 || magnitude == 10 || magnitude == 100 || magnitude == 1000;
+    }
+
     @Override
     public Type<? extends CustomPacketPayload> type() {
         return TYPE;
@@ -26,13 +32,13 @@ public record DrivePriorityPacket(int containerId, int revision, int drive, int 
 
     private void write(RegistryFriendlyByteBuf buf) {
         if (containerId < 0 || revision < 0 || drive < 0 || drive >= DriveCellListPacket.MAX_GROUPS
-                || delta != -1 && delta != 1) {
+                || !validDelta(delta)) {
             throw new IllegalArgumentException("Invalid drive priority action");
         }
         buf.writeVarInt(containerId);
         buf.writeVarInt(revision);
         buf.writeVarInt(drive);
-        buf.writeByte(delta);
+        buf.writeVarInt(delta);
     }
 
     private static DrivePriorityPacket read(RegistryFriendlyByteBuf buf) {
@@ -40,9 +46,9 @@ public record DrivePriorityPacket(int containerId, int revision, int drive, int 
             int container = buf.readVarInt();
             int revision = buf.readVarInt();
             int drive = buf.readVarInt();
-            int delta = buf.readByte();
+            int delta = buf.readVarInt();
             if (container < 0 || revision < 0 || drive < 0 || drive >= DriveCellListPacket.MAX_GROUPS
-                    || delta != -1 && delta != 1 || buf.isReadable()) {
+                    || !validDelta(delta) || buf.isReadable()) {
                 throw new IllegalArgumentException("Invalid drive priority action");
             }
             return new DrivePriorityPacket(container, revision, drive, delta);
@@ -59,7 +65,7 @@ public record DrivePriorityPacket(int containerId, int revision, int drive, int 
     public static void handle(DrivePriorityPacket packet, IPayloadContext context) {
         if (packet.containerId() < 0 || packet.revision() < 0 || packet.drive() < 0
                 || packet.drive() >= DriveCellListPacket.MAX_GROUPS
-                || packet.delta() != -1 && packet.delta() != 1) {
+                || !validDelta(packet.delta())) {
             return;
         }
         context.enqueueWork(() -> {
