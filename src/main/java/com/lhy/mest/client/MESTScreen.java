@@ -2289,18 +2289,16 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             }
             return;
         }
-        if (target == drivePanel && drivePanel != null && hoveredSlot == null
-                && getMenu().getCarried().isEmpty()) {
-            ItemStack driveCell = drivePanel.hoveredItem(x, y);
-            if (driveCell != null && !driveCell.isEmpty()) {
-                List<Component> lines = new ArrayList<>(getTooltipFromContainerItem(driveCell));
-                lines.addAll(drivePanel.hoveredText(x, y));
-                g.renderTooltip(font, lines, driveCell.getTooltipImage(), driveCell, x, y);
-                return;
-            }
+        if (target == drivePanel && drivePanel != null && hoveredSlot == null) {
             List<Component> lines = drivePanel.hoveredText(x, y);
             if (!lines.isEmpty()) {
                 g.renderComponentTooltip(font, lines, x, y);
+                return;
+            }
+            ItemStack driveCell = drivePanel.hoveredItem(x, y);
+            if (getMenu().getCarried().isEmpty() && driveCell != null && !driveCell.isEmpty()) {
+                g.renderTooltip(font, getTooltipFromContainerItem(driveCell),
+                        driveCell.getTooltipImage(), driveCell, x, y);
                 return;
             }
         }

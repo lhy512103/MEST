@@ -21,13 +21,13 @@ import appeng.api.networking.IGridNode;
 import appeng.api.storage.StorageCells;
 import appeng.blockentity.AEBaseInvBlockEntity;
 import appeng.blockentity.storage.DriveBlockEntity;
+import appeng.helpers.IPriorityHost;
 
 import com.lhy.mest.network.DriveCellActionPacket;
 import com.lhy.mest.network.DriveCellListPacket;
 
 /** Menu-scoped server snapshot. No remote slots are added to the fixed terminal container. */
 public final class DriveCellSession {
-    private static final int MAX_DRIVES = 256;
     private static final int MAX_SLOTS_PER_DRIVE = 128;
     private static final long MIN_REQUEST_TICKS = 5;
 
@@ -43,20 +43,21 @@ public final class DriveCellSession {
     private final MESTMenu menu;
     private IGrid grid;
     private int revision;
-    private int page = -1;
+    private int windowStart = -1;
     private int totalSlots;
-    private int totalDrives;
     private boolean truncated;
     private long lastRequestTick = -1;
+    private List<Drive> hosts = List.of();
     private List<SlotRef> references = List.of();
+    private List<DriveCellListPacket.Group> previousGroups = List.of();
     private List<DriveCellListPacket.Row> previousRows = List.of();
 
     public DriveCellSession(MESTMenu menu) {
         this.menu = menu;
     }
 
-    public void request(ServerPlayer player, int requestedPage) {
-        if (requestedPage < 0) {
+    public void request(ServerPlayer player, int requestedStart) {
+        if (requestedStart < 0) {
             clear();
             return;
         }
@@ -67,51 +68,53 @@ public final class DriveCellSession {
         lastRequestTick = tick;
         IGrid current = connectedGrid(player);
         if (current == null) {
-            if (page != requestedPage || totalSlots != 0 || !previousRows.isEmpty()) {
+            if (grid != null || windowStart != 0 || totalSlots != 0 || truncated
+                    || !hosts.isEmpty() || !previousGroups.isEmpty() || !previousRows.isEmpty()) {
                 grid = null;
-                publish(player, requestedPage, 0, 0, false, List.of(), List.of());
+                publish(player, 0, 0, false, List.of(), List.of(), List.of(), List.of());
             }
             return;
         }
         Scan scan = discover(current);
         List<Drive> drives = scan.drives();
         int count = 0;
+        List<DriveCellListPacket.Group> groups = new ArrayList<>(drives.size());
         for (Drive drive : drives) {
             count += drive.slots();
-        }
-        boolean limited = scan.truncated();
-        int targetPage = count == 0 ? 0 : Math.min(requestedPage, (count - 1) / DriveCellListPacket.PAGE_SIZE);
-        int start = targetPage * DriveCellListPacket.PAGE_SIZE;
-        int end = Math.min(count, start + DriveCellListPacket.PAGE_SIZE);
-        List<SlotRef> nextRefs = new ArrayList<>(end - start);
-        List<DriveCellListPacket.Row> rows = new ArrayList<>(end - start);
-        int index = 0;
-        for (int driveIndex = 0; driveIndex < drives.size() && index < end; driveIndex++) {
-            Drive drive = drives.get(driveIndex);
             Component label = drive.block().getBlockState().getBlock().getName().copy().append(" (")
                     .append(drive.block().getBlockPos().toShortString()).append(")");
             if (drive.block().getLevel().dimension() != player.level().dimension()) {
                 label = label.copy().append(" @" + drive.block().getLevel().dimension().location());
             }
+            boolean editable = drive.block() instanceof IPriorityHost;
+            int priority = editable ? ((IPriorityHost) drive.block()).getPriority() : 0;
+            groups.add(new DriveCellListPacket.Group(label, drive.slots(), priority, editable));
+        }
+        int start = Math.min(requestedStart, count);
+        int end = (int) Math.min((long) count, (long) start + DriveCellListPacket.MAX_ROWS);
+        List<SlotRef> nextRefs = new ArrayList<>(end - start);
+        List<DriveCellListPacket.Row> rows = new ArrayList<>(end - start);
+        int index = 0;
+        for (int driveIndex = 0; driveIndex < drives.size() && index < end; driveIndex++) {
+            Drive drive = drives.get(driveIndex);
             for (int slot = 0; slot < drive.slots() && index < end; slot++, index++) {
                 if (index < start) {
                     continue;
                 }
                 ItemStack stack = drive.inventory().getStackInSlot(slot).copy();
                 nextRefs.add(new SlotRef(drive, slot, stack));
-                // Only the item icon travels over the network: a filled storage cell's data
-                // components may contain a huge inventory and must never enter a GUI page packet.
+                // Cell components may contain a huge inventory; transmit only the item icon.
                 ItemStack icon = stack.isEmpty() ? ItemStack.EMPTY : new ItemStack(stack.getItem());
-                rows.add(new DriveCellListPacket.Row(driveIndex, label, slot, icon));
+                rows.add(new DriveCellListPacket.Row(driveIndex, slot, icon));
             }
         }
-        if (grid != current || page != targetPage || totalSlots != count || totalDrives != drives.size()
-                || truncated != limited || !sameHosts(references, nextRefs) || !sameRows(previousRows, rows)) {
+        if (grid != current || windowStart != start || totalSlots != count || truncated != scan.truncated()
+                || !sameHosts(hosts, drives) || !sameGroups(previousGroups, groups)
+                || !sameRows(previousRows, rows) || !sameSlots(references, nextRefs)) {
             grid = current;
-            publish(player, targetPage, count, drives.size(), limited, nextRefs, rows);
+            publish(player, start, count, scan.truncated(), drives, groups, nextRefs, rows);
         } else {
-            // Cell contents can change without changing their item icon; keep the action guard
-            // current without sending redundant pages or serializing the cell's stored items.
+            // Update the full stack action guard without sending redundant icons or cell contents.
             references = List.copyOf(nextRefs);
         }
     }
@@ -123,11 +126,10 @@ public final class DriveCellSession {
         }
         SlotRef ref = references.get(row);
         Drive drive = ref.drive();
-        if (!drive.node().isActive() || drive.node().getGrid() != grid || !live(drive.block())
-                || ref.slot() >= drive.inventory().getSlots()
+        if (!active(drive) || ref.slot() >= drive.inventory().getSlots()
                 || !ItemStack.matches(ref.expected(), drive.inventory().getStackInSlot(ref.slot()))) {
             lastRequestTick = -1;
-            request(player, page);
+            request(player, windowStart);
             return;
         }
         IItemHandler inventory = drive.inventory();
@@ -142,8 +144,33 @@ public final class DriveCellSession {
         if (changed) {
             menu.broadcastChanges();
             lastRequestTick = -1;
-            request(player, page);
+            request(player, windowStart);
         }
+    }
+
+    public void changePriority(ServerPlayer player, int expectedRevision, int driveIndex, int delta) {
+        if (delta != -1 && delta != 1 || expectedRevision != revision || grid == null
+                || connectedGrid(player) != grid || driveIndex < 0 || driveIndex >= hosts.size()
+                || driveIndex >= previousGroups.size()) {
+            return;
+        }
+        Drive drive = hosts.get(driveIndex);
+        if (!active(drive) || !(drive.block() instanceof IPriorityHost priorityHost)) {
+            return;
+        }
+        int priority = priorityHost.getPriority();
+        if (!previousGroups.get(driveIndex).editable() || priority != previousGroups.get(driveIndex).priority()
+                || delta > 0 && priority == Integer.MAX_VALUE
+                || delta < 0 && priority == Integer.MIN_VALUE) {
+            return;
+        }
+        priorityHost.setPriority(priority + delta);
+        lastRequestTick = -1;
+        request(player, windowStart);
+    }
+
+    private boolean active(Drive drive) {
+        return drive.node().isActive() && drive.node().getGrid() == grid && live(drive.block());
     }
 
     private boolean cursorTransfer(ServerPlayer player, IItemHandler inventory, int slot) {
@@ -230,8 +257,7 @@ public final class DriveCellSession {
             if (block instanceof AEBaseInvBlockEntity ae) {
                 inventory = ae.getInternalInventory().toItemHandler();
             } else {
-                // Public capability fallback for other drive implementations. Only accept a handler
-                // with exactly the declared cell slots, never an unrelated upgrades/tool inventory.
+                // Public capability fallback: reject unrelated upgrade/tool inventories.
                 inventory = block.getLevel().getCapability(Capabilities.ItemHandler.BLOCK, block.getBlockPos(), null);
                 if (inventory == null || inventory.getSlots() != count) {
                     continue;
@@ -244,10 +270,6 @@ public final class DriveCellSession {
             if (slots < 1) {
                 continue;
             }
-            if (result.size() == MAX_DRIVES) {
-                limited = true;
-                break;
-            }
             if (count > MAX_SLOTS_PER_DRIVE) {
                 limited = true;
             }
@@ -255,6 +277,10 @@ public final class DriveCellSession {
         }
         result.sort(Comparator.comparing((Drive drive) -> drive.block().getLevel().dimension().location().toString())
                 .thenComparingLong(drive -> drive.block().getBlockPos().asLong()));
+        if (result.size() > DriveCellListPacket.MAX_GROUPS) {
+            limited = true;
+            result.subList(DriveCellListPacket.MAX_GROUPS, result.size()).clear();
+        }
         return new Scan(result, limited);
     }
 
@@ -266,26 +292,55 @@ public final class DriveCellSession {
         return level.hasChunkAt(pos) && level.getBlockEntity(pos) == block;
     }
 
-    private void publish(ServerPlayer player, int newPage, int count, int drives, boolean limited,
-            List<SlotRef> refs, List<DriveCellListPacket.Row> rows) {
+    private void publish(ServerPlayer player, int start, int count, boolean limited, List<Drive> drives,
+            List<DriveCellListPacket.Group> groups, List<SlotRef> refs, List<DriveCellListPacket.Row> rows) {
         revision = (revision + 1) & Integer.MAX_VALUE;
-        page = newPage;
+        windowStart = start;
         totalSlots = count;
-        totalDrives = drives;
         truncated = limited;
+        hosts = List.copyOf(drives);
+        previousGroups = List.copyOf(groups);
         references = List.copyOf(refs);
         previousRows = List.copyOf(rows);
-        PacketDistributor.sendToPlayer(player, new DriveCellListPacket(menu.containerId, revision, page,
-                totalSlots, totalDrives, truncated, previousRows));
+        PacketDistributor.sendToPlayer(player, new DriveCellListPacket(menu.containerId, revision, windowStart,
+                totalSlots, truncated, previousGroups, previousRows));
     }
 
-    private static boolean sameHosts(List<SlotRef> a, List<SlotRef> b) {
+    private static boolean sameHosts(List<Drive> a, List<Drive> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            if (a.get(i).block() != b.get(i).block() || a.get(i).node() != b.get(i).node()
+                    || a.get(i).inventory() != b.get(i).inventory()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean sameSlots(List<SlotRef> a, List<SlotRef> b) {
         if (a.size() != b.size()) {
             return false;
         }
         for (int i = 0; i < a.size(); i++) {
             if (a.get(i).drive().block() != b.get(i).drive().block()
                     || a.get(i).slot() != b.get(i).slot()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean sameGroups(List<DriveCellListPacket.Group> a, List<DriveCellListPacket.Group> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            var before = a.get(i);
+            var after = b.get(i);
+            if (before.slots() != after.slots() || before.priority() != after.priority()
+                    || before.editable() != after.editable() || !before.name().equals(after.name())) {
                 return false;
             }
         }
@@ -300,7 +355,7 @@ public final class DriveCellSession {
             var before = a.get(i);
             var after = b.get(i);
             if (before.drive() != after.drive() || before.slot() != after.slot()
-                    || !before.name().equals(after.name()) || !ItemStack.matches(before.stack(), after.stack())) {
+                    || !ItemStack.matches(before.stack(), after.stack())) {
                 return false;
             }
         }
@@ -309,11 +364,13 @@ public final class DriveCellSession {
 
     public void clear() {
         grid = null;
-        page = -1;
+        windowStart = -1;
         references = List.of();
+        hosts = List.of();
+        previousGroups = List.of();
         previousRows = List.of();
         totalSlots = 0;
-        totalDrives = 0;
+        truncated = false;
         lastRequestTick = -1;
     }
 }

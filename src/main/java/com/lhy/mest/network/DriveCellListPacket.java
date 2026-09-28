@@ -13,16 +13,21 @@ import net.minecraft.world.item.ItemStack;
 
 import com.lhy.mest.MESplicedterminal;
 
-/** One bounded page of physical storage-cell slots, never the contents stored inside a cell. */
-public record DriveCellListPacket(int containerId, int revision, int page, int totalSlots,
-        int totalDrives, boolean truncated, List<Row> rows) implements CustomPacketPayload {
-    public static final int PAGE_SIZE = 54;
+/** Bounded viewport of physical storage-cell icons with metadata for every visible drive group. */
+public record DriveCellListPacket(int containerId, int revision, int windowStart, int totalSlots,
+        boolean truncated, List<Group> groups, List<Row> rows) implements CustomPacketPayload {
+    public static final int MAX_ROWS = 256;
+    public static final int MAX_GROUPS = 256;
     public static final Type<DriveCellListPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
             MESplicedterminal.MODID, "drive_cell_list"));
     public static final StreamCodec<RegistryFriendlyByteBuf, DriveCellListPacket> STREAM_CODEC =
             StreamCodec.ofMember(DriveCellListPacket::write, DriveCellListPacket::read);
 
-    public record Row(int drive, Component name, int slot, ItemStack stack) {
+    /** The index within groups is the drive ordinal used by each row and by priority actions. */
+    public record Group(Component name, int slots, int priority, boolean editable) {
+    }
+
+    public record Row(int drive, int slot, ItemStack stack) {
     }
 
     @Override
@@ -31,19 +36,25 @@ public record DriveCellListPacket(int containerId, int revision, int page, int t
     }
 
     private void write(RegistryFriendlyByteBuf buf) {
-        if (rows.size() > PAGE_SIZE) {
-            throw new IllegalArgumentException("Too many drive slots");
+        if (!validHeader(containerId, revision, windowStart, totalSlots, groups.size(), rows.size())
+                || !validEntries(groups, rows, windowStart, totalSlots)) {
+            throw new IllegalArgumentException("Invalid drive viewport");
         }
         buf.writeVarInt(containerId);
         buf.writeVarInt(revision);
-        buf.writeVarInt(page);
+        buf.writeVarInt(windowStart);
         buf.writeVarInt(totalSlots);
-        buf.writeVarInt(totalDrives);
         buf.writeBoolean(truncated);
+        buf.writeVarInt(groups.size());
+        for (Group group : groups) {
+            ComponentSerialization.TRUSTED_STREAM_CODEC.encode(buf, group.name());
+            buf.writeVarInt(group.slots());
+            buf.writeInt(group.priority());
+            buf.writeBoolean(group.editable());
+        }
         buf.writeVarInt(rows.size());
         for (Row row : rows) {
             buf.writeVarInt(row.drive());
-            ComponentSerialization.TRUSTED_STREAM_CODEC.encode(buf, row.name());
             buf.writeVarInt(row.slot());
             ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, row.stack());
         }
@@ -53,37 +64,80 @@ public record DriveCellListPacket(int containerId, int revision, int page, int t
         try {
             int container = buf.readVarInt();
             int revision = buf.readVarInt();
-            int page = buf.readVarInt();
+            int start = buf.readVarInt();
             int total = buf.readVarInt();
-            int drives = buf.readVarInt();
             boolean truncated = buf.readBoolean();
+            int groupCount = buf.readVarInt();
+            if (!validHeader(container, revision, start, total, groupCount, 0)) {
+                throw new IllegalArgumentException("Invalid drive viewport header");
+            }
+            List<Group> groups = new ArrayList<>(groupCount);
+            for (int i = 0; i < groupCount; i++) {
+                Component name = ComponentSerialization.TRUSTED_STREAM_CODEC.decode(buf);
+                int slots = buf.readVarInt();
+                int priority = buf.readInt();
+                boolean editable = buf.readBoolean();
+                if (slots < 1 || slots > 128) {
+                    throw new IllegalArgumentException("Invalid drive group");
+                }
+                groups.add(new Group(name, slots, priority, editable));
+            }
             int size = buf.readVarInt();
-            if (container < 0 || revision < 0 || page < 0 || total < 0 || drives < 0
-                    || size < 0 || size > PAGE_SIZE || total < size || page > 4096) {
-                throw new IllegalArgumentException("Invalid drive page");
+            if (!validHeader(container, revision, start, total, groupCount, size)) {
+                throw new IllegalArgumentException("Invalid drive row count");
             }
             List<Row> rows = new ArrayList<>(size);
             for (int i = 0; i < size; i++) {
                 int drive = buf.readVarInt();
-                Component name = ComponentSerialization.TRUSTED_STREAM_CODEC.decode(buf);
                 int slot = buf.readVarInt();
                 ItemStack stack = ItemStack.OPTIONAL_STREAM_CODEC.decode(buf);
-                if (drive < 0 || drive >= 256 || slot < 0 || slot >= 128) {
-                    throw new IllegalArgumentException("Invalid drive slot");
-                }
-                rows.add(new Row(drive, name, slot, stack));
+                rows.add(new Row(drive, slot, stack));
             }
-            if (buf.isReadable()) {
-                throw new IllegalArgumentException("Trailing drive data");
+            if (!validEntries(groups, rows, start, total) || buf.isReadable()) {
+                throw new IllegalArgumentException("Invalid drive viewport data");
             }
-            return new DriveCellListPacket(container, revision, page, total, drives, truncated, List.copyOf(rows));
+            return new DriveCellListPacket(container, revision, start, total, truncated,
+                    List.copyOf(groups), List.copyOf(rows));
         } catch (RuntimeException exception) {
             try {
                 buf.skipBytes(buf.readableBytes());
             } catch (RuntimeException ignored) {
                 // Invalid payloads are discarded, not routed to the screen.
             }
-            return new DriveCellListPacket(-1, 0, 0, 0, 0, false, List.of());
+            return new DriveCellListPacket(-1, 0, 0, 0, false, List.of(), List.of());
         }
+    }
+
+    private static boolean validHeader(int container, int revision, int start, int total, int groups, int rows) {
+        return container >= 0 && revision >= 0 && start >= 0 && total >= 0 && start <= total
+                && groups >= 0 && groups <= MAX_GROUPS && rows >= 0 && rows <= MAX_ROWS
+                && rows <= total - start;
+    }
+
+    private static boolean validEntries(List<Group> groups, List<Row> rows, int start, int total) {
+        int slots = 0;
+        for (Group group : groups) {
+            if (group.name() == null || group.slots() < 1 || group.slots() > 128) {
+                return false;
+            }
+            slots += group.slots();
+        }
+        if (slots != total || rows.size() != Math.min(MAX_ROWS, total - start)) {
+            return false;
+        }
+        int groupIndex = 0;
+        int groupStart = 0;
+        for (int index = 0; index < rows.size(); index++) {
+            int absolute = start + index;
+            while (groupIndex < groups.size() && groupStart + groups.get(groupIndex).slots() <= absolute) {
+                groupStart += groups.get(groupIndex++).slots();
+            }
+            Row row = rows.get(index);
+            if (groupIndex == groups.size() || row.drive() != groupIndex
+                    || row.slot() != absolute - groupStart || row.stack() == null) {
+                return false;
+            }
+        }
+        return true;
     }
 }

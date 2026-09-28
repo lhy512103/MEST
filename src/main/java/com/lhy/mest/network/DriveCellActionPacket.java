@@ -10,7 +10,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.terminal.MESTMenu;
 
-/** Opaque page/revision/row reference; clients never supply a target block or item stack. */
+/** Opaque viewport/revision/row reference; clients never supply a target block or item stack. */
 public record DriveCellActionPacket(int containerId, int revision, int row, Action action)
         implements CustomPacketPayload {
     public static final Type<DriveCellActionPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
@@ -42,7 +42,7 @@ public record DriveCellActionPacket(int containerId, int revision, int row, Acti
             int revision = buf.readVarInt();
             int row = buf.readVarInt();
             int action = buf.readUnsignedByte();
-            if (container < 0 || revision < 0 || row < 0 || row >= DriveCellListPacket.PAGE_SIZE
+            if (container < 0 || revision < 0 || row < 0 || row >= DriveCellListPacket.MAX_ROWS
                     || action >= ACTIONS.length || buf.isReadable()) {
                 throw new IllegalArgumentException("Invalid drive action");
             }
@@ -59,7 +59,7 @@ public record DriveCellActionPacket(int containerId, int revision, int row, Acti
 
     public static void handle(DriveCellActionPacket packet, IPayloadContext context) {
         if (packet.action() == null || packet.containerId() < 0 || packet.revision() < 0
-                || packet.row() < 0 || packet.row() >= DriveCellListPacket.PAGE_SIZE) {
+                || packet.row() < 0 || packet.row() >= DriveCellListPacket.MAX_ROWS) {
             return;
         }
         context.enqueueWork(() -> {

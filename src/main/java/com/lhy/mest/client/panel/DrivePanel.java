@@ -5,45 +5,63 @@ import java.util.List;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+import appeng.client.Point;
 import appeng.client.gui.Icon;
+import appeng.client.gui.widgets.Scrollbar;
 
 import com.lhy.mest.client.dock.ModulePanel;
 import com.lhy.mest.client.dock.model.ModuleDefaults;
 import com.lhy.mest.network.DriveCellActionPacket;
 import com.lhy.mest.network.DriveCellListPacket;
 import com.lhy.mest.network.DriveCellRequestPacket;
+import com.lhy.mest.network.DrivePriorityPacket;
 import com.lhy.mest.terminal.MESTMenu;
 
-/** A paged, read-only view of physical drive slots; all transfers are validated server-side. */
+/** AE2-style physical cell wells grouped by drive; the server owns the actual inventories. */
 public final class DrivePanel extends ModulePanel {
-    private static final int ROW_HEIGHT = 20;
-    private static final int HEADER_HEIGHT = 17;
-    private static final int FOOTER_HEIGHT = 27;
-    private static final int WELL = 18;
-    private static final int TRACK_WIDTH = 6;
+    private static final int SLOT = 18;
+    private static final int BANK_SLOTS = 10;
+    private static final int BANK_WIDTH = 2 * SLOT;
+    private static final int BANK_GAP = 12;
+    private static final int BANK_ROW_GAP = 7;
+    private static final int HEADER = 29;
+    private static final int GROUP_GAP = 9;
+    private static final int PRIORITY_TOP = 15;
+    private static final int PRIORITY_WIDTH = 92;
+    private static final int BUTTON = 12;
+    private static final int SCROLL_STEP = 18;
+    // The same narrow track and AE2 SMALL thumb used by ProviderSelectPanel.
+    private static final int TRACK_WIDTH = 5;
     private static final int TRACK_GAP = 2;
+    private static final int TRACK_SHIFT_X = 2;
+    private static final int GUTTER = TRACK_WIDTH + TRACK_GAP + TRACK_SHIFT_X;
+    private static final int TRACK_BORDER = 0xFFF2F2F2;
+    private static final int TRACK_FILL = 0xFF9A9FB4;
 
     private final MESTMenu menu;
+    private final Scrollbar scrollbar = new Scrollbar(Scrollbar.SMALL);
+    private List<DriveCellListPacket.Group> groups = List.of();
     private List<DriveCellListPacket.Row> rows = List.of();
-    private int page;
-    private int receivedPage = -1;
+    private int receivedWindow = -1;
+    private int requestedWindow;
     private int revision = -1;
-    private int totalSlots;
-    private int totalDrives;
-    private int scroll;
     private int ticks;
     private int requestedAt;
-    private boolean truncated;
     private boolean subscribed;
     private boolean pending;
     private boolean dragging;
 
+    private record CellHit(int index, ItemStack stack) {
+    }
+
     public DrivePanel(MESTMenu menu) {
         this.menu = menu;
+        scrollbar.setCaptureMouseWheel(false);
     }
 
     @Override
@@ -78,12 +96,12 @@ public final class DrivePanel extends ModulePanel {
 
     @Override
     public int minWidth() {
-        return 132;
+        return 137;
     }
 
     @Override
     public int minHeight() {
-        return TITLE_BAR_HEIGHT + CONTENT_PADDING + HEADER_HEIGHT + ROW_HEIGHT + FOOTER_HEIGHT;
+        return TITLE_BAR_HEIGHT + CONTENT_PADDING + HEADER + 2 * SLOT + GROUP_GAP;
     }
 
     @Override
@@ -93,30 +111,31 @@ public final class DrivePanel extends ModulePanel {
 
     @Override
     public void layoutSlots() {
-        // Remote cell icons are not menu slots; no client-owned slots are registered.
+        // The grid is virtual: dynamically changing remote drives cannot alter menu slot indices.
+        layoutScrollbar();
+        if (subscribed) {
+            syncWindow();
+        }
     }
 
-    /** Accept only the current menu and requested page (including a server-clamped last page). */
     public void update(DriveCellListPacket packet) {
-        if (!subscribed || packet.containerId() != menu.containerId || packet.page() < 0) {
+        if (!subscribed || packet.containerId() != menu.containerId) {
             return;
         }
-        int last = Math.max(0, (packet.totalSlots() - 1) / DriveCellListPacket.PAGE_SIZE);
-        if (packet.page() != Math.min(page, last)) {
+        if (packet.windowStart() != requestedWindow
+                && !(requestedWindow >= packet.totalSlots() && packet.windowStart() <= requestedWindow)) {
             return;
         }
-        page = packet.page();
-        receivedPage = page;
-        revision = packet.revision();
-        totalSlots = packet.totalSlots();
-        totalDrives = packet.totalDrives();
-        truncated = packet.truncated();
+        groups = List.copyOf(packet.groups());
         rows = List.copyOf(packet.rows());
-        scroll = Math.min(scroll, maxScroll());
+        receivedWindow = packet.windowStart();
+        revision = packet.revision();
+        requestedWindow = receivedWindow;
         pending = false;
+        layoutScrollbar();
+        syncWindow();
     }
 
-    /** Called by the owning screen once each client tick with this panel's effective visibility. */
     public void tick(boolean visible) {
         ticks++;
         if (!visible) {
@@ -125,221 +144,376 @@ public final class DrivePanel extends ModulePanel {
         }
         if (!subscribed) {
             subscribed = true;
-            requestPage();
+            requestWindow(0);
         } else if (pending && ticks - requestedAt >= 10) {
-            requestPage();
+            requestWindow(requestedWindow);
         } else if (!pending && ticks - requestedAt >= 40) {
-            requestPage();
+            requestWindow(requestedWindow);
         }
     }
 
     public void closeSubscription() {
         if (subscribed) {
             PacketDistributor.sendToServer(new DriveCellRequestPacket(menu.containerId, -1));
-            subscribed = false;
         }
+        subscribed = false;
         pending = false;
         dragging = false;
-        receivedPage = -1;
         revision = -1;
-        page = 0;
-        totalSlots = 0;
-        totalDrives = 0;
-        truncated = false;
+        receivedWindow = -1;
+        requestedWindow = 0;
+        groups = List.of();
         rows = List.of();
-        scroll = 0;
+        scrollbar.setCurrentScroll(0);
     }
 
-    private void requestPage() {
-        PacketDistributor.sendToServer(new DriveCellRequestPacket(menu.containerId, page));
+    private void requestWindow(int start) {
+        requestedWindow = start;
         requestedAt = ticks;
-        pending = receivedPage != page;
+        pending = receivedWindow != requestedWindow;
+        PacketDistributor.sendToServer(new DriveCellRequestPacket(menu.containerId, requestedWindow));
     }
 
-    private void changePage(int next) {
-        if (next < 0 || next > Math.max(0, (totalSlots - 1) / DriveCellListPacket.PAGE_SIZE)
-                || next == page) {
+    private void syncWindow() {
+        if (!subscribed || groups.isEmpty()) {
             return;
         }
-        page = next;
-        scroll = 0;
-        receivedPage = -1;
-        revision = -1;
-        rows = List.of();
-        if (subscribed) {
-            requestPage();
+        int position = scrollPixels();
+        int preceding = 0;
+        int firstSlot = 0;
+        for (var group : groups) {
+            if (preceding + groupHeight(group) > position) {
+                break;
+            }
+            preceding += groupHeight(group);
+            firstSlot += group.slots();
+        }
+        if (firstSlot != requestedWindow) {
+            requestWindow(firstSlot);
         }
     }
 
-    private int visibleRows() {
-        return Math.max(1, (contentHeight() - HEADER_HEIGHT - FOOTER_HEIGHT) / ROW_HEIGHT);
+    private int bankColumns() {
+        return Math.max(1, (listWidth() + BANK_GAP) / (BANK_WIDTH + BANK_GAP));
     }
 
-    private int maxScroll() {
-        return Math.max(0, rows.size() - visibleRows());
+    private int bankRows(DriveCellListPacket.Group group, int bank) {
+        int slots = Math.min(BANK_SLOTS, group.slots() - bank * BANK_SLOTS);
+        return Math.max(0, (slots + 1) / 2);
     }
 
-    private int rowAt(double mx, double my) {
-        int left = contentLeft();
-        int top = contentTop() + HEADER_HEIGHT;
-        int shown = Math.min(visibleRows(), rows.size() - scroll);
-        int right = left + contentWidth() - (maxScroll() > 0 ? TRACK_WIDTH + TRACK_GAP : 0);
-        if (!this.visible || receivedPage != page || mx < left || mx >= right
-                || my < top || my >= top + shown * ROW_HEIGHT) {
+    private int groupHeight(DriveCellListPacket.Group group) {
+        int bankCount = (group.slots() + BANK_SLOTS - 1) / BANK_SLOTS;
+        int height = HEADER + GROUP_GAP;
+        for (int first = 0; first < bankCount; first += bankColumns()) {
+            int count = Math.min(bankColumns(), bankCount - first);
+            int rows = 0;
+            for (int bank = 0; bank < count; bank++) {
+                rows = Math.max(rows, bankRows(group, first + bank));
+            }
+            height += rows * SLOT;
+            if (first + count < bankCount) {
+                height += BANK_ROW_GAP;
+            }
+        }
+        return height;
+    }
+
+    private int groupY(int groupIndex) {
+        int y = contentTop() - scrollPixels();
+        for (int i = 0; i < groupIndex; i++) {
+            y += groupHeight(groups.get(i));
+        }
+        return y;
+    }
+
+    private int totalHeight() {
+        int total = 0;
+        for (var group : groups) {
+            total += groupHeight(group);
+        }
+        return total;
+    }
+
+    private int scrollPixels() {
+        return Math.min(scrollbar.getCurrentScroll() * SCROLL_STEP,
+                Math.max(0, totalHeight() - contentHeight()));
+    }
+
+    private int listWidth() {
+        return Math.max(1, contentWidth() - GUTTER);
+    }
+
+    private int trackX() {
+        return contentLeft() + listWidth() + TRACK_GAP + TRACK_SHIFT_X;
+    }
+
+    private void layoutScrollbar() {
+        int max = Math.max(0, totalHeight() - contentHeight());
+        scrollbar.setRange(0, (max + SCROLL_STEP - 1) / SCROLL_STEP, 1);
+        scrollbar.setHeight(Math.max(1, contentHeight() - 2));
+        scrollbar.setPosition(new Point(trackX() - 1, contentTop()));
+    }
+
+    private int slotIndex(int drive, int slot) {
+        int absolute = slot;
+        for (int i = 0; i < drive; i++) {
+            absolute += groups.get(i).slots();
+        }
+        int index = absolute - receivedWindow;
+        if (index < 0 || index >= rows.size()) {
             return -1;
         }
-        return scroll + ((int) my - top) / ROW_HEIGHT;
+        var row = rows.get(index);
+        return row.drive() == drive && row.slot() == slot ? index : -1;
     }
 
-    /** Item tooltip should be rendered by the parent screen, above every panel. */
+    private int groupAt(double mx, double my) {
+        if (!inList(mx, my)) {
+            return -1;
+        }
+        int y = contentTop() - scrollPixels();
+        for (int i = 0; i < groups.size(); i++) {
+            int bottom = y + groupHeight(groups.get(i));
+            if (my >= y && my < y + HEADER) {
+                return i;
+            }
+            y = bottom;
+        }
+        return -1;
+    }
+
+    private CellHit cellAt(double mx, double my) {
+        if (!inList(mx, my)) {
+            return null;
+        }
+        int y = contentTop() - scrollPixels();
+        for (int i = 0; i < groups.size(); i++) {
+            var group = groups.get(i);
+            int bottom = y + groupHeight(group);
+            if (my >= y + HEADER && my < bottom - GROUP_GAP) {
+                int firstBank = 0;
+                int bankTop = y + HEADER;
+                int bankCount = (group.slots() + BANK_SLOTS - 1) / BANK_SLOTS;
+                while (firstBank < bankCount) {
+                    int count = Math.min(bankColumns(), bankCount - firstBank);
+                    int height = 0;
+                    for (int n = 0; n < count; n++) {
+                        height = Math.max(height, bankRows(group, firstBank + n) * SLOT);
+                    }
+                    int startX = contentLeft() + (listWidth() - count * BANK_WIDTH - (count - 1) * BANK_GAP) / 2;
+                    for (int n = 0; n < count; n++) {
+                        int bankX = startX + n * (BANK_WIDTH + BANK_GAP);
+                        int column = (int) (mx - bankX) / SLOT;
+                        int row = (int) (my - bankTop) / SLOT;
+                        if (mx >= bankX && mx < bankX + BANK_WIDTH && my >= bankTop
+                                && my < bankTop + bankRows(group, firstBank + n) * SLOT) {
+                            int slot = (firstBank + n) * BANK_SLOTS + row * 2 + column;
+                            if (slot < group.slots() && slot < (firstBank + n + 1) * BANK_SLOTS) {
+                                int index = slotIndex(i, slot);
+                                return index < 0 ? null : new CellHit(index, rows.get(index).stack());
+                            }
+                        }
+                    }
+                    firstBank += count;
+                    bankTop += height + BANK_ROW_GAP;
+                }
+            }
+            y = bottom;
+        }
+        return null;
+    }
+
+    private boolean inList(double mx, double my) {
+        return visible && mx >= contentLeft() && mx < contentLeft() + listWidth()
+                && my >= contentTop() && my < contentTop() + contentHeight();
+    }
+
     public ItemStack hoveredItem(int x, int y) {
-        int row = rowAt(x, y);
-        return row < 0 ? ItemStack.EMPTY : rows.get(row).stack();
+        CellHit cell = cellAt(x, y);
+        return cell == null ? ItemStack.EMPTY : cell.stack();
     }
 
-    /** Additional location/transfer hints for the parent screen's hover tooltip. */
     public List<Component> hoveredText(int x, int y) {
-        int row = rowAt(x, y);
-        if (row < 0) {
+        int group = groupAt(x, y);
+        if (group < 0 || !groups.get(group).editable()
+                || y < groupY(group) + PRIORITY_TOP || y >= groupY(group) + PRIORITY_TOP + BUTTON) {
             return List.of();
         }
-        DriveCellListPacket.Row cell = rows.get(row);
-        return List.of(cell.name(), Component.translatable("gui.mesplicedterminal.drive.slot", cell.slot() + 1),
-                Component.translatable("gui.mesplicedterminal.drive.hint"));
+        int right = contentLeft() + listWidth();
+        if (x >= right - PRIORITY_WIDTH && x < right - PRIORITY_WIDTH + BUTTON) {
+            return List.of(Component.translatable("gui.mesplicedterminal.drive.priority.down"));
+        }
+        if (x >= right - BUTTON && x < right) {
+            return List.of(Component.translatable("gui.mesplicedterminal.drive.priority.up"));
+        }
+        return List.of();
     }
 
     @Override
     public void renderBackgroundContent(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
-        int left = contentLeft();
-        int top = contentTop();
-        int right = left + contentWidth();
-        if (right <= left) {
+        if (contentWidth() <= 0 || contentHeight() <= 0) {
             return;
         }
-        String summary = Component.translatable("gui.mesplicedterminal.drive.summary", totalDrives, totalSlots).getString();
-        if (truncated) {
-            summary += " +";
-        }
-        g.drawString(font, font.plainSubstrByWidth(summary, contentWidth()), left, top + 3, COLOR_TITLE_TEXT, false);
-        int shown = Math.min(visibleRows(), Math.max(0, rows.size() - scroll));
-        int rowRight = right - (maxScroll() > 0 ? TRACK_WIDTH + TRACK_GAP : 0);
-        if (rows.isEmpty() && receivedPage == page) {
-            g.drawString(font, Component.translatable("gui.mesplicedterminal.drive.empty"),
-                    left + 2, top + HEADER_HEIGHT + 4, COLOR_MUTED, false);
-        }
-        for (int i = 0; i < shown; i++) {
-            DriveCellListPacket.Row cell = rows.get(scroll + i);
-            int ry = top + HEADER_HEIGHT + i * ROW_HEIGHT;
-            g.fill(left, ry, rowRight, ry + ROW_HEIGHT - 1, 0xFFADB0C4);
-            g.hLine(left, rowRight - 1, ry, COLOR_LIGHT);
-            g.vLine(left, ry, ry + ROW_HEIGHT - 2, COLOR_LIGHT);
-            g.hLine(left, rowRight - 1, ry + ROW_HEIGHT - 2, COLOR_DARK);
-            g.vLine(rowRight - 1, ry, ry + ROW_HEIGHT - 2, COLOR_DARK);
-            if (rowAt(mouseX, mouseY) == scroll + i) {
-                g.fill(left + 1, ry + 1, rowRight - 1, ry + ROW_HEIGHT - 2, 0x669CD3FF);
+        int left = contentLeft();
+        int top = contentTop();
+        int right = left + listWidth();
+        int bottom = top + contentHeight();
+        CellHit hovered = cellAt(mouseX, mouseY);
+        g.enableScissor(left, top, left + contentWidth(), bottom);
+        try {
+            int y = top - scrollPixels();
+            for (int i = 0; i < groups.size(); i++) {
+                var group = groups.get(i);
+                int height = groupHeight(group);
+                if (y + height > top && y < bottom) {
+                    drawGroup(g, font, i, group, y, right, hovered == null ? -1 : hovered.index(), mouseX, mouseY);
+                }
+                y += height;
             }
-            if (!cell.stack().isEmpty()) {
-                g.renderItem(cell.stack(), left + 2, ry + 1);
+            if (groups.isEmpty() && receivedWindow >= 0) {
+                g.drawString(font, Component.translatable("gui.mesplicedterminal.drive.empty"),
+                        left + 2, top + 3, COLOR_MUTED, false);
             }
-            String location = "#" + (cell.drive() + 1) + ":" + (cell.slot() + 1) + " " + cell.name().getString();
-            g.drawString(font, font.plainSubstrByWidth(location, Math.max(0, rowRight - left - WELL - 3)),
-                    left + WELL + 1, ry + 6, COLOR_TITLE_TEXT, false);
+            drawTrack(g, trackX(), top, contentHeight());
+            scrollbar.drawForegroundLayer(g, new Rect2i(0, 0, 0, 0), new Point(mouseX, mouseY));
+        } finally {
+            g.disableScissor();
         }
-        if (maxScroll() > 0) {
-            int railTop = top + HEADER_HEIGHT;
-            int railHeight = visibleRows() * ROW_HEIGHT;
-            int railX = right - TRACK_WIDTH;
-            int thumbHeight = Math.max(12, railHeight * visibleRows() / rows.size());
-            int thumbTop = railTop + (railHeight - thumbHeight) * scroll / maxScroll();
-            g.fill(railX, railTop, right, railTop + railHeight, COLOR_DARK);
-            g.fill(railX + 1, railTop + 1, right - 1, railTop + railHeight - 1, COLOR_LIGHT);
-            g.fill(railX + 1, thumbTop, right - 1, thumbTop + thumbHeight, COLOR_MUTED);
+    }
+
+    private void drawGroup(GuiGraphics g, Font font, int index, DriveCellListPacket.Group group,
+            int y, int right, int hovered, int mouseX, int mouseY) {
+        int left = contentLeft();
+        int textWidth = Math.max(12, listWidth() - 4);
+        g.drawString(font, font.plainSubstrByWidth(group.name().getString(), textWidth),
+                left + 2, y + 3, COLOR_TITLE_TEXT, false);
+        if (group.editable()) {
+            int minus = right - PRIORITY_WIDTH;
+            drawButton(g, font, Component.literal("-"), minus, y + PRIORITY_TOP, BUTTON, BUTTON,
+                    groupAt(mouseX, mouseY) == index && mouseY >= y + PRIORITY_TOP
+                            && mouseY < y + PRIORITY_TOP + BUTTON && mouseX >= minus && mouseX < minus + BUTTON);
+            int plus = right - BUTTON;
+            drawButton(g, font, Component.literal("+"), plus, y + PRIORITY_TOP, BUTTON, BUTTON,
+                    groupAt(mouseX, mouseY) == index && mouseY >= y + PRIORITY_TOP
+                            && mouseY < y + PRIORITY_TOP + BUTTON && mouseX >= plus && mouseX < right);
+            String priority = font.plainSubstrByWidth(Integer.toString(group.priority()), PRIORITY_WIDTH - 30);
+            g.drawString(font, priority, minus + BUTTON + (PRIORITY_WIDTH - 2 * BUTTON - font.width(priority)) / 2,
+                    y + PRIORITY_TOP + 2, COLOR_TITLE_TEXT, false);
         }
-        int footer = top + HEADER_HEIGHT + visibleRows() * ROW_HEIGHT + 2;
-        if (footer + FOOTER_HEIGHT > top + contentHeight()) {
-            footer = top + contentHeight() - FOOTER_HEIGHT;
+        int bankTop = y + HEADER;
+        int banks = (group.slots() + BANK_SLOTS - 1) / BANK_SLOTS;
+        for (int first = 0; first < banks; first += bankColumns()) {
+            int count = Math.min(bankColumns(), banks - first);
+            int rowCount = 0;
+            for (int n = 0; n < count; n++) {
+                rowCount = Math.max(rowCount, bankRows(group, first + n));
+            }
+            int startX = left + (listWidth() - count * BANK_WIDTH - (count - 1) * BANK_GAP) / 2;
+            for (int n = 0; n < count; n++) {
+                int bankX = startX + n * (BANK_WIDTH + BANK_GAP);
+                for (int slotInBank = 0; slotInBank < Math.min(BANK_SLOTS, group.slots() - (first + n) * BANK_SLOTS);
+                        slotInBank++) {
+                    int slot = (first + n) * BANK_SLOTS + slotInBank;
+                    int px = bankX + (slotInBank % 2) * SLOT;
+                    int py = bankTop + (slotInBank / 2) * SLOT;
+                    drawSlot(g, px, py);
+                    Icon.BACKGROUND_STORAGE_CELL.getBlitter().dest(px + 1, py + 1).blit(g);
+                    int rowIndex = slotIndex(index, slot);
+                    if (rowIndex >= 0) {
+                        ItemStack stack = rows.get(rowIndex).stack();
+                        if (!stack.isEmpty()) {
+                            g.renderItem(stack, px + 1, py + 1);
+                        }
+                        if (rowIndex == hovered) {
+                            g.fill(px + 1, py + 1, px + SLOT - 1, py + SLOT - 1, 0x669CD3FF);
+                        }
+                    }
+                }
+            }
+            bankTop += rowCount * SLOT + BANK_ROW_GAP;
         }
-        int pages = Math.max(1, (totalSlots + DriveCellListPacket.PAGE_SIZE - 1) / DriveCellListPacket.PAGE_SIZE);
-        g.drawString(font, "<", left + 2, footer + 2, page > 0 ? COLOR_TITLE_TEXT : COLOR_MUTED, false);
-        String pageLabel = Component.translatable("gui.mesplicedterminal.drive.page", page + 1, pages).getString();
-        g.drawString(font, pageLabel, left + (contentWidth() - font.width(pageLabel)) / 2,
-                footer + 2, COLOR_TITLE_TEXT, false);
-        g.drawString(font, ">", right - 9, footer + 2,
-                page + 1 < pages ? COLOR_TITLE_TEXT : COLOR_MUTED, false);
-        String hint = Component.translatable("gui.mesplicedterminal.drive.hint").getString();
-        g.drawString(font, font.plainSubstrByWidth(truncated
-                ? Component.translatable("gui.mesplicedterminal.drive.truncation").getString() : hint,
-                contentWidth()), left, footer + 14, COLOR_MUTED, false);
+        g.fill(left, y + groupHeight(group) - 3, right, y + groupHeight(group) - 2, SECTION_RULE_COLOR);
+    }
+
+    private static void drawTrack(GuiGraphics g, int x, int y, int height) {
+        int x1 = x + TRACK_WIDTH - 1;
+        int y1 = y + height - 1;
+        g.hLine(x, x1, y, TRACK_BORDER);
+        g.hLine(x, x1, y1, TRACK_BORDER);
+        g.vLine(x, y, y1, TRACK_BORDER);
+        g.vLine(x1, y, y1, TRACK_BORDER);
+        g.fill(x + 1, y + 1, x + 4, y1, TRACK_FILL);
     }
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
-        if (!visible || !contains(mx, my)) {
+        if (!inList(mx, my)) {
             return false;
         }
-        int row = rowAt(mx, my);
-        if (row >= 0 && (button == 0 || button == 1)) {
-            PacketDistributor.sendToServer(new DriveCellActionPacket(menu.containerId, revision, row,
+        int group = groupAt(mx, my);
+        if (group >= 0 && button == 0 && revision >= 0
+                && groups.get(group).editable() && my >= groupY(group) + PRIORITY_TOP
+                && my < groupY(group) + PRIORITY_TOP + BUTTON) {
+            int right = contentLeft() + listWidth();
+            int delta = mx >= right - BUTTON && mx < right ? 1
+                    : mx >= right - PRIORITY_WIDTH && mx < right - PRIORITY_WIDTH + BUTTON ? -1 : 0;
+            if (delta != 0) {
+                PacketDistributor.sendToServer(new DrivePriorityPacket(menu.containerId, revision, group, delta));
+                return true;
+            }
+        }
+        CellHit cell = cellAt(mx, my);
+        if (cell != null && (button == 0 || button == 1) && revision >= 0) {
+            PacketDistributor.sendToServer(new DriveCellActionPacket(menu.containerId, revision, cell.index(),
                     button == 1 || Screen.hasShiftDown()
                             ? DriveCellActionPacket.Action.QUICK_MOVE : DriveCellActionPacket.Action.CURSOR));
             return true;
-        }
-        int footer = Math.min(contentTop() + HEADER_HEIGHT + visibleRows() * ROW_HEIGHT + 2,
-                contentTop() + contentHeight() - FOOTER_HEIGHT);
-        if (button == 0 && my >= footer && my < footer + 13) {
-            if (mx >= contentLeft() && mx < contentLeft() + 15) {
-                changePage(page - 1);
-                return true;
-            }
-            if (mx >= contentLeft() + contentWidth() - 15 && mx < contentLeft() + contentWidth()) {
-                changePage(page + 1);
-                return true;
-            }
         }
         return false;
     }
 
     @Override
     public boolean mouseScrolled(double mx, double my, double scrollY) {
-        if (!visible || !contains(mx, my) || scrollY == 0) {
+        if (!visible || scrollY == 0 || !contains(mx, my)) {
             return false;
         }
-        scroll = Math.max(0, Math.min(maxScroll(), scroll - (int) Math.signum(scrollY)));
+        scrollbar.setCurrentScroll(scrollbar.getCurrentScroll() - 3 * (int) Math.signum(scrollY));
+        syncWindow();
         return true;
     }
 
     @Override
     public boolean scrollbarPressed(double mx, double my) {
-        if (maxScroll() == 0 || !visible || mx < contentLeft() + contentWidth() - TRACK_WIDTH
-                || mx >= contentLeft() + contentWidth() || my < contentTop() + HEADER_HEIGHT
-                || my >= contentTop() + HEADER_HEIGHT + visibleRows() * ROW_HEIGHT) {
+        if (!visible || mx < trackX() || mx >= trackX() + TRACK_WIDTH
+                || my < contentTop() || my >= contentTop() + contentHeight()) {
             return false;
         }
-        dragging = true;
-        scrollbarDragged(mx, my);
-        return true;
+        dragging = scrollbar.onMouseDown(new Point((int) mx, (int) my), 0);
+        syncWindow();
+        return dragging;
     }
 
     @Override
     public boolean scrollbarDragged(double mx, double my) {
-        if (!dragging || maxScroll() == 0) {
-            dragging = false;
+        if (!dragging) {
             return false;
         }
-        int height = visibleRows() * ROW_HEIGHT;
-        int thumbHeight = Math.max(12, height * visibleRows() / rows.size());
-        double fraction = (my - contentTop() - HEADER_HEIGHT - thumbHeight / 2.0) / (height - thumbHeight);
-        scroll = Math.max(0, Math.min(maxScroll(), (int) Math.round(fraction * maxScroll())));
-        return true;
+        boolean consumed = scrollbar.onMouseDrag(new Point((int) mx, (int) my), 0);
+        syncWindow();
+        return consumed;
+    }
+
+    @Override
+    public void scrollbarReleased() {
+        if (dragging) {
+            scrollbar.onMouseUp(new Point(0, 0), 0);
+        }
+        dragging = false;
     }
 
     @Override
     public boolean scrollbarDragging() {
         return dragging;
-    }
-
-    @Override
-    public void scrollbarReleased() {
-        dragging = false;
     }
 }

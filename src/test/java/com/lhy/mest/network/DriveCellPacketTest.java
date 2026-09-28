@@ -12,6 +12,7 @@ import io.netty.buffer.Unpooled;
 
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
 import net.neoforged.neoforge.network.connection.ConnectionType;
 
 class DriveCellPacketTest {
@@ -35,23 +36,46 @@ class DriveCellPacketTest {
     }
 
     @Test
-    void pageRoundTripAndOversizedLengthIsDiscarded() {
+    void emptyViewportRoundTripAndOversizedGroupCountIsDiscarded() {
         RegistryFriendlyByteBuf buf = registryBuffer();
         try {
-            var page = new DriveCellListPacket(4, 8, 0, 0, 0, false, List.of());
-            DriveCellListPacket.STREAM_CODEC.encode(buf, page);
+            var viewport = new DriveCellListPacket(4, 8, 0, 0, false, List.of(), List.of());
+            DriveCellListPacket.STREAM_CODEC.encode(buf, viewport);
             var decoded = DriveCellListPacket.STREAM_CODEC.decode(buf);
-            assertEquals(page.containerId(), decoded.containerId());
-            assertEquals(page.rows().size(), decoded.rows().size());
+            assertEquals(viewport.containerId(), decoded.containerId());
+            assertTrue(decoded.groups().isEmpty());
             assertEquals(0, buf.readableBytes());
             buf.writeVarInt(4);
             buf.writeVarInt(8);
             buf.writeVarInt(0);
             buf.writeVarInt(100);
-            buf.writeVarInt(3);
             buf.writeBoolean(false);
-            buf.writeVarInt(DriveCellListPacket.PAGE_SIZE + 1);
+            buf.writeVarInt(DriveCellListPacket.MAX_GROUPS + 1);
             assertEquals(-1, DriveCellListPacket.STREAM_CODEC.decode(buf).containerId());
+            assertEquals(0, buf.readableBytes());
+        } finally {
+            buf.release();
+        }
+    }
+
+    @Test
+    void priorityRejectsInvalidDeltaAndTrailingData() {
+        RegistryFriendlyByteBuf buf = registryBuffer();
+        try {
+            var action = new DrivePriorityPacket(4, 8, 2, 1);
+            DrivePriorityPacket.STREAM_CODEC.encode(buf, action);
+            assertEquals(action, DrivePriorityPacket.STREAM_CODEC.decode(buf));
+            buf.writeVarInt(4);
+            buf.writeVarInt(8);
+            buf.writeVarInt(2);
+            buf.writeByte(3);
+            assertEquals(-1, DrivePriorityPacket.STREAM_CODEC.decode(buf).containerId());
+            buf.writeVarInt(4);
+            buf.writeVarInt(8);
+            buf.writeVarInt(2);
+            buf.writeByte(-1);
+            buf.writeByte(1);
+            assertEquals(-1, DrivePriorityPacket.STREAM_CODEC.decode(buf).containerId());
             assertEquals(0, buf.readableBytes());
         } finally {
             buf.release();
@@ -62,10 +86,10 @@ class DriveCellPacketTest {
     void requestRejectsTruncationAndTrailingData() {
         ByteBuf buf = Unpooled.buffer();
         try {
-            net.minecraft.network.codec.ByteBufCodecs.VAR_INT.encode(buf, 4);
+            ByteBufCodecs.VAR_INT.encode(buf, 4);
             assertTrue(DriveCellRequestPacket.STREAM_CODEC.decode(buf).containerId() < 0);
-            net.minecraft.network.codec.ByteBufCodecs.VAR_INT.encode(buf, 4);
-            net.minecraft.network.codec.ByteBufCodecs.VAR_INT.encode(buf, 0);
+            ByteBufCodecs.VAR_INT.encode(buf, 4);
+            ByteBufCodecs.VAR_INT.encode(buf, 0);
             buf.writeByte(1);
             assertTrue(DriveCellRequestPacket.STREAM_CODEC.decode(buf).containerId() < 0);
             assertEquals(0, buf.readableBytes());
