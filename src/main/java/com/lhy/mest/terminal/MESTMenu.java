@@ -104,6 +104,7 @@ public class MESTMenu extends CraftingTermMenu {
 
     private final MESTMenuHost host;
     private final PatternAccessSession patternAccessSession;
+    private final DriveCellSession driveCellSession = new DriveCellSession(this);
     private final PatternEncodingLogic patternEncodingLogic;
     private boolean blankPatternFilled;
     private final FakeSlot[] patternCraftingSlots = new FakeSlot[CRAFTING_GRID_SLOTS];
@@ -214,6 +215,10 @@ public class MESTMenu extends CraftingTermMenu {
 
     public PatternAccessSession getPatternAccessSession() {
         return patternAccessSession;
+    }
+
+    public DriveCellSession driveCells() {
+        return driveCellSession;
     }
 
     /**
@@ -1262,6 +1267,7 @@ public class MESTMenu extends CraftingTermMenu {
     @Override
     public void removed(Player player) {
         patternAccessSession.close();
+        driveCellSession.clear();
         super.removed(player);
     }
 

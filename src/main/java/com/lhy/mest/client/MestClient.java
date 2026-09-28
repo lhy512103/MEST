@@ -12,6 +12,7 @@ import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 import appeng.init.client.InitScreens;
 
 import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.network.DriveCellClientBridge;
 import com.lhy.mest.network.PatternProviderClientBridge;
 import com.lhy.mest.network.ProviderPickerClientBridge;
 import com.lhy.mest.terminal.MESTMenu;
@@ -27,6 +28,7 @@ public final class MestClient {
     public static void init(IEventBus modEventBus) {
         PatternProviderClientBridge.install(PatternProviderClientHandler::handle);
         ProviderPickerClientBridge.install(ProviderPickerClientHandler::handle);
+        DriveCellClientBridge.install(DriveCellClientHandler::handle);
         modEventBus.addListener(MestClient::onRegisterScreens);
         modEventBus.addListener(MestClient::onRegisterGuiLayers);
         modEventBus.addListener(MestClient::onRegisterKeyMappings);

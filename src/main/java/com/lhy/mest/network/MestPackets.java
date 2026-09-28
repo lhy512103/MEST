@@ -21,6 +21,21 @@ public final class MestPackets {
                 PatternProviderActionPacket::handle);
 
         registrar.playToServer(
+                DriveCellRequestPacket.TYPE,
+                DriveCellRequestPacket.STREAM_CODEC,
+                DriveCellRequestPacket::handle);
+
+        registrar.playToServer(
+                DriveCellActionPacket.TYPE,
+                DriveCellActionPacket.STREAM_CODEC,
+                DriveCellActionPacket::handle);
+
+        registrar.playToClient(
+                DriveCellListPacket.TYPE,
+                DriveCellListPacket.STREAM_CODEC,
+                DriveCellClientBridge::handle);
+
+        registrar.playToServer(
                 PatternCacheActionPacket.TYPE,
                 PatternCacheActionPacket.STREAM_CODEC,
                 PatternCacheActionPacket::handle);

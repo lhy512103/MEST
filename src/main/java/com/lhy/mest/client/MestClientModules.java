@@ -11,6 +11,7 @@ import com.lhy.mest.api.client.MestModuleFactory;
 import com.lhy.mest.api.client.RegisterMestModulesEvent;
 import com.lhy.mest.client.panel.CraftingPanel;
 import com.lhy.mest.client.panel.CraftingTerminalPanel;
+import com.lhy.mest.client.panel.DrivePanel;
 import com.lhy.mest.client.panel.HotkeysPanel;
 import com.lhy.mest.client.panel.InventoryPanel;
 import com.lhy.mest.client.panel.NetworkToolkitPanel;
@@ -48,7 +49,8 @@ public final class MestClientModules {
             new Registration(HotkeysPanel.ID, context -> new HotkeysPanel(context.style(), context.dock())),
             new Registration("provider_select", context -> ModList.get().isLoaded("extendedae_plus")
                     ? new ProviderSelectPanel(context.style())
-                    : null));
+                    : null),
+            new Registration("drive", context -> new DrivePanel(context.menu())));
 
     private static final OrderedModuleRegistry<MestModuleFactory> ADDONS =
             new OrderedModuleRegistry<>(BuiltinModules.IDS);

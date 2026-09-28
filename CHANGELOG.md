@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.3.1
+
+### English
+
+1. Added: A paged drive module for connected AE2, ExtendedAE, and compatible public-inventory drives, with quick cell transfers.
+2. Changed: Drive pages sync only while visible; transfers validate the live network and cell slot without mixins or reflection.
+
+### 中文
+
+1. 新增：驱动器模块，可分页查看当前网络的 AE2、ExtendedAE 及兼容公开元件槽位的驱动器，并快捷放入或取出。
+2. 调整：仅在面板显示时同步；操作前校验网络与槽位，无需 Mixin 或反射。
+
 ## v0.0.3.0
 
 ### English

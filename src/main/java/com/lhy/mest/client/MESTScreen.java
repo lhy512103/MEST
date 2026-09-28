@@ -84,6 +84,7 @@ import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.panel.CraftingPanel;
 import com.lhy.mest.client.panel.CraftingTerminalPanel;
+import com.lhy.mest.client.panel.DrivePanel;
 import com.lhy.mest.client.panel.InventoryPanel;
 import com.lhy.mest.client.panel.MEListPanel;
 import com.lhy.mest.client.panel.PatternAccessPanel;
@@ -101,6 +102,7 @@ import com.lhy.mest.client.hotkey.PanelHotkeys;
 import net.neoforged.fml.ModList;
 import com.lhy.mest.integration.MestRecipeTransferContext;
 import com.lhy.mest.compat.plus.PlusScreenSupport;
+import com.lhy.mest.network.DriveCellListPacket;
 import com.lhy.mest.network.PatternProviderActionPacket;
 import com.lhy.mest.network.ProviderPickerListPacket;
 import com.lhy.mest.terminal.MESTMenu;
@@ -160,6 +162,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private PatternCachePanel patternCachePanel;
     private InventoryPanel inventoryPanel;
     private ProviderSelectPanel providerSelectPanel;
+    private DrivePanel drivePanel;
     private WirelessSettingsPanel wirelessSettingsPanel;
     private TrashPanel trashPanel;
     private ToolkitPanel toolkitPanel;
@@ -533,6 +536,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (patternCachePanel != null && dock.isEffectivelyVisible(patternCachePanel)) {
             patternCachePanel.layoutSlots();
         }
+        if (drivePanel != null) {
+            drivePanel.tick(dock.isEffectivelyVisible(drivePanel));
+        }
         attachMeSideBar();
         attachExtraSlotColumns();
         syncExternalModGuiMetrics();
@@ -695,6 +701,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 case NetworkToolkitPanel p -> networkToolkitPanel = p;
                 case HotkeysPanel p -> hotkeysPanel = p;
                 case ProviderSelectPanel p -> providerSelectPanel = p;
+                case DrivePanel p -> drivePanel = p;
                 default -> {
                 }
             }
@@ -2068,6 +2075,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         return dock.topPanelAt(mx, my) != null || super.mouseScrolled(mx, my, scrollX, scrollY);
     }
 
+    public void updateDriveCells(DriveCellListPacket packet) {
+        if (drivePanel != null) {
+            drivePanel.update(packet);
+        }
+    }
+
     public void updatePatternProviders(List<Entry> entries) {
         if (patternAccessPanel != null) {
             patternAccessPanel.setProviders(entries);
@@ -2275,6 +2288,21 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 drawAeWidgetTooltip(g, x, y, lockTip);
             }
             return;
+        }
+        if (target == drivePanel && drivePanel != null && hoveredSlot == null
+                && getMenu().getCarried().isEmpty()) {
+            ItemStack driveCell = drivePanel.hoveredItem(x, y);
+            if (driveCell != null && !driveCell.isEmpty()) {
+                List<Component> lines = new ArrayList<>(getTooltipFromContainerItem(driveCell));
+                lines.addAll(drivePanel.hoveredText(x, y));
+                g.renderTooltip(font, lines, driveCell.getTooltipImage(), driveCell, x, y);
+                return;
+            }
+            List<Component> lines = drivePanel.hoveredText(x, y);
+            if (!lines.isEmpty()) {
+                g.renderComponentTooltip(font, lines, x, y);
+                return;
+            }
         }
         if (target == hotkeysPanel && hotkeysPanel != null) {
             ITooltip hotkeyTip = hotkeysPanel.hoveredTooltip(x, y);
@@ -2554,6 +2582,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         MestPinnedKeysCap.resetToVanilla();
         closePatternAccessSubscription();
+        if (drivePanel != null) {
+            drivePanel.closeSubscription();
+        }
         if (PlusScreenSupport.loaded() && !keepPendingOnRemove) {
             PlusScreenSupport.cancelPending();
         }
