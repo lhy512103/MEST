@@ -31,18 +31,15 @@ import com.lhy.mest.terminal.MESTMenu;
 /** AE2-style physical cell wells grouped by drive with state LEDs; the server owns the inventories. */
 public final class DrivePanel extends ModulePanel {
     private static final int SLOT = 18;
-    // Cells flow in runs of five, echoing the five-cell rows of the physical drive face.
-    private static final int SEGMENT = 5;
-    private static final int SEGMENT_WIDTH = SEGMENT * SLOT;
-    private static final int SEGMENT_GAP = 3;
-    private static final int HEADER = 14;
-    private static final int GROUP_GAP = 5;
-    // A 1px frame around each run of cells, like the outlined slot block on AE2's drive screen.
+    private static final int MIN_COLUMNS = 5;
+    private static final int HEADER = 18;
+    // One well outlined in white around every drive, matching the pattern access panel.
     private static final int FRAME = 1;
-    private static final int SEGMENT_STRIDE = SEGMENT_WIDTH + 2 * FRAME + SEGMENT_GAP;
-    private static final int COLOR_FRAME = 0xFFFFFFFF;
-    // AE2's 20px tab button, scaled to sit inside the header line.
-    private static final int PRIORITY_BUTTON = 13;
+    private static final int WELL_FILL = 0xFF9A9FB4;
+    private static final int SLOT_FILL = 0xFFADB0C4;
+    private static final int SLOT_BORDER = 0xFF878FA5;
+    // AE2's 20px tab button, scaled to sit inside the header row.
+    private static final int PRIORITY_BUTTON = 16;
     private static final float PRIORITY_SCALE = PRIORITY_BUTTON / 20f;
     private static final int COLOR_TITLE_WARN = 0xFFC07A12;
     private static final int COLOR_TITLE_FULL = 0xFFB33A3A;
@@ -115,12 +112,12 @@ public final class DrivePanel extends ModulePanel {
 
     @Override
     public int minWidth() {
-        return 137;
+        return 2 * CONTENT_PADDING + contentRightInset + MIN_COLUMNS * SLOT + 2 * FRAME + GUTTER;
     }
 
     @Override
     public int minHeight() {
-        return TITLE_BAR_HEIGHT + CONTENT_PADDING + HEADER + SLOT + 2 * FRAME + GROUP_GAP;
+        return TITLE_BAR_HEIGHT + CONTENT_PADDING + HEADER + SLOT + 2 * FRAME;
     }
 
     @Override
@@ -212,12 +209,8 @@ public final class DrivePanel extends ModulePanel {
         }
     }
 
-    private int segmentsPerRow() {
-        return Math.max(1, (listWidth() + SEGMENT_GAP) / SEGMENT_STRIDE);
-    }
-
     private int cellsPerRow() {
-        return segmentsPerRow() * SEGMENT;
+        return Math.max(1, (listWidth() - 2 * FRAME) / SLOT);
     }
 
     private int cellRows(DriveCellListPacket.Group group) {
@@ -225,16 +218,15 @@ public final class DrivePanel extends ModulePanel {
     }
 
     private int groupHeight(DriveCellListPacket.Group group) {
-        return HEADER + cellRows(group) * SLOT + 2 * FRAME + GROUP_GAP;
+        return HEADER + cellRows(group) * SLOT;
     }
 
     private int cellX(int slot) {
-        int column = slot % cellsPerRow();
-        return contentLeft() + column / SEGMENT * SEGMENT_STRIDE + FRAME + column % SEGMENT * SLOT;
+        return gridLeft() + slot % cellsPerRow() * SLOT;
     }
 
     private int cellY(int groupTop, int slot) {
-        return groupTop + HEADER + FRAME + slot / cellsPerRow() * SLOT;
+        return groupTop + HEADER + slot / cellsPerRow() * SLOT;
     }
 
     private int totalHeight() {
@@ -247,19 +239,35 @@ public final class DrivePanel extends ModulePanel {
 
     private int scrollPixels() {
         return Math.min(scrollbar.getCurrentScroll() * SCROLL_STEP,
-                Math.max(0, totalHeight() - contentHeight()));
+                Math.max(0, totalHeight() - innerHeight()));
     }
 
     private int listWidth() {
         return Math.max(1, contentWidth() - GUTTER);
     }
 
+    private int gridLeft() {
+        return contentLeft() + FRAME;
+    }
+
+    private int gridRight() {
+        return gridLeft() + cellsPerRow() * SLOT;
+    }
+
+    private int innerTop() {
+        return contentTop() + FRAME;
+    }
+
+    private int innerHeight() {
+        return Math.max(0, contentHeight() - 2 * FRAME);
+    }
+
     private int trackX() {
-        return contentLeft() + listWidth() + TRACK_GAP + TRACK_SHIFT_X;
+        return gridRight() + FRAME + TRACK_GAP + TRACK_SHIFT_X;
     }
 
     private void layoutScrollbar() {
-        int max = Math.max(0, totalHeight() - contentHeight());
+        int max = Math.max(0, totalHeight() - innerHeight());
         scrollbar.setRange(0, (max + SCROLL_STEP - 1) / SCROLL_STEP, 1);
         scrollbar.setHeight(Math.max(1, contentHeight() - 2));
         scrollbar.setPosition(new Point(trackX() - 1, contentTop()));
@@ -278,26 +286,23 @@ public final class DrivePanel extends ModulePanel {
         return row.drive() == drive && row.slot() == slot ? index : -1;
     }
 
-    private int listRight() {
-        return contentLeft() + listWidth();
-    }
-
     private int priorityX() {
-        return listRight() - PRIORITY_BUTTON;
+        return gridRight() - PRIORITY_BUTTON - 1;
     }
 
     private HeaderHit headerAt(double mx, double my) {
         if (!inList(mx, my)) {
             return null;
         }
-        int y = contentTop() - scrollPixels();
+        int y = innerTop() - scrollPixels();
         for (int i = 0; i < groups.size(); i++) {
             if (my >= y && my < y + HEADER) {
                 var group = groups.get(i);
-                if (group.editable() && mx >= priorityX() && my < y + PRIORITY_BUTTON) {
+                if (group.editable() && mx >= priorityX() && mx < priorityX() + PRIORITY_BUTTON
+                        && my >= y + 1 && my < y + 1 + PRIORITY_BUTTON) {
                     return new HeaderHit(i, HeaderPart.PRIORITY);
                 }
-                return mx < (group.editable() ? priorityX() - 2 : listRight()) ? new HeaderHit(i, HeaderPart.NAME) : null;
+                return mx < (group.editable() ? priorityX() - 2 : gridRight()) ? new HeaderHit(i, HeaderPart.NAME) : null;
             }
             y += groupHeight(groups.get(i));
         }
@@ -308,17 +313,15 @@ public final class DrivePanel extends ModulePanel {
         if (!inList(mx, my)) {
             return null;
         }
-        int relX = (int) mx - contentLeft();
-        int segment = relX / SEGMENT_STRIDE;
-        int within = relX - segment * SEGMENT_STRIDE - FRAME;
-        if (segment >= segmentsPerRow() || within < 0 || within >= SEGMENT_WIDTH) {
+        int relX = (int) mx - gridLeft();
+        if (relX < 0 || relX >= cellsPerRow() * SLOT) {
             return null;
         }
-        int column = segment * SEGMENT + within / SLOT;
-        int y = contentTop() - scrollPixels();
+        int column = relX / SLOT;
+        int y = innerTop() - scrollPixels();
         for (int i = 0; i < groups.size(); i++) {
             var group = groups.get(i);
-            int cellsTop = y + HEADER + FRAME;
+            int cellsTop = y + HEADER;
             if (my >= cellsTop && my < cellsTop + cellRows(group) * SLOT) {
                 int slot = (int) (my - cellsTop) / SLOT * cellsPerRow() + column;
                 if (slot >= group.slots()) {
@@ -333,8 +336,8 @@ public final class DrivePanel extends ModulePanel {
     }
 
     private boolean inList(double mx, double my) {
-        return visible && mx >= contentLeft() && mx < listRight()
-                && my >= contentTop() && my < contentTop() + contentHeight();
+        return visible && mx >= gridLeft() && mx < gridRight()
+                && my >= innerTop() && my < innerTop() + innerHeight();
     }
 
     public ItemStack hoveredItem(int x, int y) {
@@ -430,12 +433,13 @@ public final class DrivePanel extends ModulePanel {
         if (contentWidth() <= 0 || contentHeight() <= 0) {
             return;
         }
-        int left = contentLeft();
-        int top = contentTop();
-        int bottom = top + contentHeight();
+        int left = gridLeft();
+        int top = innerTop();
+        int bottom = top + innerHeight();
         CellHit hovered = cellAt(mouseX, mouseY);
         HeaderHit header = headerAt(mouseX, mouseY);
-        g.enableScissor(left, top, left + contentWidth(), bottom);
+        drawWell(g);
+        g.enableScissor(left, top, gridRight(), bottom);
         try {
             int y = top - scrollPixels();
             for (int i = 0; i < groups.size(); i++) {
@@ -455,35 +459,40 @@ public final class DrivePanel extends ModulePanel {
             g.disableScissor();
         }
         // Outside the scissor: the SMALL thumb is wider than the track and would be clipped on the right.
-        drawTrack(g, trackX(), top, contentHeight());
+        drawTrack(g, trackX(), contentTop(), contentHeight());
         scrollbar.drawForegroundLayer(g, new Rect2i(0, 0, 0, 0), new Point(mouseX, mouseY));
     }
 
     private void drawGroup(GuiGraphics g, Font font, int index, DriveCellListPacket.Group group,
             int y, int hovered, HeaderPart headerPart) {
-        int left = contentLeft();
-        int nameRight = group.editable() ? priorityX() - 3 : listRight();
+        int left = gridLeft();
+        int nameRight = group.editable() ? priorityX() - 2 : gridRight() - 2;
         if (!group.powered()) {
             Component offline = Component.translatable("gui.mesplicedterminal.drive.offline");
             nameRight -= font.width(offline);
-            g.drawString(font, offline, nameRight, y + 3, COLOR_OFFLINE, false);
+            g.drawString(font, offline, nameRight, y + 6, COLOR_OFFLINE, false);
             nameRight -= 4;
         }
+        g.pose().pushPose();
+        g.pose().translate(left + 2, y + 5, 0);
+        g.pose().scale(0.5F, 0.5F, 1.0F);
+        g.renderItem(new ItemStack(group.icon()), 0, 0);
+        g.pose().popPose();
         String name = group.name().getString();
-        int nameWidth = Math.max(0, nameRight - left - 1);
+        int nameWidth = Math.max(0, nameRight - left - 12);
         String shown = name;
         if (font.width(name) > nameWidth) {
             shown = font.plainSubstrByWidth(name, Math.max(0, nameWidth - font.width("..."))) + "...";
         }
-        g.drawString(font, shown, left + 1, y + 3, group.powered() ? titleColor(group) : COLOR_MUTED, false);
+        g.drawString(font, shown, left + 12, y + 6, group.powered() ? titleColor(group) : COLOR_MUTED, false);
         if (group.editable()) {
-            drawPriorityButton(g, priorityX(), y, headerPart == HeaderPart.PRIORITY);
+            drawPriorityButton(g, priorityX(), y + 1, headerPart == HeaderPart.PRIORITY);
         }
-        drawFrames(g, group, y);
+        int columns = cellsPerRow();
         for (int slot = 0; slot < group.slots(); slot++) {
             int px = cellX(slot);
             int py = cellY(y, slot);
-            drawSlot(g, px, py);
+            drawSlotCell(g, px, py, slot % columns, columns);
             int rowIndex = slotIndex(index, slot);
             var row = rowIndex >= 0 ? rows.get(rowIndex) : null;
             if (row == null || row.stack().isEmpty()) {
@@ -499,8 +508,30 @@ public final class DrivePanel extends ModulePanel {
                 g.pose().popPose();
             }
         }
-        int rule = y + groupHeight(group) - 3;
-        g.fill(left, rule, listRight(), rule + 1, SECTION_RULE_COLOR);
+    }
+
+    private void drawWell(GuiGraphics g) {
+        int x0 = contentLeft();
+        int y0 = contentTop();
+        int x1 = gridRight() + FRAME;
+        int y1 = contentTop() + contentHeight();
+        g.fill(x0, y0, x1, y1, WELL_FILL);
+        g.fill(x0, y0, x1, y0 + 1, COLOR_LIGHT);
+        g.fill(x0, y1 - 1, x1, y1, COLOR_LIGHT);
+        g.fill(x0, y0, x0 + 1, y1, COLOR_LIGHT);
+        g.fill(x1 - 1, y0, x1, y1, COLOR_LIGHT);
+    }
+
+    private static void drawSlotCell(GuiGraphics g, int x, int y, int col, int columns) {
+        g.fill(x, y, x + SLOT, y + SLOT, SLOT_FILL);
+        g.fill(x, y, x + SLOT, y + 1, SLOT_BORDER);
+        g.fill(x, y + SLOT - 1, x + SLOT, y + SLOT, SLOT_BORDER);
+        if (col > 0) {
+            g.fill(x, y, x + 1, y + SLOT, SLOT_BORDER);
+        }
+        if (col < columns - 1) {
+            g.fill(x + SLOT - 1, y, x + SLOT, y + SLOT, SLOT_BORDER);
+        }
     }
 
     private static int titleColor(DriveCellListPacket.Group group) {
@@ -536,34 +567,6 @@ public final class DrivePanel extends ModulePanel {
         }
     }
 
-    private void drawFrames(GuiGraphics g, DriveCellListPacket.Group group, int groupTop) {
-        int perRow = cellsPerRow();
-        int rowsTotal = cellRows(group);
-        for (int segment = 0; segment < segmentsPerRow(); segment++) {
-            int first = segment * SEGMENT;
-            int width = 0;
-            int height = 0;
-            for (int row = 0; row < rowsTotal; row++) {
-                int cells = Math.min(SEGMENT, group.slots() - row * perRow - first);
-                if (cells > 0) {
-                    width = Math.max(width, cells);
-                    height = row + 1;
-                }
-            }
-            if (width == 0) {
-                continue;
-            }
-            int x0 = contentLeft() + segment * SEGMENT_STRIDE;
-            int y0 = groupTop + HEADER;
-            int x1 = x0 + width * SLOT + 2 * FRAME - 1;
-            int y1 = y0 + height * SLOT + 2 * FRAME - 1;
-            g.hLine(x0, x1, y0, COLOR_FRAME);
-            g.hLine(x0, x1, y1, COLOR_FRAME);
-            g.vLine(x0, y0, y1, COLOR_FRAME);
-            g.vLine(x1, y0, y1, COLOR_FRAME);
-        }
-    }
-
     private static void drawCellState(GuiGraphics g, DriveCellListPacket.Row row, int px, int py, boolean powered) {
         CellState state = CellState.values()[row.status()];
         int color = powered ? 0xFF000000 | state.getStateColor() : COLOR_LED_OFF;
@@ -573,12 +576,12 @@ public final class DrivePanel extends ModulePanel {
         g.fill(px + 13, py + 1, px + 17, py + 5, 0xFF1A1A1A);
         g.fill(px + 14, py + 2, px + 16, py + 4, color);
         if (row.hasCapacity()) {
-            // Same footprint as the vanilla durability bar.
+            // Spans the slot interior and rests on its bottom border.
             double fraction = Math.min(1.0, row.usedBytes() / (double) row.totalBytes());
-            int width = row.usedBytes() > 0 ? Math.max(1, (int) Math.round(13 * fraction)) : 0;
-            g.fill(px + 3, py + 14, px + 16, py + 16, 0xFF000000);
+            int width = row.usedBytes() > 0 ? Math.max(1, (int) Math.round((SLOT - 2) * fraction)) : 0;
+            g.fill(px + 1, py + SLOT - 3, px + SLOT - 1, py + SLOT - 1, 0xFF000000);
             if (width > 0) {
-                g.fill(px + 3, py + 14, px + 3 + width, py + 15, color);
+                g.fill(px + 1, py + SLOT - 3, px + 1 + width, py + SLOT - 2, color);
             }
         }
         if (!powered) {

@@ -3,12 +3,15 @@ package com.lhy.mest.network;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentSerialization;
+import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 import com.lhy.mest.MESplicedterminal;
@@ -20,11 +23,12 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
     public static final int MAX_GROUPS = 256;
     public static final Type<DriveCellListPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
             MESplicedterminal.MODID, "drive_cell_list"));
+    private static final StreamCodec<RegistryFriendlyByteBuf, Item> ITEM_CODEC = ByteBufCodecs.registry(Registries.ITEM);
     public static final StreamCodec<RegistryFriendlyByteBuf, DriveCellListPacket> STREAM_CODEC =
             StreamCodec.ofMember(DriveCellListPacket::write, DriveCellListPacket::read);
 
     /** The index within groups is the drive ordinal used by each row and by priority actions. */
-    public record Group(Component name, Component location, int slots, int priority, boolean editable,
+    public record Group(Component name, Component location, Item icon, int slots, int priority, boolean editable,
             boolean powered, long usedBytes, long totalBytes) {
     }
 
@@ -61,6 +65,7 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
         for (Group group : groups) {
             ComponentSerialization.TRUSTED_STREAM_CODEC.encode(buf, group.name());
             ComponentSerialization.TRUSTED_STREAM_CODEC.encode(buf, group.location());
+            ITEM_CODEC.encode(buf, group.icon());
             buf.writeVarInt(group.slots());
             buf.writeInt(group.priority());
             buf.writeBoolean(group.editable());
@@ -96,6 +101,7 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
             for (int i = 0; i < groupCount; i++) {
                 Component name = ComponentSerialization.TRUSTED_STREAM_CODEC.decode(buf);
                 Component location = ComponentSerialization.TRUSTED_STREAM_CODEC.decode(buf);
+                Item icon = ITEM_CODEC.decode(buf);
                 int slots = buf.readVarInt();
                 int priority = buf.readInt();
                 boolean editable = buf.readBoolean();
@@ -105,7 +111,7 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
                 if (slots < 1 || slots > 128) {
                     throw new IllegalArgumentException("Invalid drive group");
                 }
-                groups.add(new Group(name, location, slots, priority, editable, powered, usedBytes, totalBytes));
+                groups.add(new Group(name, location, icon, slots, priority, editable, powered, usedBytes, totalBytes));
             }
             int size = buf.readVarInt();
             if (!validHeader(container, revision, start, total, groupCount, size)) {
@@ -147,7 +153,7 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
     private static boolean validEntries(List<Group> groups, List<Row> rows, int start, int total) {
         int slots = 0;
         for (Group group : groups) {
-            if (group.name() == null || group.location() == null || group.slots() < 1 || group.slots() > 128
+            if (group.name() == null || group.location() == null || group.icon() == null || group.slots() < 1 || group.slots() > 128
                     || group.usedBytes() < 0 || group.totalBytes() < 0) {
                 return false;
             }

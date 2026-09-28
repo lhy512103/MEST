@@ -105,7 +105,8 @@ public final class DriveCellSession {
                     totalBytes += Math.max(0, cell.getTotalBytes());
                 }
             }
-            groups.add(new DriveCellListPacket.Group(label, Component.literal(where), drive.slots(), priority,
+            groups.add(new DriveCellListPacket.Group(label, Component.literal(where),
+                    drive.block().getBlockState().getBlock().asItem(), drive.slots(), priority,
                     editable, drive.host().isPowered(), usedBytes, totalBytes));
         }
         int start = Math.min(requestedStart, count);
@@ -331,7 +332,10 @@ public final class DriveCellSession {
             }
             result.add(new Drive(node, host, block, inventory, slots));
         }
-        result.sort(Comparator.comparing((Drive drive) -> drive.block().getLevel().dimension().location().toString())
+        // Highest priority first, as the grid fills storage in that order.
+        result.sort(Comparator.comparingInt((Drive drive) -> drive.block() instanceof IPriorityHost host
+                        ? -host.getPriority() : 0)
+                .thenComparing(drive -> drive.block().getLevel().dimension().location().toString())
                 .thenComparingLong(drive -> drive.block().getBlockPos().asLong()));
         if (result.size() > DriveCellListPacket.MAX_GROUPS) {
             limited = true;
