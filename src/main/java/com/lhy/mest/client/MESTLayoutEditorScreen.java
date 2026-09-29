@@ -111,6 +111,8 @@ public final class MESTLayoutEditorScreen extends Screen {
     private boolean statusError;
     private long statusUntilMillis;
     private boolean editorLeftDown;
+    /** Pixels the module palette is scrolled down when its rows do not fit the screen. */
+    private int paletteScroll;
 
     public MESTLayoutEditorScreen(Screen parent, DockManager dock) {
         super(Component.translatable("gui.mesplicedterminal.layout_editor"));
@@ -269,8 +271,19 @@ public final class MESTLayoutEditorScreen extends Screen {
         return sidebarEntryRect(combinedRowCount() + index);
     }
 
+    private int paletteMaxScroll() {
+        int rows = combinedRowCount() + panels.size();
+        return Math.max(0, SIDEBAR_ROW_TOP + rows * SIDEBAR_ROW_HEIGHT + SIDEBAR_PAD - height);
+    }
+
+    /** Rows scrolled under the header must not take clicks meant for it. */
+    private boolean inPaletteRows(double mouseY) {
+        return mouseY >= SIDEBAR_ROW_TOP;
+    }
+
     private Rect sidebarEntryRect(int index) {
-        int y = SIDEBAR_ROW_TOP + index * SIDEBAR_ROW_HEIGHT;
+        paletteScroll = Math.max(0, Math.min(paletteScroll, paletteMaxScroll()));
+        int y = SIDEBAR_ROW_TOP + index * SIDEBAR_ROW_HEIGHT - paletteScroll;
         if (sidebarCollapsed) {
             return collapsedRailRect(y);
         }
@@ -604,6 +617,9 @@ public final class MESTLayoutEditorScreen extends Screen {
             return true;
         }
         if (button == 0 && mouseX < sidebarWidth()) {
+            if (!inPaletteRows(mouseY)) {
+                return true;
+            }
             for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
                 if (dock.hasGroup(group) && sidebarGroupRowRect(group).contains(mouseX, mouseY)) {
                     dock.toggleGroup(group);
@@ -692,6 +708,11 @@ public final class MESTLayoutEditorScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (mouseX < sidebarWidth() && scrollY != 0) {
+            paletteScroll = Math.max(0, Math.min(paletteMaxScroll(),
+                    paletteScroll - (int) Math.signum(scrollY) * SIDEBAR_ROW_HEIGHT));
+            return true;
+        }
         if (mouseX >= canvasLeft() && mouseX < canvasRight() && mouseY >= canvasTop()) {
             ModulePanel panel = dock.topLeafAt(mouseX, mouseY);
             if (panel != null && panel.mouseScrolled(mouseX, mouseY, scrollY)) {
@@ -852,8 +873,9 @@ public final class MESTLayoutEditorScreen extends Screen {
             graphics.renderComponentTooltip(font, hintTooltip(), mouseX, mouseY);
             return;
         }
+        boolean paletteRows = inPaletteRows(mouseY);
         for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
-            if (dock.hasGroup(group) && sidebarGroupRowRect(group).contains(mouseX, mouseY)) {
+            if (paletteRows && dock.hasGroup(group) && sidebarGroupRowRect(group).contains(mouseX, mouseY)) {
                 graphics.renderComponentTooltip(font, List.of(combinedTitle(group),
                         Component.translatable(dock.isGroupShown(group)
                                 ? "gui.mesplicedterminal.module_toggle.hide"
@@ -863,7 +885,7 @@ public final class MESTLayoutEditorScreen extends Screen {
         }
         for (int index = 0; index < panels.size(); index++) {
             Rect row = sidebarRowRect(index);
-            if (!row.contains(mouseX, mouseY)) {
+            if (!paletteRows || !row.contains(mouseX, mouseY)) {
                 continue;
             }
             ModulePanel panel = panels.get(index);
@@ -925,6 +947,10 @@ public final class MESTLayoutEditorScreen extends Screen {
             graphics.drawString(font, Component.translatable("gui.mesplicedterminal.layout_modules"),
                     SIDEBAR_PAD, SIDEBAR_HEADER_TOP + 5, ModulePanel.COLOR_TITLE_TEXT, false);
         }
+        if (!inPaletteRows(mouseY)) {
+            mouseY = Integer.MIN_VALUE;
+        }
+        graphics.enableScissor(0, SIDEBAR_ROW_TOP, width - 1, height);
 
         for (int group = 1; group <= FloatingRoot.MAX_GROUPS; group++) {
             if (!dock.hasGroup(group)) {
@@ -972,6 +998,14 @@ public final class MESTLayoutEditorScreen extends Screen {
             MESTScreen.blitPanelIcon(graphics, panel, row.x + 2, row.y + 3);
             int textColor = policy.visible() ? ModulePanel.COLOR_TITLE_TEXT : ModulePanel.COLOR_MUTED;
             graphics.drawString(font, panel.title(), row.x + 22, row.y + 7, textColor, false);
+        }
+        graphics.disableScissor();
+        int maxScroll = paletteMaxScroll();
+        if (maxScroll > 0) {
+            int track = height - SIDEBAR_ROW_TOP - 4;
+            int thumb = Math.max(12, track * track / (track + maxScroll));
+            int thumbY = SIDEBAR_ROW_TOP + 2 + (track - thumb) * paletteScroll / maxScroll;
+            graphics.fill(width - 4, thumbY, width - 2, thumbY + thumb, ModulePanel.COLOR_DARK);
         }
     }
 

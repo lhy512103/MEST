@@ -569,8 +569,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         } else if (!remote && lastWorkbenchRemote && workbenchAutoOpened) {
             workbenchAutoOpened = false;
             if (dock.isEffectivelyVisible(cellWorkbenchPanel)) {
-                dock.hideModule(cellWorkbenchPanel);
-                dock.save();
+                dock.detachAndHide(cellWorkbenchPanel);
             }
         }
         lastWorkbenchRemote = remote;
@@ -2695,6 +2694,11 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         keepPendingOnRemove = false;
         dock.finishPendingGesture();
+        // A workbench spliced on for one drive cell edit is temporary; never persist it.
+        if (workbenchAutoOpened && cellWorkbenchPanel != null) {
+            workbenchAutoOpened = false;
+            dock.detachAndHide(cellWorkbenchPanel);
+        }
         dock.save();
         dock.saveUiPreferences();
         CursorHelper.resetCursor();

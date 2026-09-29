@@ -3283,6 +3283,28 @@ public final class DockManager {
 
     private static final int FLOATING_BESIDE_GAP = 4;
 
+    /**
+     * Hides {@code panel}. Spliced into a window, it is taken out first so the window returns to its
+     * size from before the splice and the panel keeps a floating window of its own.
+     */
+    public void detachAndHide(ModulePanel panel) {
+        if (workspace == null || panel == null || mode != Mode.NONE) {
+            return;
+        }
+        ensureProjection();
+        LeafNode leaf = leafForPanel(panel);
+        DockWorkspace next = workspace;
+        FloatingRoot holder = rootContainingNode(next, leaf.nodeId());
+        if (!holder.content().nodeId().equals(leaf.nodeId())) {
+            next = detachAndRestore(next, leaf.nodeId(), "root:" + NodeIds.random());
+        }
+        if (next.policyFor(leaf.moduleId()).visible()) {
+            next = editor.setLeafVisible(next, leaf.nodeId(), false, null, null, null);
+        }
+        replaceWorkspace(next, true);
+        save();
+    }
+
     /** Makes {@code panel} visible as the only module of a root and returns that root's id. */
     private String isolate(ModulePanel panel) {
         LeafNode leaf = leafForPanel(panel);
