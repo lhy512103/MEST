@@ -29,6 +29,8 @@ import net.minecraft.world.item.crafting.StonecutterRecipe;
 
 import it.unimi.dsi.fastutil.ints.IntArraySet;
 import it.unimi.dsi.fastutil.ints.IntSet;
+import appeng.api.config.CopyMode;
+import appeng.api.config.FuzzyMode;
 import appeng.api.storage.StorageCells;
 import appeng.api.storage.StorageHelper;
 import appeng.api.inventories.InternalInventory;
@@ -72,6 +74,8 @@ import com.lhy.mest.compat.UselessPatternBridge;
 import com.lhy.mest.network.PatternAccessSession;
 import com.lhy.mest.network.PatternCacheActionPacket;
 import com.lhy.mest.module.MestModuleSlots;
+import com.lhy.mest.terminal.workbench.CellWorkbenchLogic;
+import com.lhy.mest.terminal.workbench.CellWorkbenchSlots;
 
 /**
  * Container for the ME Spliced Terminal. Extends AE2's {@link CraftingTermMenu} (which itself extends
@@ -102,10 +106,19 @@ public class MESTMenu extends CraftingTermMenu {
     private static final String ACTION_CLOSE_TRASH = "closeTrash";
     private static final String ACTION_SET_TOOLKIT_OPEN = "mestSetToolkitOpen";
     private static final String ACTION_SET_USELESS_PATTERN = "mestSetUselessPattern";
+    private static final String ACTION_WORKBENCH_OPEN = "mestWorkbenchOpen";
+    private static final String ACTION_WORKBENCH_PARTITION = "mestWorkbenchPartition";
+    private static final String ACTION_WORKBENCH_CLEAR = "mestWorkbenchClear";
+    private static final String ACTION_WORKBENCH_COPY_MODE = "mestWorkbenchCopyMode";
+    private static final String ACTION_WORKBENCH_FUZZY_MODE = "mestWorkbenchFuzzyMode";
+    private static final String ACTION_WORKBENCH_CUSTOM = "mestWorkbenchCustom";
+    private static final String ACTION_WORKBENCH_RELEASE = "mestWorkbenchRelease";
 
     private final MESTMenuHost host;
     private final PatternAccessSession patternAccessSession;
     private final DriveCellSession driveCellSession = new DriveCellSession(this);
+    private final CellWorkbenchLogic cellWorkbench;
+    private CellWorkbenchSlots.Cell cellWorkbenchCellSlot;
     private final PatternEncodingLogic patternEncodingLogic;
     private boolean blankPatternFilled;
     private final FakeSlot[] patternCraftingSlots = new FakeSlot[CRAFTING_GRID_SLOTS];
@@ -155,6 +168,20 @@ public class MESTMenu extends CraftingTermMenu {
     public boolean trashOpen;
     @GuiSync(88)
     public boolean toolkitOpen;
+    @GuiSync(87)
+    public CopyMode workbenchCopyMode = CopyMode.CLEAR_ON_REMOVE;
+    @GuiSync(86)
+    public FuzzyMode workbenchFuzzyMode = FuzzyMode.IGNORE_ALL;
+    /** Partition slots of the edited cell, or -1 without an editable cell. */
+    @GuiSync(85)
+    public int workbenchConfigSlots = -1;
+    @GuiSync(84)
+    public int workbenchUpgradeSlots;
+    /** True while the workbench edits a cell inside an ME drive instead of its own slot. */
+    @GuiSync(83)
+    public boolean workbenchRemote;
+    /** Set from the client while the workbench module is shown; closed, its slots are inert. */
+    public boolean workbenchOpen;
 
     public final IntSet patternSlotsSupportingFluidSubstitution = new IntArraySet();
 
@@ -165,6 +192,7 @@ public class MESTMenu extends CraftingTermMenu {
         this.patternEncodingLogic = host.getLogic();
         this.encodedInputsInv = patternEncodingLogic.getEncodedInputInv();
         this.encodedOutputsInv = patternEncodingLogic.getEncodedOutputInv();
+        this.cellWorkbench = new CellWorkbenchLogic(this, host, isClientSide());
 
         addSlot(new RestrictedInputSlot(
                         RestrictedInputSlot.PlacableItemType.QE_SINGULARITY,
@@ -179,6 +207,7 @@ public class MESTMenu extends CraftingTermMenu {
         addToolkitSlots();
         addToolkitNetworkToolSlots();
         addTerminalNetworkToolkitSlots();
+        addCellWorkbenchSlots();
         // Add-on modules come last so built-in slot indices never shift.
         MestModuleSlots.addTo(this, host.getItemStack(), this::addSlot);
 
@@ -203,6 +232,13 @@ public class MESTMenu extends CraftingTermMenu {
         registerClientAction(ACTION_CLOSE_TRASH, this::closeTrash);
         registerClientAction(ACTION_SET_TOOLKIT_OPEN, Boolean.class, this::setToolkitOpen);
         registerClientAction(ACTION_SET_USELESS_PATTERN, String.class, this::setUselessPattern);
+        registerClientAction(ACTION_WORKBENCH_OPEN, Boolean.class, this::setWorkbenchOpen);
+        registerClientAction(ACTION_WORKBENCH_PARTITION, this::workbenchPartition);
+        registerClientAction(ACTION_WORKBENCH_CLEAR, this::workbenchClear);
+        registerClientAction(ACTION_WORKBENCH_COPY_MODE, this::workbenchNextCopyMode);
+        registerClientAction(ACTION_WORKBENCH_FUZZY_MODE, FuzzyMode.class, this::setWorkbenchFuzzyMode);
+        registerClientAction(ACTION_WORKBENCH_CUSTOM, String.class, this::runWorkbenchAction);
+        registerClientAction(ACTION_WORKBENCH_RELEASE, this::releaseWorkbenchTarget);
 
         updateStonecuttingRecipes();
         updatePatternCraftingOutput();
@@ -220,6 +256,98 @@ public class MESTMenu extends CraftingTermMenu {
 
     public DriveCellSession driveCells() {
         return driveCellSession;
+    }
+
+    public CellWorkbenchLogic cellWorkbench() {
+        return cellWorkbench;
+    }
+
+    public List<Slot> getCellWorkbenchCellSlots() {
+        return getSlots(MestSlotSemantics.CELL_WORKBENCH_CELL);
+    }
+
+    public List<Slot> getCellWorkbenchConfigSlots() {
+        return getSlots(MestSlotSemantics.CELL_WORKBENCH_CONFIG);
+    }
+
+    public List<Slot> getCellWorkbenchUpgradeSlots() {
+        return getSlots(MestSlotSemantics.CELL_WORKBENCH_UPGRADES);
+    }
+
+    private void addCellWorkbenchSlots() {
+        cellWorkbenchCellSlot = new CellWorkbenchSlots.Cell(this, cellWorkbench.cellInventory());
+        addSlot(cellWorkbenchCellSlot, MestSlotSemantics.CELL_WORKBENCH_CELL);
+        for (int i = 0; i < CellWorkbenchLogic.CONFIG_SLOTS; i++) {
+            addSlot(new CellWorkbenchSlots.Config(cellWorkbench.configInventory(), cellWorkbench, i),
+                    MestSlotSemantics.CELL_WORKBENCH_CONFIG);
+        }
+        for (int i = 0; i < CellWorkbenchLogic.UPGRADE_SLOTS; i++) {
+            addSlot(new CellWorkbenchSlots.Upgrade(cellWorkbench, cellWorkbench.upgradeInventory(), i),
+                    MestSlotSemantics.CELL_WORKBENCH_UPGRADES);
+        }
+    }
+
+    public void setWorkbenchOpen(boolean open) {
+        workbenchOpen = open;
+        if (isClientSide()) {
+            sendClientAction(ACTION_WORKBENCH_OPEN, open);
+        }
+    }
+
+    public void workbenchPartition() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_WORKBENCH_PARTITION);
+            return;
+        }
+        cellWorkbench.partition();
+    }
+
+    public void workbenchClear() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_WORKBENCH_CLEAR);
+            return;
+        }
+        cellWorkbench.clear();
+    }
+
+    public void workbenchNextCopyMode() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_WORKBENCH_COPY_MODE);
+            return;
+        }
+        cellWorkbench.nextCopyMode();
+    }
+
+    public void setWorkbenchFuzzyMode(FuzzyMode mode) {
+        if (isClientSide()) {
+            sendClientAction(ACTION_WORKBENCH_FUZZY_MODE, mode);
+            return;
+        }
+        cellWorkbench.setFuzzyMode(mode);
+    }
+
+    /** An add-on side bar action; see {@code RegisterCellWorkbenchActionsEvent}. */
+    public void runWorkbenchAction(String actionId, boolean alternate) {
+        runWorkbenchAction((alternate ? '1' : '0') + actionId);
+    }
+
+    private void runWorkbenchAction(String payload) {
+        if (isClientSide()) {
+            sendClientAction(ACTION_WORKBENCH_CUSTOM, payload);
+            return;
+        }
+        if (payload.length() > 1 && getPlayer() instanceof ServerPlayer player) {
+            cellWorkbench.runAction(player, payload.substring(1), payload.charAt(0) == '1');
+        }
+    }
+
+    /** Stops editing a drive cell; the workbench shows its own slot again. */
+    public void releaseWorkbenchTarget() {
+        if (isClientSide()) {
+            sendClientAction(ACTION_WORKBENCH_RELEASE);
+            return;
+        }
+        cellWorkbench.setTarget(null);
     }
 
     /**
@@ -1253,6 +1381,9 @@ public class MESTMenu extends CraftingTermMenu {
             this.patternSubstitute = patternEncodingLogic.isSubstitution();
             this.patternSubstituteFluids = patternEncodingLogic.isFluidSubstitution();
             this.stonecuttingRecipeId = patternEncodingLogic.getStonecuttingRecipeId();
+            if (cellWorkbench != null) {
+                cellWorkbench.serverTick();
+            }
         }
         flushPatternCraftingOutput();
         super.broadcastChanges();
@@ -1326,6 +1457,14 @@ public class MESTMenu extends CraftingTermMenu {
                         return initialCount;
                     }
                 }
+            }
+        }
+
+        if (workbenchOpen && cellWorkbenchCellSlot != null && !cellWorkbenchCellSlot.hasItem()
+                && cellWorkbenchCellSlot.mayPlace(input)) {
+            input = cellWorkbenchCellSlot.safeInsert(input);
+            if (input.isEmpty()) {
+                return initialCount;
             }
         }
 

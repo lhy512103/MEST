@@ -2609,17 +2609,20 @@ public final class DockManager {
     }
 
     private void executeDrop(DropCandidate candidate) {
-        FloatingRoot draggedRoot = rootById(activeRootId);
+        spliceRoot(rootById(activeRootId), candidate.targetNodeId(), candidate.edge());
+    }
+
+    private void spliceRoot(FloatingRoot draggedRoot, String targetNodeId, DockEdge edge) {
         // The candidate and its highlight were computed from the transient viewport projection.
         // Use the matching viewport root for geometry as well; mixing it with canonical (possibly
         // larger-screen) bounds makes a drop jump when the window is temporarily smaller.
-        FloatingRoot targetViewportRoot = rootContainingNode(viewportWorkspace, candidate.targetNodeId());
+        FloatingRoot targetViewportRoot = rootContainingNode(viewportWorkspace, targetNodeId);
         LayoutNode dragged = draggedRoot.content();
-        DockRect targetBounds = projection.boundsFor(candidate.targetNodeId()).orElseThrow();
-        int draggedExtent = candidate.edge().axis().extent(draggedRoot.bounds());
-        int targetExtent = candidate.edge().axis().extent(targetBounds);
+        DockRect targetBounds = projection.boundsFor(targetNodeId).orElseThrow();
+        int draggedExtent = edge.axis().extent(draggedRoot.bounds());
+        int targetExtent = edge.axis().extent(targetBounds);
         double draggedFraction = (double) draggedExtent / Math.max(1, draggedExtent + targetExtent);
-        double ratio = candidate.edge().draggedFirst() ? draggedFraction : 1.0 - draggedFraction;
+        double ratio = edge.draggedFirst() ? draggedFraction : 1.0 - draggedFraction;
 
         String splitNodeId = "split:" + NodeIds.random();
         var restore = new java.util.LinkedHashMap<>(workspace.restoreSizes());
@@ -2634,13 +2637,13 @@ public final class DockManager {
         DockWorkspace joined = editor.insertSplit(
                 workspace.withRestoreSizes(restore),
                 dragged.nodeId(),
-                candidate.targetNodeId(),
-                candidate.edge(),
+                targetNodeId,
+                edge,
                 splitNodeId,
                 ratio);
         String joinedRootId = rootContainingNode(joined, splitNodeId).rootId();
         DockRect expandedBounds = expandedDockBounds(
-                targetViewportRoot.bounds(), draggedRoot.bounds(), candidate.edge());
+                targetViewportRoot.bounds(), draggedRoot.bounds(), edge);
         LayoutNode joinedContent = rootContainingNode(joined, splitNodeId).content();
         DockSize fitted = layoutEngine.preferredSize(joined, joinedContent);
         expandedBounds = clampRectToViewport(new DockRect(
@@ -3221,6 +3224,86 @@ public final class DockManager {
             }
         }
         throw new IllegalArgumentException("unknown node: " + nodeId);
+    }
+
+    /**
+     * Shows {@code attached} spliced onto the right edge of {@code target}, taking it out of any window
+     * it shared first. Returns false, changing nothing, when the two cannot splice.
+     */
+    public boolean attachRight(ModulePanel target, ModulePanel attached) {
+        if (workspace == null || target == null || attached == null || target == attached
+                || !target.canSplice() || !attached.canSplice() || mode != Mode.NONE) {
+            return false;
+        }
+        ensureProjection();
+        LeafNode targetLeaf = leafForPanel(target);
+        if (projection.visibleLeaf(targetLeaf.nodeId()).isEmpty()) {
+            return false;
+        }
+        String rootId = isolate(attached);
+        ensureProjection();
+        spliceRoot(rootById(rootId), leafForPanel(target).nodeId(), DockEdge.RIGHT);
+        save();
+        return true;
+    }
+
+    /** Shows {@code panel} as its own floating window next to {@code anchor}'s window. */
+    public void openFloatingBeside(ModulePanel anchor, ModulePanel panel) {
+        if (workspace == null || panel == null || mode != Mode.NONE) {
+            return;
+        }
+        ensureProjection();
+        String rootId = isolate(panel);
+        FloatingRoot root = rootById(rootId);
+        DockWorkspace next = workspace;
+        if (!root.floating()) {
+            DockWorkspace floated = editor.setRootMode(next, rootId, true, false);
+            if (hasVisibleAnchored(floated)) {
+                next = floated;
+            }
+        }
+        if (anchor != null && anchor != panel && anchor.visible) {
+            DockRect window = anchor.splicedWindow != null
+                    ? anchor.splicedWindow
+                    : new DockRect(anchor.x, anchor.y, anchor.width, anchor.height);
+            int width = root.bounds().width();
+            int height = root.bounds().height();
+            int x = window.right() + FLOATING_BESIDE_GAP;
+            if (x + width > screenWidth) {
+                x = window.x() - FLOATING_BESIDE_GAP - width;
+            }
+            DockRect placed = clampRectToViewport(new DockRect(Math.max(0, x), window.y(), width, height),
+                    DockSize.ZERO);
+            next = editor.setRootBounds(next, rootId, placed);
+        }
+        next = editor.raiseRoot(next, rootId);
+        replaceWorkspace(next, true);
+        save();
+    }
+
+    private static final int FLOATING_BESIDE_GAP = 4;
+
+    /** Makes {@code panel} visible as the only module of a root and returns that root's id. */
+    private String isolate(ModulePanel panel) {
+        LeafNode leaf = leafForPanel(panel);
+        DockWorkspace next = workspace;
+        FloatingRoot holder = rootContainingNode(next, leaf.nodeId());
+        if (holder.hidden()) {
+            next = editor.setRootHidden(next, holder.rootId(), false);
+        }
+        if (!next.policyFor(leaf.moduleId()).visible()) {
+            next = editor.setLeafVisible(next, leaf.nodeId(), true, null, null, null);
+        }
+        if (next != workspace) {
+            replaceWorkspace(next, true);
+        }
+        holder = rootContainingNode(workspace, leaf.nodeId());
+        if (holder.content().nodeId().equals(leaf.nodeId())) {
+            return holder.rootId();
+        }
+        String newRootId = "root:" + NodeIds.random();
+        replaceWorkspace(detachAndRestore(workspace, leaf.nodeId(), newRootId), true);
+        return newRootId;
     }
 
     public void hideModule(ModulePanel panel) {

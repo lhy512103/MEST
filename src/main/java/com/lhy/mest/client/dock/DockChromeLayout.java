@@ -48,6 +48,14 @@ final class DockChromeLayout {
         }
         for (ModulePanel panel : visible) {
             panel.rightmostInWindow = isRightmost(panel.x, panel.width, maxX, secondMaxX, maxCount);
+            boolean leftmost = true;
+            for (ModulePanel other : visible) {
+                if (other != panel && other.x + other.width <= panel.x + 1) {
+                    leftmost = false;
+                    break;
+                }
+            }
+            panel.leftmostInWindow = leftmost;
         }
     }
 

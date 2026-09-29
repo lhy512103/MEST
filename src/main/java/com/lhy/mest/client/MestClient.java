@@ -33,6 +33,10 @@ public final class MestClient {
         modEventBus.addListener(MestClient::onRegisterGuiLayers);
         modEventBus.addListener(MestClient::onRegisterKeyMappings);
         modEventBus.addListener((FMLClientSetupEvent event) -> event.enqueueWork(MestClientModules::collect));
+        modEventBus.addListener((FMLClientSetupEvent event) -> event.enqueueWork(CellWorkbenchButtons::collect));
+        if (net.neoforged.fml.ModList.get().isLoaded("megacells")) {
+            modEventBus.addListener(com.lhy.mest.compat.mega.MegaCellWorkbenchClient::registerButtons);
+        }
     }
 
     private static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {

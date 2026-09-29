@@ -67,6 +67,7 @@ public final class DrivePanel extends ModulePanel {
     private static final int SEARCH_WIDTH = 65;
     private static final int SEARCH_HEIGHT = 10;
     private static final long RAINBOW_PERIOD_MS = 4000L;
+    private static final int EDITING_OUTLINE = 0xFF5CE08A;
     private static final int SLOT_HOVER_FILL = 0x669CD3FF;
     private static final int SLOT_HOVER_BORDER = 0xFFDAFFFF;
 
@@ -77,6 +78,8 @@ public final class DrivePanel extends ModulePanel {
     private int searchId;
     private int pendingScrollId = -1;
     private int matchCount;
+    /** Absolute slot of the cell open in the cell workbench, or -1. */
+    private int editing = -1;
     private BitSet matches = new BitSet();
     private final Scrollbar scrollbar = new Scrollbar(Scrollbar.SMALL);
     private List<DriveCellListPacket.Group> groups = List.of();
@@ -199,6 +202,7 @@ public final class DrivePanel extends ModulePanel {
             matches.set(match);
         }
         matchCount = packet.matches().size();
+        editing = packet.editing();
         layoutScrollbar();
         if (packet.searchId() == pendingScrollId) {
             pendingScrollId = -1;
@@ -476,6 +480,7 @@ public final class DrivePanel extends ModulePanel {
         if (!groups.get(cell.group()).powered()) {
             lines.add(Component.translatable("gui.mesplicedterminal.drive.offline").withStyle(ChatFormatting.RED));
         }
+        lines.add(Component.translatable("gui.mesplicedterminal.drive.edit_hint").withStyle(ChatFormatting.DARK_GRAY));
         return lines;
     }
 
@@ -624,13 +629,17 @@ public final class DrivePanel extends ModulePanel {
             }
             boolean matched = !search.isBlank() && matches.get(firstSlot + slot);
             boolean hovering = rowIndex >= 0 && rowIndex == hovered;
-            if (!matched && !hovering) {
+            boolean edited = firstSlot + slot == editing;
+            if (!matched && !hovering && !edited) {
                 continue;
             }
             g.pose().pushPose();
             g.pose().translate(0, 0, 250);
             if (matched) {
                 drawRainbowHighlight(g, px + 1, py + 1);
+            }
+            if (edited) {
+                drawEditingOutline(g, px + 1, py + 1);
             }
             if (hovering) {
                 int ix = px + 1;
@@ -656,6 +665,13 @@ public final class DrivePanel extends ModulePanel {
         g.fill(x0, y1 - 1, x1, y1, COLOR_LIGHT);
         g.fill(x0, y0, x0 + 1, y1, COLOR_LIGHT);
         g.fill(x1 - 1, y0, x1, y1, COLOR_LIGHT);
+    }
+
+    private static void drawEditingOutline(GuiGraphics g, int x, int y) {
+        g.fill(x - 1, y - 1, x + 17, y, EDITING_OUTLINE);
+        g.fill(x - 1, y + 16, x + 17, y + 17, EDITING_OUTLINE);
+        g.fill(x - 1, y, x, y + 16, EDITING_OUTLINE);
+        g.fill(x + 16, y, x + 17, y + 16, EDITING_OUTLINE);
     }
 
     /** Same look as ExtendedAE Plus's pattern search highlight, without depending on it. */
@@ -784,9 +800,10 @@ public final class DrivePanel extends ModulePanel {
         }
         CellHit cell = cellAt(mx, my);
         if (cell != null && (button == 0 || button == 1) && revision >= 0) {
-            PacketDistributor.sendToServer(new DriveCellActionPacket(menu.containerId, revision, cell.index(),
-                    button == 1 || Screen.hasShiftDown()
-                            ? DriveCellActionPacket.Action.QUICK_MOVE : DriveCellActionPacket.Action.CURSOR));
+            DriveCellActionPacket.Action action = button == 1 ? DriveCellActionPacket.Action.EDIT
+                    : Screen.hasShiftDown() ? DriveCellActionPacket.Action.QUICK_MOVE
+                    : DriveCellActionPacket.Action.CURSOR;
+            PacketDistributor.sendToServer(new DriveCellActionPacket(menu.containerId, revision, cell.index(), action));
             return true;
         }
         return false;

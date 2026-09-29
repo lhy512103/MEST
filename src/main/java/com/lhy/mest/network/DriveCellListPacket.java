@@ -18,8 +18,8 @@ import com.lhy.mest.MESplicedterminal;
 
 /** Bounded viewport of physical storage-cell icons with metadata for every visible drive group. */
 public record DriveCellListPacket(int containerId, int revision, int windowStart, int totalSlots,
-        boolean truncated, List<Group> groups, List<Row> rows, int searchId, List<Integer> matches)
-        implements CustomPacketPayload {
+        boolean truncated, List<Group> groups, List<Row> rows, int searchId, List<Integer> matches,
+        int editing) implements CustomPacketPayload {
     public static final int MAX_ROWS = 256;
     public static final int MAX_GROUPS = 256;
     public static final int MAX_MATCHES = MAX_GROUPS * 128;
@@ -56,7 +56,7 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
     private void write(RegistryFriendlyByteBuf buf) {
         if (!validHeader(containerId, revision, windowStart, totalSlots, groups.size(), rows.size())
                 || !validEntries(groups, rows, windowStart, totalSlots)
-                || !validMatches(searchId, matches, totalSlots)) {
+                || !validMatches(searchId, matches, totalSlots) || editing < -1 || editing >= totalSlots) {
             throw new IllegalArgumentException("Invalid drive viewport");
         }
         buf.writeVarInt(containerId);
@@ -92,6 +92,7 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
         for (int match : matches) {
             buf.writeVarInt(match);
         }
+        buf.writeVarInt(editing + 1);
     }
 
     private static DriveCellListPacket read(RegistryFriendlyByteBuf buf) {
@@ -146,19 +147,20 @@ public record DriveCellListPacket(int containerId, int revision, int windowStart
             for (int i = 0; i < matchCount; i++) {
                 matches.add(buf.readVarInt());
             }
+            int editing = buf.readVarInt() - 1;
             if (!validEntries(groups, rows, start, total) || !validMatches(searchId, matches, total)
-                    || buf.isReadable()) {
+                    || editing < -1 || editing >= total || buf.isReadable()) {
                 throw new IllegalArgumentException("Invalid drive viewport data");
             }
             return new DriveCellListPacket(container, revision, start, total, truncated,
-                    List.copyOf(groups), List.copyOf(rows), searchId, List.copyOf(matches));
+                    List.copyOf(groups), List.copyOf(rows), searchId, List.copyOf(matches), editing);
         } catch (RuntimeException exception) {
             try {
                 buf.skipBytes(buf.readableBytes());
             } catch (RuntimeException ignored) {
                 // Invalid payloads are discarded, not routed to the screen.
             }
-            return new DriveCellListPacket(-1, 0, 0, 0, false, List.of(), List.of(), 0, List.of());
+            return new DriveCellListPacket(-1, 0, 0, 0, false, List.of(), List.of(), 0, List.of(), -1);
         }
     }
 

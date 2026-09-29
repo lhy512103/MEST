@@ -38,4 +38,10 @@ public final class MestSlotSemantics {
      */
     public static final SlotSemantic NETWORK_TOOLKIT =
             SlotSemantics.register("MEST_NETWORK_TOOLKIT", true, 3000);
+    public static final SlotSemantic CELL_WORKBENCH_CELL =
+            SlotSemantics.register("MEST_CELL_WORKBENCH_CELL", false);
+    public static final SlotSemantic CELL_WORKBENCH_CONFIG =
+            SlotSemantics.register("MEST_CELL_WORKBENCH_CONFIG", false);
+    public static final SlotSemantic CELL_WORKBENCH_UPGRADES =
+            SlotSemantics.register("MEST_CELL_WORKBENCH_UPGRADES", false);
 }

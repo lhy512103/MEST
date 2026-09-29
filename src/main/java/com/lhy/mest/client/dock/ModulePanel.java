@@ -64,6 +64,8 @@ public abstract class ModulePanel {
     public boolean contentEditing;
     /** False when another visible leaf in the same window sits to the right. */
     public boolean rightmostInWindow = true;
+    /** False when another visible leaf in the same window sits to the left. */
+    public boolean leftmostInWindow = true;
     /** Reserved inner width on the right of this leaf (ME scroller when a sibling sits to the right). */
     public int preferredContentRightInset() {
         return 0;
@@ -292,6 +294,11 @@ public abstract class ModulePanel {
         this.floatVisible = visible;
         this.windowFloating = floating;
         this.windowGroup = group;
+    }
+
+    /** True while the window holding this panel floats instead of joining the terminal group. */
+    public boolean inFloatingWindow() {
+        return windowFloating;
     }
 
     /** Whether this panel may be part of a combined module. */

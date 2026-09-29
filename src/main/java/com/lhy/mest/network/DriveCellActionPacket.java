@@ -21,7 +21,9 @@ public record DriveCellActionPacket(int containerId, int revision, int row, Acti
     private static final PlayerTickBudgets BUDGETS = new PlayerTickBudgets(8);
 
     public enum Action {
-        CURSOR, QUICK_MOVE
+        CURSOR, QUICK_MOVE,
+        /** Toggle editing this cell in the terminal's cell workbench. */
+        EDIT
     }
 
     @Override

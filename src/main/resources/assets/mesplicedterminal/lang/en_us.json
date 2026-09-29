@@ -199,5 +199,9 @@
   "gui.mesplicedterminal.drive.status.full": "Full",
   "gui.mesplicedterminal.drive.location": "Location: %s",
   "gui.mesplicedterminal.drive.priority.open": "Click to open priority settings",
-  "gui.mesplicedterminal.drive.matches": "%s matches"
+  "gui.mesplicedterminal.drive.matches": "%s matches",
+  "gui.mesplicedterminal.cell_workbench": "Cell Workbench",
+  "gui.mesplicedterminal.cell_workbench.empty": "Insert a cell to edit",
+  "gui.mesplicedterminal.cell_workbench.remote": "Editing a cell in an ME Drive",
+  "gui.mesplicedterminal.drive.edit_hint": "Right-click: edit in the cell workbench"
 }

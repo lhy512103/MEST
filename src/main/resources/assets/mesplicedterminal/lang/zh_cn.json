@@ -199,5 +199,9 @@
   "gui.mesplicedterminal.drive.status.full": "已满",
   "gui.mesplicedterminal.drive.location": "位置：%s",
   "gui.mesplicedterminal.drive.priority.open": "点击打开优先级设置",
-  "gui.mesplicedterminal.drive.matches": "%s 个匹配"
+  "gui.mesplicedterminal.drive.matches": "%s 个匹配",
+  "gui.mesplicedterminal.cell_workbench": "元件工作台",
+  "gui.mesplicedterminal.cell_workbench.empty": "放入元件以编辑",
+  "gui.mesplicedterminal.cell_workbench.remote": "正在编辑驱动器中的元件",
+  "gui.mesplicedterminal.drive.edit_hint": "右键：在元件工作台中编辑"
 }

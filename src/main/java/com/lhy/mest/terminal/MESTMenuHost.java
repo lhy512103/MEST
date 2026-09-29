@@ -37,6 +37,7 @@ public class MESTMenuHost extends WCTMenuHost
     private final SupplierInternalInventory<InternalInventory> toolkit;
     private final SupplierInternalInventory<InternalInventory> toolkitMemory;
     private final SupplierInternalInventory<InternalInventory> networkToolkit;
+    private final SupplierInternalInventory<InternalInventory> cellWorkbench;
     private final PatternEncodingLogic patternEncodingLogic = new PatternEncodingLogic(this);
 
     public MESTMenuHost(ItemWT item, Player player, ItemMenuHostLocator locator,
@@ -59,6 +60,10 @@ public class MESTMenuHost extends WCTMenuHost
                         this::getItemStack,
                         stack -> createInv(player, stack, ModComponents.NETWORK_TOOLKIT_INV.get(),
                                 MestConfig.networkToolkitSlots())));
+        this.cellWorkbench = new SupplierInternalInventory<>(
+                new StackDependentSupplier<>(
+                        this::getItemStack,
+                        stack -> createInv(player, stack, ModComponents.CELL_WORKBENCH_INV.get(), 1)));
         this.patternEncodingLogic.readFromNBT(
                 getItemStack().getOrDefault(AE2wtlibComponents.PATTERN_ENCODING_LOGIC, new CompoundTag()),
                 player.registryAccess());
@@ -82,6 +87,10 @@ public class MESTMenuHost extends WCTMenuHost
 
     public InternalInventory getNetworkToolkitInventory() {
         return networkToolkit;
+    }
+
+    public InternalInventory getCellWorkbenchInventory() {
+        return cellWorkbench;
     }
 
     public void clearTrash() {

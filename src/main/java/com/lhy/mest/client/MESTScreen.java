@@ -82,6 +82,7 @@ import com.lhy.mest.client.dock.PanelSideBar;
 import com.lhy.mest.client.dock.ScrollingUpgradeColumn;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.FloatingRoot;
+import com.lhy.mest.client.panel.CellWorkbenchPanel;
 import com.lhy.mest.client.panel.CraftingPanel;
 import com.lhy.mest.client.panel.CraftingTerminalPanel;
 import com.lhy.mest.client.panel.DrivePanel;
@@ -163,6 +164,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private InventoryPanel inventoryPanel;
     private ProviderSelectPanel providerSelectPanel;
     private DrivePanel drivePanel;
+    private CellWorkbenchPanel cellWorkbenchPanel;
+    /** The workbench was opened by right-clicking a drive cell, so it closes with that edit. */
+    private boolean workbenchAutoOpened;
+    private boolean lastWorkbenchRemote;
+    private boolean workbenchReleaseSent;
+    private boolean forcedRightClick;
     private WirelessSettingsPanel wirelessSettingsPanel;
     private TrashPanel trashPanel;
     private ToolkitPanel toolkitPanel;
@@ -542,6 +549,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (drivePanel != null) {
             drivePanel.tick(dock.isEffectivelyVisible(drivePanel));
         }
+        syncCellWorkbench();
         attachMeSideBar();
         attachExtraSlotColumns();
         syncExternalModGuiMetrics();
@@ -549,6 +557,66 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             com.lhy.mest.compat.ClientSortCompat.syncButtons(this);
         }
         refreshRecipeTransferAvailability();
+    }
+
+    private void syncCellWorkbench() {
+        if (cellWorkbenchPanel == null) {
+            return;
+        }
+        boolean remote = getMenu().workbenchRemote;
+        if (remote && !lastWorkbenchRemote) {
+            openCellWorkbenchForDrive();
+        } else if (!remote && lastWorkbenchRemote && workbenchAutoOpened) {
+            workbenchAutoOpened = false;
+            if (dock.isEffectivelyVisible(cellWorkbenchPanel)) {
+                dock.hideModule(cellWorkbenchPanel);
+                dock.save();
+            }
+        }
+        lastWorkbenchRemote = remote;
+        boolean open = dock.isEffectivelyVisible(cellWorkbenchPanel);
+        if (!open) {
+            workbenchAutoOpened = false;
+        }
+        if (getMenu().workbenchOpen != open) {
+            getMenu().setWorkbenchOpen(open);
+        }
+        if (!remote) {
+            workbenchReleaseSent = false;
+        } else if (!open && !workbenchReleaseSent) {
+            workbenchReleaseSent = true;
+            getMenu().releaseWorkbenchTarget();
+        }
+        if (open) {
+            cellWorkbenchPanel.tick();
+        }
+    }
+
+    /**
+     * Beside a floating drive window with nothing on its right, the workbench splices onto that edge;
+     * otherwise it opens as its own floating window next to the drive module.
+     */
+    private void openCellWorkbenchForDrive() {
+        if (dock.isEffectivelyVisible(cellWorkbenchPanel)) {
+            return;
+        }
+        workbenchAutoOpened = true;
+        boolean besideDrive = drivePanel != null && dock.isEffectivelyVisible(drivePanel);
+        if (besideDrive && dock.isFloatingWindow(drivePanel) && drivePanel.rightmostInWindow
+                && dock.attachRight(drivePanel, cellWorkbenchPanel)) {
+            return;
+        }
+        dock.openFloatingBeside(besideDrive ? drivePanel : null, cellWorkbenchPanel);
+    }
+
+    /** Runs a panel widget click the way AE2 forwards a right click, so tool bar buttons cycle backwards. */
+    public boolean clickAsRightClick(java.util.function.BooleanSupplier click) {
+        forcedRightClick = true;
+        try {
+            return click.getAsBoolean();
+        } finally {
+            forcedRightClick = false;
+        }
     }
 
     private void refreshRecipeTransferAvailability() {
@@ -705,6 +773,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 case HotkeysPanel p -> hotkeysPanel = p;
                 case ProviderSelectPanel p -> providerSelectPanel = p;
                 case DrivePanel p -> drivePanel = p;
+                case CellWorkbenchPanel p -> cellWorkbenchPanel = p;
                 default -> {
                 }
             }
@@ -2309,6 +2378,13 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 return;
             }
         }
+        if (target == cellWorkbenchPanel && cellWorkbenchPanel != null) {
+            ITooltip workbenchTip = cellWorkbenchPanel.hoveredTooltip(x, y);
+            if (workbenchTip != null) {
+                drawAeWidgetTooltip(g, x, y, workbenchTip);
+                return;
+            }
+        }
         if (target == hotkeysPanel && hotkeysPanel != null) {
             ITooltip hotkeyTip = hotkeysPanel.hoveredTooltip(x, y);
             if (hotkeyTip != null) {
@@ -2562,7 +2638,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     public boolean isHandlingRightClick() {
         // AEBaseScreen temporarily sets this flag while it forwards a right click to a button as a
         // left click. SettingToggleButton reads it to decide whether to cycle backwards.
-        return super.isHandlingRightClick();
+        return forcedRightClick || super.isHandlingRightClick();
     }
 
     public void saveUiPreferences() {

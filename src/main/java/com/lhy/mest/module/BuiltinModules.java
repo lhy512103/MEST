@@ -7,7 +7,7 @@ public final class BuiltinModules {
     public static final Set<String> IDS = Set.of(
             "me_list", "crafting", "crafting_terminal", "pattern_encoding", "pattern_access",
             "pattern_cache", "inventory", "wireless_settings", "trash", "toolkit", "network_toolkit",
-            "hotkeys", "provider_select", "drive");
+            "hotkeys", "provider_select", "drive", "cell_workbench");
 
     private BuiltinModules() {
     }

@@ -21,6 +21,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.IItemHandlerModifiable;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.connection.ConnectionType;
 
@@ -41,6 +42,8 @@ import appeng.menu.locator.ItemMenuHostLocator;
 
 import com.lhy.mest.network.DriveCellActionPacket;
 import com.lhy.mest.network.DriveCellListPacket;
+import com.lhy.mest.terminal.workbench.CellWorkbenchLogic;
+import com.lhy.mest.terminal.workbench.CellWorkbenchTarget;
 
 /** Menu-scoped server snapshot. No remote slots are added to the fixed terminal container. */
 public final class DriveCellSession {
@@ -75,6 +78,7 @@ public final class DriveCellSession {
     private Set<AEKey> searchKeys = Set.of();
     private int previousSearchId;
     private List<Integer> previousMatches = List.of();
+    private int previousEditing = -1;
 
     public DriveCellSession(MESTMenu menu) {
         this.menu = menu;
@@ -95,7 +99,7 @@ public final class DriveCellSession {
             if (grid != null || windowStart != 0 || totalSlots != 0 || truncated
                     || !hosts.isEmpty() || !previousGroups.isEmpty() || !previousRows.isEmpty()) {
                 grid = null;
-                publish(player, 0, 0, false, List.of(), List.of(), List.of(), List.of(), List.of());
+                publish(player, 0, 0, false, List.of(), List.of(), List.of(), List.of(), List.of(), -1);
             }
             return;
         }
@@ -154,12 +158,14 @@ public final class DriveCellSession {
             }
         }
         List<Integer> matches = matches(drives);
+        int editing = editingIndex(drives);
         if (grid != current || windowStart != start || totalSlots != count || truncated != scan.truncated()
                 || !sameHosts(hosts, drives) || !previousGroups.equals(groups)
                 || !sameRows(previousRows, rows) || !sameSlots(references, nextRefs)
-                || previousSearchId != searchId || !previousMatches.equals(matches)) {
+                || previousSearchId != searchId || !previousMatches.equals(matches)
+                || previousEditing != editing) {
             grid = current;
-            publish(player, start, count, scan.truncated(), drives, groups, nextRefs, rows, matches);
+            publish(player, start, count, scan.truncated(), drives, groups, nextRefs, rows, matches, editing);
         } else {
             // Update the full stack action guard without sending redundant icons or cell contents.
             references = List.copyOf(nextRefs);
@@ -238,6 +244,16 @@ public final class DriveCellSession {
         }
         SlotRef ref = references.get(row);
         Drive drive = ref.drive();
+        if (action == DriveCellActionPacket.Action.EDIT) {
+            // A stored cell's data changes with every insert, so only the item itself must still match.
+            if (active(drive) && ref.slot() < drive.inventory().getSlots() && ItemStack.isSameItem(
+                    ref.expected(), drive.inventory().getStackInSlot(ref.slot()))) {
+                toggleEdit(player, drive, ref.slot());
+            }
+            lastRequestTick = -1;
+            request(player, windowStart);
+            return;
+        }
         if (!active(drive) || ref.slot() >= drive.inventory().getSlots()
                 || !ItemStack.matches(ref.expected(), drive.inventory().getStackInSlot(ref.slot()))) {
             lastRequestTick = -1;
@@ -257,6 +273,89 @@ public final class DriveCellSession {
             menu.broadcastChanges();
             lastRequestTick = -1;
             request(player, windowStart);
+        }
+    }
+
+    private void toggleEdit(ServerPlayer player, Drive drive, int slot) {
+        var workbench = menu.cellWorkbench();
+        if (workbench.target() instanceof DriveTarget editing && editing.is(drive.block(), slot)) {
+            workbench.setTarget(null);
+            return;
+        }
+        ItemStack stack = drive.inventory().getStackInSlot(slot);
+        if (CellWorkbenchLogic.isEditableCell(stack)) {
+            workbench.setTarget(new DriveTarget(menu, grid, drive, slot, stack.getItem()));
+        }
+    }
+
+    private int editingIndex(List<Drive> drives) {
+        if (!(menu.cellWorkbench().target() instanceof DriveTarget editing)) {
+            return -1;
+        }
+        int index = 0;
+        for (Drive drive : drives) {
+            if (drive.block() == editing.drive.block()) {
+                return editing.slot < drive.slots() ? index + editing.slot : -1;
+            }
+            index += drive.slots();
+        }
+        return -1;
+    }
+
+    /**
+     * A cell edited in place inside a drive. Every write first flushes the live cell inventory, so
+     * items stored since the last save are part of the copy that is written back.
+     */
+    private static final class DriveTarget implements CellWorkbenchTarget {
+        private final MESTMenu menu;
+        private final IGrid grid;
+        private final Drive drive;
+        private final int slot;
+        private final net.minecraft.world.item.Item item;
+
+        private DriveTarget(MESTMenu menu, IGrid grid, Drive drive, int slot, net.minecraft.world.item.Item item) {
+            this.menu = menu;
+            this.grid = grid;
+            this.drive = drive;
+            this.slot = slot;
+            this.item = item;
+        }
+
+        boolean is(BlockEntity block, int slot) {
+            return drive.block() == block && this.slot == slot;
+        }
+
+        @Override
+        public ItemStack stack() {
+            return slot < drive.inventory().getSlots() ? drive.inventory().getStackInSlot(slot) : ItemStack.EMPTY;
+        }
+
+        @Override
+        public ItemStack freshStack() {
+            StorageCell cell = drive.host().getOriginalCellInventory(slot);
+            if (cell != null) {
+                cell.persist();
+            }
+            return stack();
+        }
+
+        @Override
+        public void write(ItemStack stack) {
+            if (drive.block() instanceof AEBaseInvBlockEntity inventoryBlock) {
+                inventoryBlock.getInternalInventory().setItemDirect(slot, stack);
+            } else if (drive.inventory() instanceof IItemHandlerModifiable modifiable) {
+                modifiable.setStackInSlot(slot, stack);
+            }
+        }
+
+        @Override
+        public boolean valid() {
+            var node = menu.getGridNode();
+            return node != null && node.getGrid() == grid && drive.node().isActive()
+                    && drive.node().getGrid() == grid && live(drive.block())
+                    && slot < drive.inventory().getSlots() && stack().is(item)
+                    && (drive.block() instanceof AEBaseInvBlockEntity
+                            || drive.inventory() instanceof IItemHandlerModifiable);
         }
     }
 
@@ -433,7 +532,7 @@ public final class DriveCellSession {
 
     private void publish(ServerPlayer player, int start, int count, boolean limited, List<Drive> drives,
             List<DriveCellListPacket.Group> groups, List<SlotRef> refs, List<DriveCellListPacket.Row> rows,
-            List<Integer> matches) {
+            List<Integer> matches, int editing) {
         revision = (revision + 1) & Integer.MAX_VALUE;
         windowStart = start;
         totalSlots = count;
@@ -444,8 +543,10 @@ public final class DriveCellSession {
         previousRows = List.copyOf(rows);
         previousSearchId = searchId;
         previousMatches = List.copyOf(matches);
+        previousEditing = editing;
         PacketDistributor.sendToPlayer(player, new DriveCellListPacket(menu.containerId, revision, windowStart,
-                totalSlots, truncated, previousGroups, previousRows, previousSearchId, previousMatches));
+                totalSlots, truncated, previousGroups, previousRows, previousSearchId, previousMatches,
+                previousEditing));
     }
 
     private static boolean sameHosts(List<Drive> a, List<Drive> b) {
@@ -507,5 +608,6 @@ public final class DriveCellSession {
         searchKeys = Set.of();
         previousSearchId = 0;
         previousMatches = List.of();
+        previousEditing = -1;
     }
 }

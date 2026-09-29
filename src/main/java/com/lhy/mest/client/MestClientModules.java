@@ -9,6 +9,7 @@ import net.neoforged.fml.ModLoader;
 
 import com.lhy.mest.api.client.MestModuleFactory;
 import com.lhy.mest.api.client.RegisterMestModulesEvent;
+import com.lhy.mest.client.panel.CellWorkbenchPanel;
 import com.lhy.mest.client.panel.CraftingPanel;
 import com.lhy.mest.client.panel.CraftingTerminalPanel;
 import com.lhy.mest.client.panel.DrivePanel;
@@ -50,7 +51,8 @@ public final class MestClientModules {
             new Registration("provider_select", context -> ModList.get().isLoaded("extendedae_plus")
                     ? new ProviderSelectPanel(context.style())
                     : null),
-            new Registration("drive", context -> new DrivePanel(context.menu(), context.style())));
+            new Registration("drive", context -> new DrivePanel(context.menu(), context.style())),
+            new Registration(CellWorkbenchPanel.ID, context -> new CellWorkbenchPanel(context.menu())));
 
     private static final OrderedModuleRegistry<MestModuleFactory> ADDONS =
             new OrderedModuleRegistry<>(BuiltinModules.IDS);

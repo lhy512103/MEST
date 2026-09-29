@@ -47,6 +47,11 @@ public class MESplicedterminal {
         modEventBus.addListener(MestTerminal::onRegisterCapabilities);
         modEventBus.addListener(MestTerminal::onCommonSetup);
         modEventBus.addListener((FMLCommonSetupEvent event) -> event.enqueueWork(MestModuleSlots::collect));
+        modEventBus.addListener((FMLCommonSetupEvent event) -> event.enqueueWork(
+                com.lhy.mest.terminal.workbench.CellWorkbenchActions::collect));
+        if (net.neoforged.fml.ModList.get().isLoaded("megacells")) {
+            modEventBus.addListener(com.lhy.mest.compat.mega.MegaCellWorkbench::registerActions);
+        }
         modEventBus.addListener(MestPackets::register);
 
     }

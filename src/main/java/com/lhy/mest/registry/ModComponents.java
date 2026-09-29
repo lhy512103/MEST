@@ -6,6 +6,7 @@ import com.mojang.serialization.Codec;
 
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.world.item.component.ItemContainerContents;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -76,6 +77,24 @@ public final class ModComponents {
             register("hotbar_stash", builder -> builder
                     .persistent(ItemContainerContents.CODEC)
                     .networkSynchronized(ItemContainerContents.STREAM_CODEC));
+
+    /** The cell sitting in the cell workbench module. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> CELL_WORKBENCH_INV =
+            register("cell_workbench_inv", builder -> builder
+                    .persistent(ItemContainerContents.CODEC)
+                    .networkSynchronized(ItemContainerContents.STREAM_CODEC));
+
+    /** The workbench partition mirror, kept for the next cell in "keep on remove" copy mode. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<CompoundTag>> CELL_WORKBENCH_CONFIG =
+            register("cell_workbench_config", builder -> builder
+                    .persistent(CompoundTag.CODEC)
+                    .networkSynchronized(ByteBufCodecs.COMPOUND_TAG));
+
+    /** True for AE2's "keep on remove" workbench copy mode. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> CELL_WORKBENCH_KEEP =
+            register("cell_workbench_keep", builder -> builder
+                    .persistent(Codec.BOOL)
+                    .networkSynchronized(ByteBufCodecs.BOOL));
 
     private static <T> DeferredHolder<DataComponentType<?>, DataComponentType<T>> register(
             String name, Consumer<DataComponentType.Builder<T>> configurer) {
