@@ -975,8 +975,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
      * with that group and stay under floating windows.
      */
     private void renderAnchoredChrome(GuiGraphics g, Font font, int mouseX, int mouseY, float partialTicks) {
+        List<Rect2i> nearbyElements = toolbarBackgroundNeighbors();
         if (meSideBar.isVisible()) {
-            meSideBar.renderBackground(g);
+            meSideBar.renderBackground(g, nearbyElements);
             for (Button button : meSideBar.buttons()) {
                 button.render(g, mouseX, mouseY, partialTicks);
             }
@@ -985,7 +986,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             g.pose().pushPose();
             try {
                 g.pose().translate(0.0F, 0.0F, 80.0F);
-                moreSettingsBar.renderBackground(g);
+                moreSettingsBar.renderBackground(g, nearbyElements);
                 for (Button button : moreSettingsBar.buttons()) {
                     button.render(g, mouseX, mouseY, partialTicks);
                 }
@@ -1026,6 +1027,24 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 g.pose().popPose();
             }
         }
+    }
+
+    private List<Rect2i> toolbarBackgroundNeighbors() {
+        List<Rect2i> elements = new ArrayList<>();
+        for (ModulePanel panel : dock.panels()) {
+            if (panel != null && dock.isEffectivelyVisible(panel) && panel.width > 0 && panel.height > 0) {
+                elements.add(new Rect2i(panel.x, panel.y, panel.width, panel.height));
+            }
+        }
+        for (PanelSideBar sideBar : List.of(meSideBar, moreSettingsBar)) {
+            if (!sideBar.isVisible()) {
+                continue;
+            }
+            Rect2i rail = sideBar.bounds();
+            elements.add(new Rect2i(rail.getX() - 2, rail.getY() - 1,
+                    rail.getWidth() + 1, rail.getHeight() + 4));
+        }
+        return elements;
     }
 
     /**
