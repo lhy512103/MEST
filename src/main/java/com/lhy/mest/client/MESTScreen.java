@@ -548,7 +548,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             patternAccessPanel.tick();
         }
         if (patternCachePanel != null && dock.isEffectivelyVisible(patternCachePanel)) {
-            patternCachePanel.layoutSlots();
+            // Slot coordinates are updated by DockManager when the projection changes.
         }
         if (drivePanel != null) {
             drivePanel.tick(dock.isEffectivelyVisible(drivePanel));

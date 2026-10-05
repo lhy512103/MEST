@@ -65,6 +65,9 @@ public class ProviderSelectPanel extends ModulePanel {
     private final Scrollbar scrollbar = new Scrollbar(Scrollbar.SMALL);
     private final List<RawRow> raw = new ArrayList<>();
     private final List<GroupRow> visibleRows = new ArrayList<>();
+    private final List<RenderedRow> renderedRows = new ArrayList<>();
+    private final Component emptyMessage = Component.translatable("gui.mesplicedterminal.provider_picker.empty");
+    private final Component mappingEmptyMessage = Component.translatable("gui.mesplicedterminal.provider_picker.mapping_empty");
     private final CompactToggle autoButton;
     private final CompactToggle processingButton;
     private final CompactToggle mappingButton;
@@ -219,6 +222,7 @@ public class ProviderSelectPanel extends ModulePanel {
         int listLeft = contentLeft();
         int listW = listWidth();
         int rows = visibleRowCount();
+        renderedRows.clear();
         for (int i = 0; i < rows; i++) {
             int index = scrollRows + i;
             if (index >= visibleRows.size()) {
@@ -237,15 +241,15 @@ public class ProviderSelectPanel extends ModulePanel {
             String slots = String.valueOf(row.emptySlots());
             int slotW = font.width(slots);
             String name = font.plainSubstrByWidth(row.name() + count, Math.max(8, listW - (textX - listLeft) - slotW - 6));
-            g.drawString(font, name, textX, y + 2, 0xFF2A2A2A, false);
-            g.drawString(font, slots, listLeft + listW - slotW - 2, y + 2, 0xFF3A3A3A, false);
+            RenderedRow rendered = new RenderedRow(row, name, slots, slotW, textX - listLeft);
+            renderedRows.add(rendered);
+            g.drawString(font, rendered.name(), textX, y + 2, 0xFF2A2A2A, false);
+            g.drawString(font, rendered.slots(), listLeft + listW - rendered.slotWidth() - 2, y + 2, 0xFF3A3A3A, false);
         }
         if (visibleRows.isEmpty()) {
             g.drawString(
                     font,
-                    Component.translatable(mappingMode
-                            ? "gui.mesplicedterminal.provider_picker.mapping_empty"
-                            : "gui.mesplicedterminal.provider_picker.empty"),
+                    mappingMode ? mappingEmptyMessage : emptyMessage,
                     listLeft + 2,
                     listTop + 2,
                     0xFF4A4A4A,
@@ -513,6 +517,7 @@ public class ProviderSelectPanel extends ModulePanel {
 
     private void rebuildVisible() {
         visibleRows.clear();
+        renderedRows.clear();
         if (mappingMode) {
             for (RecipeTypeMapping mapping : ExtendedAEPatternUploadUtil.getRecipeTypeMappings()) {
                 String label = mapping.key() + " → " + mapping.value();
@@ -715,6 +720,9 @@ public class ProviderSelectPanel extends ModulePanel {
             }
         }
         return a.length() - b.length();
+    }
+
+    private record RenderedRow(GroupRow row, String name, String slots, int slotWidth, int textOffset) {
     }
 
     private record RawRow(long id, Component name, int emptySlots) {

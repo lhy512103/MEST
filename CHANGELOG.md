@@ -7,12 +7,14 @@
 1. Added: A drive module for connected AE2, ExtendedAE, and compatible public-inventory drives, with quick cell transfers.
 2. Added: A cell workbench module with AE2's partition, upgrade and tool bar controls. Right-click a cell in the drive module to edit it in place; beside a floating drive window it splices on the right. Add-ons can extend its tool bar through `RegisterCellWorkbenchButtonsEvent` and `RegisterCellWorkbenchActionsEvent`, and MEGA Cells' compression cutoff is supported.
 3. Fixed: Provider picker lists over 1024 entries are synchronized in pages instead of disconnecting during terminal open.
+4. Optimized: Cached terminal upgrade capacity, dock slot layout, visible provider rows and GUI render batches to reduce terminal frame drops.
 
 ### 中文
 
 1. 新增：驱动器模块，可查看当前网络的驱动器状态，并快捷放入或取出，支持搜索高亮。
 2. 新增：元件工作台模块，包含 AE2 元件工作台的分区、升级卡与侧边栏功能。在驱动器模块中右键元件即可直接编辑，驱动器悬浮且右侧无拼接时自动拼接在右侧；附属模组可通过 `RegisterCellWorkbenchButtonsEvent` 与 `RegisterCellWorkbenchActionsEvent` 扩展侧边栏，并支持 MEGA Cells 的压缩上限。
 3. 修复：供应器选择列表超过 1024 条时改为分页同步，避免打开终端因 Payload 编码异常掉线。
+4. 优化：缓存终端升级容量、Dock 槽位布局、供应器可见行和 GUI 渲染批次，减少打开终端时的掉帧。
 
 
 ## v0.0.3.0

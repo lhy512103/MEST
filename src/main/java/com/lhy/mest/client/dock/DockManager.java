@@ -1287,8 +1287,8 @@ public final class DockManager {
                     panel.renderBackgroundContent(graphics, font, routedMouseX, routedMouseY, partialTicks);
                 }
                 // GUI resources do not all use the same renderer: items render immediately while
-                // fluids and add-on key types may batch vertices. Commit the whole root background
-                // before drawing its slots, then commit the slots before a higher root starts.
+                // fluids and add-on key types may batch vertices. Commit the root background once
+                // before drawing its slots; higher roots still start a fresh ordered batch.
                 graphics.flush();
                 if (slotRenderer != null) {
                     graphics.pose().pushPose();
@@ -1301,11 +1301,11 @@ public final class DockManager {
                             ModulePanel panel = panelsByModuleId.get(leaf.moduleId());
                             panel.renderSlots(graphics, slotRenderer);
                         }
-                        graphics.flush();
                     } finally {
                         graphics.pose().popPose();
                     }
                 }
+                graphics.flush();
                 if (composite) {
                     renderShellRules(graphics, root, hoveredDivider);
                 }

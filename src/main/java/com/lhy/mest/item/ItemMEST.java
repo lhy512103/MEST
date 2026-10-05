@@ -44,24 +44,36 @@ public class ItemMEST extends ItemWT {
     }
 
     /** Slot count is the sum of each compatible card's max, matching the Compatible Upgrades tooltip. */
+    private static volatile int cachedCompatibleUpgradeTotal = -1;
+
     public static int upgradeInventorySize() {
         int total = compatibleUpgradeTotal();
         return total > 0 ? total : 3;
     }
 
     private static int compatibleUpgradeTotal() {
-        try {
-            Item terminal = ModItems.SPLICED_TERMINAL.get();
-            int total = 0;
-            for (Item card : BuiltInRegistries.ITEM) {
-                int max = Upgrades.getMaxInstallable(card, terminal);
-                if (max > 0) {
-                    total += max;
-                }
+        int cached = cachedCompatibleUpgradeTotal;
+        if (cached >= 0) {
+            return cached;
+        }
+        synchronized (ItemMEST.class) {
+            if (cachedCompatibleUpgradeTotal >= 0) {
+                return cachedCompatibleUpgradeTotal;
             }
-            return total;
-        } catch (Exception ignored) {
-            return 0;
+            try {
+                Item terminal = ModItems.SPLICED_TERMINAL.get();
+                int total = 0;
+                for (Item card : BuiltInRegistries.ITEM) {
+                    int max = Upgrades.getMaxInstallable(card, terminal);
+                    if (max > 0) {
+                        total += max;
+                    }
+                }
+                cachedCompatibleUpgradeTotal = total;
+            } catch (Exception ignored) {
+                cachedCompatibleUpgradeTotal = 0;
+            }
+            return cachedCompatibleUpgradeTotal;
         }
     }
 
