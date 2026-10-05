@@ -8,6 +8,7 @@
 2. Added: A cell workbench module with AE2's partition, upgrade and tool bar controls. Right-click a cell in the drive module to edit it in place; beside a floating drive window it splices on the right. Add-ons can extend its tool bar through `RegisterCellWorkbenchButtonsEvent` and `RegisterCellWorkbenchActionsEvent`, and MEGA Cells' compression cutoff is supported.
 3. Fixed: Provider picker lists over 1024 entries are synchronized in pages instead of disconnecting during terminal open.
 4. Optimized: Cached terminal upgrade capacity, dock slot layout, visible provider rows and GUI render batches to reduce terminal frame drops.
+5. Fixed: Isolated Some Useless Things integration so missing or incompatible optional APIs no longer crash JEI recipe transfer.
 
 ### 中文
 
@@ -15,6 +16,7 @@
 2. 新增：元件工作台模块，包含 AE2 元件工作台的分区、升级卡与侧边栏功能。在驱动器模块中右键元件即可直接编辑，驱动器悬浮且右侧无拼接时自动拼接在右侧；附属模组可通过 `RegisterCellWorkbenchButtonsEvent` 与 `RegisterCellWorkbenchActionsEvent` 扩展侧边栏，并支持 MEGA Cells 的压缩上限。
 3. 修复：供应器选择列表超过 1024 条时改为分页同步，避免打开终端因 Payload 编码异常掉线。
 4. 优化：缓存终端升级容量、Dock 槽位布局、供应器可见行和 GUI 渲染批次，减少打开终端时的掉帧。
+5. 修复：隔离 Some Useless Things 兼容逻辑，缺少或不兼容可选 API 时不再导致 JEI 配方转移崩溃。
 
 
 ## v0.0.3.0
