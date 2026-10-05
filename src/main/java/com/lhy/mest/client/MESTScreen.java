@@ -1541,7 +1541,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     /** Toggles the bound panel, or runs a layout action such as a preset switch. */
-    private boolean runHotkey(String id) {
+    public boolean runHotkey(String id) {
         ModulePanel panel = panelById(id);
         if (panel != null) {
             toggleModuleFromHotkey(panel);
@@ -2610,6 +2610,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             if (drivePanel.searchKeyPressed(keyCode, scanCode, modifiers)) {
                 return true;
             }
+            return true;
+        }
+        if (PanelHotkeys.onScreenKey(keyCode, modifiers)) {
             return true;
         }
         if (PlusScreenSupport.loaded()

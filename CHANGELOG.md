@@ -10,6 +10,7 @@
 4. Optimized: Cached terminal upgrade capacity, dock slot layout, visible provider rows and GUI render batches to reduce terminal frame drops.
 5. Fixed: Isolated Some Useless Things integration so missing or incompatible optional APIs no longer crash JEI recipe transfer.
 6. Fixed: Refresh EA2 Plus recipe mappings before MEST provider-picker reads, so saved custom mappings are visible.
+7. Fixed: Panel hotkeys now run before search and widget handling inside MEST, including terminal-only single-key and modifier combinations.
 
 ### 中文
 
@@ -19,6 +20,7 @@
 4. 优化：缓存终端升级容量、Dock 槽位布局、供应器可见行和 GUI 渲染批次，减少打开终端时的掉帧。
 5. 修复：隔离 Some Useless Things 兼容逻辑，缺少或不兼容可选 API 时不再导致 JEI 配方转移崩溃。
 6. 修复：MEST 读取供应器面板映射前刷新 EAEP 配方映射，使已保存的自定义映射能够显示。
+7. 修复：面板快捷键现在优先于搜索栏和控件处理，终端内单键及组合键均可生效。
 
 
 ## v0.0.3.0

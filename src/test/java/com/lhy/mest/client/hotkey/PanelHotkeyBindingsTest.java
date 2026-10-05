@@ -33,6 +33,16 @@ class PanelHotkeyBindingsTest {
     }
 
     @Test
+    void terminalOnlyBindingMatchesInsideTerminalForSingleAndModifiedKeys() {
+        var bindings = new PanelHotkeyBindings();
+        bindings.set("inventory", new PanelHotkey(GLFW.GLFW_KEY_I, 0, true));
+        bindings.set("trash", new PanelHotkey(GLFW.GLFW_KEY_T, PanelHotkey.CTRL, true));
+
+        assertEquals(Optional.of("inventory"), bindings.match(GLFW.GLFW_KEY_I, 0, false));
+        assertEquals(Optional.of("trash"), bindings.match(GLFW.GLFW_KEY_T, PanelHotkey.CTRL, false));
+    }
+
+    @Test
     void bindingAComboTakesItFromTheOtherPanelButKeepsItsFlag() {
         var bindings = new PanelHotkeyBindings();
         bindings.set("trash", new PanelHotkey(GLFW.GLFW_KEY_T, PanelHotkey.CTRL, false));

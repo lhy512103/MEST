@@ -89,6 +89,17 @@ public final class PanelHotkeys {
         return text.append(InputConstants.Type.KEYSYM.getOrCreate(hotkey.key()).getDisplayName());
     }
 
+    /** Handles a key press while any screen is open, before text fields consume it. */
+    public static boolean onScreenKey(int key, int modifiers) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (!(minecraft.screen instanceof com.lhy.mest.client.MESTScreen screen)) {
+            return false;
+        }
+        return bindings().match(key, modifiers, false)
+                .map(screen::runHotkey)
+                .orElse(false);
+    }
+
     @SubscribeEvent
     public static void onKey(InputEvent.Key event) {
         Minecraft minecraft = Minecraft.getInstance();
