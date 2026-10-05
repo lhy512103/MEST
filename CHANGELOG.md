@@ -5,38 +5,15 @@
 ### English
 
 1. Added: A drive module for connected AE2, ExtendedAE, and compatible public-inventory drives, with quick cell transfers.
-2. Changed: Drive groups now use AE2-style cell slots, continuous scrolling, and per-drive priority controls. Only visible cell icons sync; transfers validate the live network without mixins or reflection.
-3. Changed: The drive module is denser: a one-line header per drive, cells flowing in runs of five, a status LED (AE2 colours) and a byte-usage bar on each cell, and cell tooltips with status, bytes and types used. Offline drives are dimmed and labelled.
-4. Changed: Each drive header carries the AE2 priority button, which opens the AE2 priority screen for that drive; Back returns to the terminal.
-5. Changed: Drive titles show the custom name set with the cutting knife, and the location moves into the tooltip. Title colour shifts toward orange and red as the drive fills up.
-6. Changed: The drive module content uses the same well as the pattern access panel: one white outline around the whole list, and each drive header shows the drive icon.
-7. Changed: Shift-clicking a storage cell from the inventory while the drive module is open inserts it into a drive first.
-8. Fixed: The right edge of the drive module scrollbar is no longer clipped.
-9. Changed: Drives are sorted by priority, highest first.
-10. Changed: The cell usage bar spans the slot width and sits at the bottom of the slot.
-11. Fixed: The drive module can shrink until it fits five slots with no spare space on the right.
-12. Fixed: Cell tooltips in the drive module show the same full contents and item preview as the AE2 drive screen.
-13. Added: The drive module has a search box that finds cells holding matching items, highlights them with a rainbow outline (no ExtendedAE Plus required), and scrolls to the first match.
-14. Changed: The drive slot hover highlight matches the other panels, with a brighter fill and a border.
-15. Changed: The drive module button uses its own drive icon.
+2. Added: A cell workbench module with AE2's partition, upgrade and tool bar controls. Right-click a cell in the drive module to edit it in place; beside a floating drive window it splices on the right. Add-ons can extend its tool bar through `RegisterCellWorkbenchButtonsEvent` and `RegisterCellWorkbenchActionsEvent`, and MEGA Cells' compression cutoff is supported.
+3. Fixed: Provider picker lists over 1024 entries are synchronized in pages instead of disconnecting during terminal open.
 
 ### 中文
 
-1. 新增：驱动器模块，可查看当前网络的 AE2、ExtendedAE 及兼容公开元件槽位的驱动器，并快捷放入或取出。
-2. 调整：按驱动器分组显示原版风格槽位，连续滚动并可调节每台优先级；只同步可见元件图标，操作前校验网络，无需 Mixin 或反射。
-3. 调整：驱动器面板更紧凑：每台驱动器标题只占一行，元件按五个一组横向排列；每个元件显示 AE2 同色状态灯和字节占用条，悬停显示状态、已用字节与类型；离线驱动器会变暗并标注。
-4. 调整：每台驱动器标题带有 AE2 优先级按钮，点击打开该驱动器的 AE2 优先级界面，返回键回到终端。
-5. 调整：驱动器标题显示切割刀设置的自定义名称，坐标移到悬停提示中；标题颜色随容量占用逐渐变为橙色、红色。
-6. 调整：驱动器模块内容区改用与样板管理面板一致的背景，白色边框只绘制在整体外框，驱动器标题带有驱动器图标。
-7. 调整：打开驱动器模块时，从背包 Shift 点击存储元件会优先放入驱动器。
-8. 修复：驱动器模块滚动条右侧不再被裁切。
-9. 调整：驱动器按优先级从高到低排序。
-10. 调整：元件容量条长度与槽位一致，紧贴槽位底部。
-11. 修复：驱动器模块可缩小到正好容纳五个槽位，右侧不再留有空白。
-12. 修复：驱动器模块中的元件 tooltip 与 AE2 驱动器界面一致，显示完整内容与物品预览。
-13. 新增：驱动器模块搜索框，可搜索元件内的物品，以彩虹边框高亮对应元件（无需安装 ExtendedAE Plus）并自动定位到第一个匹配项。
-14. 调整：驱动器槽位悬停高亮与其他面板一致，更亮且带边框。
-15. 调整：驱动器模块按钮改用专属驱动器图标。
+1. 新增：驱动器模块，可查看当前网络的驱动器状态，并快捷放入或取出，支持搜索高亮。
+2. 新增：元件工作台模块，包含 AE2 元件工作台的分区、升级卡与侧边栏功能。在驱动器模块中右键元件即可直接编辑，驱动器悬浮且右侧无拼接时自动拼接在右侧；附属模组可通过 `RegisterCellWorkbenchButtonsEvent` 与 `RegisterCellWorkbenchActionsEvent` 扩展侧边栏，并支持 MEGA Cells 的压缩上限。
+3. 修复：供应器选择列表超过 1024 条时改为分页同步，避免打开终端因 Payload 编码异常掉线。
+
 
 ## v0.0.3.0
 

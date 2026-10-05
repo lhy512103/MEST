@@ -122,7 +122,20 @@ public final class PlusEncodingUpload {
         if (ids.isEmpty() && hasPattern) {
             CtrlQPendingUploadUtil.returnPendingCtrlQPatternToInventory(player);
         }
-        player.connection.send(new ProviderPickerListPacket(ids, names, slots, encodedSlot != null));
+        int total = ids.size();
+        for (int start = 0; start < total || start == 0; start += ProviderPickerListPacket.MAX_ROWS) {
+            int end = Math.min(total, start + ProviderPickerListPacket.MAX_ROWS);
+            player.connection.send(new ProviderPickerListPacket(
+                    List.copyOf(ids.subList(start, end)),
+                    List.copyOf(names.subList(start, end)),
+                    List.copyOf(slots.subList(start, end)),
+                    encodedSlot != null && start == 0,
+                    start == 0,
+                    end == total));
+            if (end == total) {
+                break;
+            }
+        }
         return true;
     }
 

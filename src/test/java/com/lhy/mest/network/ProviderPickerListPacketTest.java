@@ -21,7 +21,7 @@ class ProviderPickerListPacketTest {
 
     @Test
     void roundTripsEmptyList() {
-        var expected = new ProviderPickerListPacket(List.of(), List.of(), List.of(), false);
+        var expected = new ProviderPickerListPacket(List.of(), List.of(), List.of(), false, true);
         var buf = buf();
         try {
             ProviderPickerListPacket.STREAM_CODEC.encode(buf, expected);
@@ -31,6 +31,8 @@ class ProviderPickerListPacketTest {
             assertEquals(0, buf.readableBytes());
             assertTrue(decoded.ids().isEmpty());
             assertFalse(decoded.applyPreset());
+            assertTrue(decoded.replace());
+            assertTrue(decoded.lastPage());
         } finally {
             buf.release();
         }

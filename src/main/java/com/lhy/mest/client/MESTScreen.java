@@ -176,6 +176,10 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     private HotkeysPanel hotkeysPanel;
     private NetworkToolkitPanel networkToolkitPanel;
     private boolean keepPendingOnRemove;
+    private final List<Long> providerPickerIds = new ArrayList<>();
+    private final List<Component> providerPickerNames = new ArrayList<>();
+    private final List<Integer> providerPickerSlots = new ArrayList<>();
+    private boolean providerPickerApplyPreset;
     private final MestRecipeTransferController recipeTransfer = new MestRecipeTransferController();
 
     public MEListPanel meListPanel() {
@@ -2165,14 +2169,33 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (providerSelectPanel == null) {
             return;
         }
-        boolean floating = dock.isFloatingWindow(providerSelectPanel);
-        if (packet.applyPreset() && !floating) {
-            keepPendingOnRemove = true;
-            minecraft.setScreen(PlusScreenSupport.presetPicker(this, packet));
+        if (packet.replace()) {
+            providerPickerIds.clear();
+            providerPickerNames.clear();
+            providerPickerSlots.clear();
+            providerPickerApplyPreset = packet.applyPreset();
+        }
+        providerPickerIds.addAll(packet.ids());
+        providerPickerNames.addAll(packet.names());
+        providerPickerSlots.addAll(packet.emptySlots());
+        if (!packet.lastPage()) {
             return;
         }
-        boolean autoUploaded = providerSelectPanel.applyList(packet);
-        if (packet.applyPreset() && floating && !autoUploaded) {
+        var merged = new ProviderPickerListPacket(
+                List.copyOf(providerPickerIds),
+                List.copyOf(providerPickerNames),
+                List.copyOf(providerPickerSlots),
+                providerPickerApplyPreset,
+                true,
+                true);
+        boolean floating = dock.isFloatingWindow(providerSelectPanel);
+        if (merged.applyPreset() && !floating) {
+            keepPendingOnRemove = true;
+            minecraft.setScreen(PlusScreenSupport.presetPicker(this, merged));
+            return;
+        }
+        boolean autoUploaded = providerSelectPanel.applyList(merged);
+        if (merged.applyPreset() && floating && !autoUploaded) {
             dock.revealModule(providerSelectPanel);
         } else if (autoUploaded) {
             dismissProviderPicker(false);

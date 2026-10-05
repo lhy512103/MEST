@@ -14,8 +14,18 @@ import com.lhy.mest.MESplicedterminal;
 
 /** Provider rows for the Plus picker module. Ids use Plus's Ctrl+Q {@code -1 - index} encoding. */
 public record ProviderPickerListPacket(
-        List<Long> ids, List<Component> names, List<Integer> emptySlots, boolean applyPreset)
+        List<Long> ids, List<Component> names, List<Integer> emptySlots,
+        boolean applyPreset, boolean replace, boolean lastPage)
         implements CustomPacketPayload {
+    public ProviderPickerListPacket(List<Long> ids, List<Component> names, List<Integer> emptySlots,
+            boolean applyPreset) {
+        this(ids, names, emptySlots, applyPreset, true, true);
+    }
+
+    public ProviderPickerListPacket(List<Long> ids, List<Component> names, List<Integer> emptySlots,
+            boolean applyPreset, boolean replace) {
+        this(ids, names, emptySlots, applyPreset, replace, true);
+    }
     public static final Type<ProviderPickerListPacket> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(MESplicedterminal.MODID, "provider_picker_list"));
 
@@ -42,6 +52,8 @@ public record ProviderPickerListPacket(
             buf.writeVarInt(emptySlots.get(i));
         }
         buf.writeBoolean(applyPreset);
+        buf.writeBoolean(replace);
+        buf.writeBoolean(lastPage);
     }
 
     private static ProviderPickerListPacket read(RegistryFriendlyByteBuf buf) {
@@ -61,10 +73,12 @@ public record ProviderPickerListPacket(
                 slots.add(buf.readVarInt());
             }
             boolean applyPreset = buf.readBoolean();
+            boolean replace = buf.readBoolean();
+            boolean lastPage = buf.readBoolean();
             if (buf.isReadable()) {
                 throw new IllegalArgumentException("Trailing data in provider picker list");
             }
-            return new ProviderPickerListPacket(ids, names, slots, applyPreset);
+            return new ProviderPickerListPacket(ids, names, slots, applyPreset, replace, lastPage);
         } catch (RuntimeException exception) {
             discardRemaining(buf);
             return empty();
@@ -72,7 +86,7 @@ public record ProviderPickerListPacket(
     }
 
     private static ProviderPickerListPacket empty() {
-        return new ProviderPickerListPacket(List.of(), List.of(), List.of(), false);
+        return new ProviderPickerListPacket(List.of(), List.of(), List.of(), false, true, true);
     }
 
     private static void discardRemaining(RegistryFriendlyByteBuf buf) {
