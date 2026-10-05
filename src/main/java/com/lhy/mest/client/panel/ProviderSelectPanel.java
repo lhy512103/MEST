@@ -168,6 +168,7 @@ public class ProviderSelectPanel extends ModulePanel {
     }
 
     public boolean applyList(ProviderPickerListPacket packet) {
+        com.lhy.mest.compat.plus.PlusEncodingUpload.refreshMappings();
         raw.clear();
         int size = Math.min(packet.ids().size(), Math.min(packet.names().size(), packet.emptySlots().size()));
         for (int i = 0; i < size; i++) {
@@ -460,6 +461,7 @@ public class ProviderSelectPanel extends ModulePanel {
     }
 
     private void addMappingFromFields() {
+        com.lhy.mest.compat.plus.PlusEncodingUpload.refreshMappings();
         String key = search == null ? "" : search.trim();
         String value = mappingField != null ? mappingField.getValue().trim() : "";
         var player = Minecraft.getInstance().player;
@@ -519,6 +521,7 @@ public class ProviderSelectPanel extends ModulePanel {
         visibleRows.clear();
         renderedRows.clear();
         if (mappingMode) {
+            com.lhy.mest.compat.plus.PlusEncodingUpload.refreshMappings();
             for (RecipeTypeMapping mapping : ExtendedAEPatternUploadUtil.getRecipeTypeMappings()) {
                 String label = mapping.key() + " → " + mapping.value();
                 if (!nameMatches(label, search)) {
@@ -693,6 +696,7 @@ public class ProviderSelectPanel extends ModulePanel {
         if (query == null || query.isBlank()) {
             return true;
         }
+        com.lhy.mest.compat.plus.PlusEncodingUpload.refreshMappings();
         String key = ExtendedAEPatternUploadUtil.resolveProviderSearchKey(query.trim());
         if (key == null || key.isBlank()) {
             key = query.trim();

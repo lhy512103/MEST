@@ -35,11 +35,19 @@ public final class PlusEncodingUpload {
         return ModList.get().isLoaded("extendedae_plus");
     }
 
+    /** Refreshes EAEP's shared mapping cache before MEST reads or writes provider search keys. */
+    public static void refreshMappings() {
+        if (available()) {
+            ExtendedAEPatternUploadUtil.loadRecipeTypeNames();
+        }
+    }
+
     /** Client: same recipe-type search key Plus JEI mixins write before the provider picker opens. */
     public static void captureRecipeSearchKey(Object rawRecipe) {
         if (!available() || rawRecipe == null) {
             return;
         }
+        refreshMappings();
         Recipe<?> recipe = null;
         if (rawRecipe instanceof RecipeHolder<?> holder) {
             recipe = holder.value();
@@ -68,6 +76,7 @@ public final class PlusEncodingUpload {
         if (!available() || mode == null) {
             return;
         }
+        refreshMappings();
         switch (mode) {
             case CRAFTING -> ExtendedAEPatternUploadUtil.presetCraftingProviderSearchKey();
             case SMITHING_TABLE -> ExtendedAEPatternUploadUtil.setLastProcessingName(

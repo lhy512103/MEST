@@ -9,6 +9,7 @@
 3. Fixed: Provider picker lists over 1024 entries are synchronized in pages instead of disconnecting during terminal open.
 4. Optimized: Cached terminal upgrade capacity, dock slot layout, visible provider rows and GUI render batches to reduce terminal frame drops.
 5. Fixed: Isolated Some Useless Things integration so missing or incompatible optional APIs no longer crash JEI recipe transfer.
+6. Fixed: Refresh EA2 Plus recipe mappings before MEST provider-picker reads, so saved custom mappings are visible.
 
 ### 中文
 
@@ -17,6 +18,7 @@
 3. 修复：供应器选择列表超过 1024 条时改为分页同步，避免打开终端因 Payload 编码异常掉线。
 4. 优化：缓存终端升级容量、Dock 槽位布局、供应器可见行和 GUI 渲染批次，减少打开终端时的掉帧。
 5. 修复：隔离 Some Useless Things 兼容逻辑，缺少或不兼容可选 API 时不再导致 JEI 配方转移崩溃。
+6. 修复：MEST 读取供应器面板映射前刷新 EAEP 配方映射，使已保存的自定义映射能够显示。
 
 
 ## v0.0.3.0
