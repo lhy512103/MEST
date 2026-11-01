@@ -19,7 +19,9 @@ import appeng.menu.slot.RestrictedInputSlot;
 import appeng.parts.encoding.EncodingMode;
 
 import com.extendedae_plus.util.uploadPattern.CtrlQPendingUploadUtil;
-import com.extendedae_plus.util.uploadPattern.ExtendedAEPatternUploadUtil;
+import com.extendedae_plus.util.uploadPattern.MatrixUploadUtil;
+import com.extendedae_plus.util.uploadPattern.ProviderUploadUtil;
+import com.extendedae_plus.util.uploadPattern.RecipeTypeNameConfig;
 import com.lhy.mest.network.ProviderPickerListPacket;
 
 /**
@@ -38,7 +40,7 @@ public final class PlusEncodingUpload {
     /** Refreshes EAEP's shared mapping cache before MEST reads or writes provider search keys. */
     public static void refreshMappings() {
         if (available()) {
-            ExtendedAEPatternUploadUtil.loadRecipeTypeNames();
+            RecipeTypeNameConfig.loadRecipeTypeNames();
         }
     }
 
@@ -55,20 +57,20 @@ public final class PlusEncodingUpload {
             recipe = value;
         }
         if (recipe != null && EncodingHelper.isSupportedCraftingRecipe(recipe)) {
-            ExtendedAEPatternUploadUtil.presetCraftingProviderSearchKey();
+            RecipeTypeNameConfig.presetCraftingProviderSearchKey();
             return;
         }
         String name = null;
         if (recipe != null) {
-            name = ExtendedAEPatternUploadUtil.mapRecipeTypeToSearchKey(recipe);
+            name = RecipeTypeNameConfig.mapRecipeTypeToSearchKey(recipe);
             if (name == null || name.isBlank()) {
-                name = ExtendedAEPatternUploadUtil.deriveSearchKeyFromUnknownRecipe(recipe);
+                name = RecipeTypeNameConfig.deriveSearchKeyFromUnknownRecipe(recipe);
             }
         } else {
-            name = ExtendedAEPatternUploadUtil.deriveSearchKeyFromUnknownRecipe(rawRecipe);
+            name = RecipeTypeNameConfig.deriveSearchKeyFromUnknownRecipe(rawRecipe);
         }
         if (name != null && !name.isBlank()) {
-            ExtendedAEPatternUploadUtil.setLastProcessingName(name);
+            RecipeTypeNameConfig.setLastProcessingName(name);
         }
     }
 
@@ -78,12 +80,12 @@ public final class PlusEncodingUpload {
         }
         refreshMappings();
         switch (mode) {
-            case CRAFTING -> ExtendedAEPatternUploadUtil.presetCraftingProviderSearchKey();
-            case SMITHING_TABLE -> ExtendedAEPatternUploadUtil.setLastProcessingName(
-                    ExtendedAEPatternUploadUtil.resolveRecipeTypeSearchKey(
+            case CRAFTING -> RecipeTypeNameConfig.presetCraftingProviderSearchKey();
+            case SMITHING_TABLE -> RecipeTypeNameConfig.setLastProcessingName(
+                    RecipeTypeNameConfig.resolveRecipeTypeSearchKey(
                             ResourceLocation.parse("minecraft:smithing"), null));
-            case STONECUTTING -> ExtendedAEPatternUploadUtil.setLastProcessingName(
-                    ExtendedAEPatternUploadUtil.resolveRecipeTypeSearchKey(
+            case STONECUTTING -> RecipeTypeNameConfig.setLastProcessingName(
+                    RecipeTypeNameConfig.resolveRecipeTypeSearchKey(
                             ResourceLocation.parse("minecraft:stonecutting"), null));
             default -> {
             }
@@ -95,7 +97,7 @@ public final class PlusEncodingUpload {
             return false;
         }
         ItemStack stack = encodedSlot.getItem();
-        if (!ExtendedAEPatternUploadUtil.uploadPatternToMatrix(player, stack, grid)) {
+        if (!MatrixUploadUtil.uploadPatternToMatrix(player, stack, grid)) {
             return false;
         }
         encodedSlot.set(ItemStack.EMPTY);
@@ -120,12 +122,12 @@ public final class PlusEncodingUpload {
         List<Integer> slots = new ArrayList<>();
         for (int i = 0; i < containers.size(); i++) {
             PatternContainer container = containers.get(i);
-            int empty = ExtendedAEPatternUploadUtil.getAvailableSlots(container);
+            int empty = ProviderUploadUtil.getAvailableSlots(container);
             if (empty <= 0) {
                 continue;
             }
             ids.add(-1L - i);
-            names.add(ExtendedAEPatternUploadUtil.getProviderDisplayNameComponent(container));
+            names.add(ProviderUploadUtil.getProviderDisplayNameComponent(container));
             slots.add(empty);
         }
         if (ids.isEmpty() && hasPattern) {

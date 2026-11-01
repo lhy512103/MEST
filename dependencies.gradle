@@ -74,8 +74,7 @@ dependencies {
     // Local runtime AE2 addons
     localRuntime "curse.maven:advancedae-1084104:${advancedae_file}"
     localRuntime "curse.maven:ae2-crystal-science-1435174:${ae2_crystal_science_file}"
-    // AE2 Utility 1.7.2+ mixins RecipeSlot.displayOverrides (JEI 19.57). Plus 1.6.x still
-    // constructs mezz.jei.gui.input.handlers.CombinedInputHandler (JEI ≤19.51). Cannot load both.
+    // Keep AE2 Utility disabled pending a separate compatibility check with the updated Plus/JEI stack.
     // localRuntime "curse.maven:ae2-utility-1521605:${ae2_utility_file}"
     localRuntime "curse.maven:ex-pattern-provider-892005:${extendedae_file}"
     localRuntime "curse.maven:extendedae-plus-1337639:${extendedae_plus_file}"

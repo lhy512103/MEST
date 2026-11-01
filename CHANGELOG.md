@@ -10,6 +10,7 @@
 4. Fixed: Save preset names and selections reliably and retry failed writes.
 5. Fixed: Load recipe advancements from the correct Minecraft 1.21.1 directory.
 6. Optimized: Update AE2 Lightning Tech to 2.1.3 and Thunderbolt Core to 2.0.3.
+7. Optimized: Update ExtendedAE Plus to 1.6.4.1, ExtendedAE to 2.2.43 and JEI to 19.70.0.469.
 
 ### 中文
 
@@ -19,6 +20,7 @@
 4. 修复：预设名称和切换状态正确保存，写入失败后可重试。
 5. 修复：配方解锁进度使用 Minecraft 1.21.1 的正确资源目录。
 6. 优化：闪电科技升级至 2.1.3，前置 Thunderbolt Core 升级至 2.0.3。
+7. 优化：ExtendedAE Plus 升级至 1.6.4.1，ExtendedAE 升级至 2.2.43，JEI 升级至 19.70.0.469。
 
 ## v0.0.3.1
 

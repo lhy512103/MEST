@@ -7,7 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.neoforged.fml.ModList;
 
 import com.extendedae_plus.client.ModKeybindings;
-import com.extendedae_plus.compat.JeiRuntimeCompat;
+import com.extendedae_plus.compat.jei.JeiRuntimeCompat;
 import com.lhy.mest.client.panel.MEListPanel;
 
 /** Plus "fill AE search from JEI hover" (default F) — only wired for MEStorageScreen by Plus itself. */

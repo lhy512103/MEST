@@ -30,8 +30,8 @@ import appeng.client.gui.widgets.Scrollbar;
 import appeng.core.localization.GuiText;
 
 import com.extendedae_plus.network.UploadEncodedPatternToProviderC2SPacket;
-import com.extendedae_plus.util.uploadPattern.ExtendedAEPatternUploadUtil;
-import com.extendedae_plus.util.uploadPattern.ExtendedAEPatternUploadUtil.RecipeTypeMapping;
+import com.extendedae_plus.util.uploadPattern.RecipeTypeNameConfig;
+import com.extendedae_plus.util.uploadPattern.RecipeTypeNameConfig.RecipeTypeMapping;
 import com.glodblock.github.extendedae.client.button.EPPIcon;
 import com.lhy.mest.client.PinyinSearch;
 import com.lhy.mest.client.dock.ModulePanel;
@@ -175,9 +175,9 @@ public class ProviderSelectPanel extends ModulePanel {
             raw.add(new RawRow(packet.ids().get(i), packet.names().get(i), packet.emptySlots().get(i)));
         }
         if (packet.applyPreset()) {
-            String recent = ExtendedAEPatternUploadUtil.consumeLastProviderSearchKey();
+            String recent = RecipeTypeNameConfig.consumeLastProviderSearchKey();
             if (recent != null && !recent.isBlank()) {
-                search = ExtendedAEPatternUploadUtil.resolveProviderSearchKey(recent);
+                search = RecipeTypeNameConfig.resolveProviderSearchKey(recent);
                 if (search == null) {
                     search = recent;
                 }
@@ -328,7 +328,7 @@ public class ProviderSelectPanel extends ModulePanel {
                 return true;
             }
             if (button == 0) {
-                ExtendedAEPatternUploadUtil.removeRecipeTypeMapping(row.mappingKey());
+                RecipeTypeNameConfig.removeRecipeTypeMapping(row.mappingKey());
                 if (row.mappingKey().equals(editingMappingKey)) {
                     editingMappingKey = null;
                 }
@@ -478,9 +478,9 @@ public class ProviderSelectPanel extends ModulePanel {
             return;
         }
         if (editingMappingKey != null && !editingMappingKey.isBlank() && !editingMappingKey.equals(key)) {
-            ExtendedAEPatternUploadUtil.removeRecipeTypeMapping(editingMappingKey);
+            RecipeTypeNameConfig.removeRecipeTypeMapping(editingMappingKey);
         }
-        if (!ExtendedAEPatternUploadUtil.addOrUpdateRecipeTypeMapping(key, value)) {
+        if (!RecipeTypeNameConfig.addOrUpdateRecipeTypeMapping(key, value)) {
             if (player != null) {
                 player.sendSystemMessage(Component.translatable("extendedae_plus.message.mapping.add_fail"));
             }
@@ -522,7 +522,7 @@ public class ProviderSelectPanel extends ModulePanel {
         renderedRows.clear();
         if (mappingMode) {
             com.lhy.mest.compat.plus.PlusEncodingUpload.refreshMappings();
-            for (RecipeTypeMapping mapping : ExtendedAEPatternUploadUtil.getRecipeTypeMappings()) {
+            for (RecipeTypeMapping mapping : RecipeTypeNameConfig.getRecipeTypeMappings()) {
                 String label = mapping.key() + " → " + mapping.value();
                 if (!nameMatches(label, search)) {
                     continue;
@@ -697,7 +697,7 @@ public class ProviderSelectPanel extends ModulePanel {
             return true;
         }
         com.lhy.mest.compat.plus.PlusEncodingUpload.refreshMappings();
-        String key = ExtendedAEPatternUploadUtil.resolveProviderSearchKey(query.trim());
+        String key = RecipeTypeNameConfig.resolveProviderSearchKey(query.trim());
         if (key == null || key.isBlank()) {
             key = query.trim();
         }
