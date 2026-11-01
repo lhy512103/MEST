@@ -1,13 +1,18 @@
 package com.lhy.mest.client;
 
+import java.util.List;
+
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 import appeng.api.upgrades.IUpgradeInventory;
 
 import com.lhy.mest.client.dock.PanelSideBar;
-import com.moakiee.ae2lt.client.FrequencyBindingClient;
-import com.moakiee.ae2lt.client.TextureToggleButton;
+import com.moakiee.ae2lt.client.frequency.FrequencyBindingClient;
+import com.moakiee.ae2lt.client.widgets.TextureToggleButton;
 import com.moakiee.ae2lt.item.OverloadedFrequencyCardItem;
+import com.moakiee.ae2lt.network.ToggleFrequencyCardAutoConnectPacket;
 
 final class MestLightningUpgradeButtons {
     private TextureToggleButton frequencyButton;
@@ -17,7 +22,11 @@ final class MestLightningUpgradeButtons {
         frequencyButton = FrequencyBindingClient.createCardToolbarButton();
         frequencyButton.visible = false;
         sideBar.add(frequencyButton);
-        frequencyAutoConnectButton = FrequencyBindingClient.createCardAutoConnectToolbarButton();
+        // AE2LT 2.1.3 removed this factory; retain the terminal's existing toggle via its packet API.
+        frequencyAutoConnectButton = new TextureToggleButton(TextureToggleButton.ButtonType.MODE,
+                state -> PacketDistributor.sendToServer(ToggleFrequencyCardAutoConnectPacket.forTerminalCard()));
+        frequencyAutoConnectButton.setTooltipOff(List.of(Component.translatable("ae2lt.gui.button.auto_connect_off")));
+        frequencyAutoConnectButton.setTooltipOn(List.of(Component.translatable("ae2lt.gui.button.auto_connect_on")));
         frequencyAutoConnectButton.visible = false;
         sideBar.add(frequencyAutoConnectButton);
     }

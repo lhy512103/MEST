@@ -96,5 +96,6 @@ A spliceable, drag-and-drop ME terminal that unifies AE2 wireless terminal modul
 [[dependencies.${mod_id}]]
     modId="ae2lt"
     type="optional"
+    versionRange="[2.1.3,)"
     ordering="AFTER"
     side="BOTH"
