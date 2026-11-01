@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import net.minecraft.core.registries.Registries;
+
 class ResourceConsistencyTest {
     private static final Path RESOURCES = Path.of("src", "main", "resources");
     private static final Path MOD_ASSETS = RESOURCES.resolve(Path.of("assets", "mesplicedterminal"));
@@ -31,17 +33,34 @@ class ResourceConsistencyTest {
 
     @Test
     void recipeAdvancementUsesTheLoadableDirectoryAndRewardsTheRecipe() throws IOException {
-        Path advancement = MOD_DATA.resolve(Path.of("advancements", "recipe", "spliced_terminal.json"));
-        Path obsoletePath = MOD_DATA.resolve(Path.of("advancement", "recipe", "spliced_terminal.json"));
-
+        String directory = Registries.elementsDirPath(Registries.ADVANCEMENT);
+        assertEquals("advancement", directory);
+        Path advancement = MOD_DATA.resolve(Path.of(directory, "recipe", "spliced_terminal.json"));
+        assertFalse(Files.exists(MOD_DATA.resolve("advancements")));
         assertTrue(Files.isRegularFile(advancement));
-        assertFalse(Files.exists(obsoletePath));
         JsonObject document = readObject(advancement);
         assertEquals("minecraft:recipes/root", document.get("parent").getAsString());
         assertEquals(
                 "mesplicedterminal:spliced_terminal",
                 document.getAsJsonObject("rewards").getAsJsonArray("recipes").get(0).getAsString());
         assertTrue(document.getAsJsonObject("criteria").has("has_wireless_universal_terminal"));
+    }
+
+    @Test
+    void allRecipeAdvancementsRewardAnExistingRecipe() throws IOException {
+        Path directory = MOD_DATA.resolve(Registries.elementsDirPath(Registries.ADVANCEMENT));
+        try (var files = Files.walk(directory)) {
+            var advancements = files.filter(path -> path.toString().endsWith(".json")).toList();
+            assertEquals(4, advancements.size());
+            for (Path path : advancements) {
+                for (var reward : readObject(path).getAsJsonObject("rewards").getAsJsonArray("recipes")) {
+                    String recipe = reward.getAsString();
+                    assertTrue(recipe.startsWith("mesplicedterminal:"));
+                    assertTrue(Files.isRegularFile(MOD_DATA.resolve("recipe")
+                            .resolve(recipe.substring("mesplicedterminal:".length()) + ".json")), recipe);
+                }
+            }
+        }
     }
 
     @Test

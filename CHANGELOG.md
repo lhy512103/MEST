@@ -8,6 +8,7 @@
 2. Fixed: Keep overflow items when cache, trash or network toolkit capacity is reduced.
 3. Fixed: Keep pattern access usable without ExtendedAE.
 4. Fixed: Save preset names and selections reliably and retry failed writes.
+5. Fixed: Load recipe advancements from the correct Minecraft 1.21.1 directory.
 
 ### 中文
 
@@ -15,6 +16,7 @@
 2. 修复：缓存、垃圾桶和网络工具包缩容后保留高位物品。
 3. 修复：未安装 ExtendedAE 时样板管理界面仍可正常使用。
 4. 修复：预设名称和切换状态正确保存，写入失败后可重试。
+5. 修复：配方解锁进度使用 Minecraft 1.21.1 的正确资源目录。
 
 ## v0.0.3.1
 
