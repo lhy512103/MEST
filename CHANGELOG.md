@@ -6,11 +6,13 @@
 
 1. Fixed: Preserve all 576 cache and trash slots with compatible inventory saves.
 2. Fixed: Keep overflow items when cache, trash or network toolkit capacity is reduced.
+3. Fixed: Keep pattern access usable without ExtendedAE.
 
 ### 中文
 
 1. 修复：缓存和垃圾桶支持完整保存 576 格并兼容旧数据。
 2. 修复：缓存、垃圾桶和网络工具包缩容后保留高位物品。
+3. 修复：未安装 ExtendedAE 时样板管理界面仍可正常使用。
 
 ## v0.0.3.1
 

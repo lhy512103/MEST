@@ -44,9 +44,6 @@ import appeng.core.localization.ButtonToolTips;
 import appeng.core.localization.GuiText;
 
 import com.lhy.mest.compat.plus.PlusPatternAccess;
-import com.glodblock.github.extendedae.client.button.EPPIcon;
-import com.glodblock.github.extendedae.client.button.HighlightButtonSmall;
-import com.glodblock.github.extendedae.util.MessageUtil;
 import com.lhy.mest.client.PinyinSearch;
 import com.lhy.mest.network.PatternProviderLoc;
 
@@ -100,13 +97,14 @@ public class PatternAccessPanel extends ModulePanel {
     private SearchMode searchMode = rememberedSearchMode;
     private ShowPatternProviders showMode = rememberedShowMode;
     private boolean showSlots = rememberedShowSlots;
+    private final PatternAccessChrome chrome = PatternAccessChrome.create();
     private final CompactPatButton searchModeButton = new CompactPatButton(
             btn -> cycleSearchMode(), this::searchModeIcon, this::searchModeTooltip);
     private final CompactPatButton showModeButton = new CompactPatButton(
             btn -> cycleShowMode(), this::showModeIcon, this::showModeTooltip);
     private final CompactPatButton hideSlotsButton = new CompactPatButton(
             btn -> toggleShowSlots(), this::hideSlotsIcon, this::hideSlotsTooltip);
-    private final java.util.HashMap<Long, HighlightButtonSmall> highlightButtons = new java.util.HashMap<>();
+    private final Map<Long, PatternAccessChrome.ProviderHighlight> highlightButtons = new HashMap<>();
     private final java.util.HashMap<Long, Button> openUiButtons = new java.util.HashMap<>();
     private int scrollRows;
     private SlotHit lastShiftExtract;
@@ -372,10 +370,11 @@ public class PatternAccessPanel extends ModulePanel {
                 return;
             }
         }
-        for (HighlightButtonSmall highlight : highlightButtons.values()) {
-            if (highlight.visible && highlight.isMouseOver(mouseX, mouseY)
-                    && !highlight.getTooltipMessage().isEmpty()) {
-                g.renderComponentTooltip(font, highlight.getTooltipMessage(), mouseX, mouseY);
+        for (var highlight : highlightButtons.values()) {
+            Button button = highlight.button();
+            if (button.visible && button.isMouseOver(mouseX, mouseY)
+                    && !highlight.tooltip().isEmpty()) {
+                g.renderComponentTooltip(font, highlight.tooltip(), mouseX, mouseY);
                 return;
             }
         }
@@ -577,8 +576,9 @@ public class PatternAccessPanel extends ModulePanel {
                 || hideSlotsButton.mouseClicked(mx, my, button)) {
             return true;
         }
-        for (HighlightButtonSmall highlight : highlightButtons.values()) {
-            if (highlight.visible && highlight.mouseClicked(mx, my, button)) {
+        for (var highlight : highlightButtons.values()) {
+            Button highlightButton = highlight.button();
+            if (highlightButton.visible && highlightButton.mouseClicked(mx, my, button)) {
                 return true;
             }
         }
@@ -1088,11 +1088,7 @@ public class PatternAccessPanel extends ModulePanel {
     }
 
     private Blitter searchModeIcon() {
-        return switch (searchMode) {
-            case IN -> EPPIcon.SEARCH_INPUT;
-            case OUT -> EPPIcon.SEARCH_OUTPUT;
-            case IN_OUT -> EPPIcon.SEARCH_IO;
-        };
+        return chrome.searchModeIcon(searchMode.isIn(), searchMode.isOut());
     }
 
     private List<Component> searchModeTooltip() {
@@ -1142,8 +1138,8 @@ public class PatternAccessPanel extends ModulePanel {
     }
 
     private void hideProviderActionButtons() {
-        for (HighlightButtonSmall button : highlightButtons.values()) {
-            button.visible = false;
+        for (var highlight : highlightButtons.values()) {
+            highlight.button().visible = false;
         }
         for (Button button : openUiButtons.values()) {
             button.visible = false;
@@ -1152,7 +1148,6 @@ public class PatternAccessPanel extends ModulePanel {
 
     private void layoutProviderActionButtons(GuiGraphics g, Font font, List<PatternAccessRowLayout.Row> rows,
             int mouseX, int mouseY, float partialTicks) {
-        var player = Minecraft.getInstance().player;
         for (PatternAccessRowLayout.Row row : rows) {
             if (!row.isHeader()) {
                 continue;
@@ -1173,22 +1168,12 @@ public class PatternAccessPanel extends ModulePanel {
                 openUi.render(g, mouseX, mouseY, partialTicks);
             }
 
-            HighlightButtonSmall highlight = highlightButtons.computeIfAbsent(
-                    provider.providerId(), id -> {
-                        var button = new HighlightButtonSmall();
-                        button.setMessage(Component.translatable(
-                                "gui.extendedae.ex_pattern_access_terminal.tooltip.03"));
-                        return button;
-                    });
-            highlight.visible = loc != null;
-            if (loc != null) {
-                highlight.setTarget(loc.pos(), loc.face(), loc.dimension());
-                if (player != null && player.level().dimension().equals(loc.dimension())) {
-                    highlight.setMultiplier(Math.sqrt(player.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(loc.pos()))));
-                } else {
-                    highlight.setMultiplier(1);
-                }
+            var highlight = highlightButtons.computeIfAbsent(provider.providerId(), id -> chrome.createHighlight());
+            if (highlight == null) {
+                continue;
             }
+            highlight.setTarget(loc);
+            Button highlightButton = highlight.button();
             int pinX = gridLeft() + gridWidth() + 1;
             int pinY = headerY + 4;
             for (PatternAccessRowLayout.Row candidate : rows) {
@@ -1197,18 +1182,10 @@ public class PatternAccessPanel extends ModulePanel {
                     break;
                 }
             }
-            highlight.setX(pinX);
-            highlight.setY(pinY);
-            highlight.setSuccessJob(() -> {
-                var viewer = Minecraft.getInstance().player;
-                if (viewer == null || loc == null) {
-                    return;
-                }
-                viewer.displayClientMessage(MessageUtil.createEnhancedHighlightMessage(
-                        viewer, loc.pos(), loc.dimension(), "chat.ex_pattern_access_terminal.pos"), false);
-            });
-            if (highlight.visible) {
-                highlight.render(g, mouseX, mouseY, partialTicks);
+            highlightButton.setX(pinX);
+            highlightButton.setY(pinY);
+            if (highlightButton.visible) {
+                highlightButton.render(g, mouseX, mouseY, partialTicks);
             }
         }
     }
@@ -1270,7 +1247,7 @@ public class PatternAccessPanel extends ModulePanel {
         }
     }
 
-    private static final class CompactPatButton extends Button implements ITooltip {
+    private final class CompactPatButton extends Button implements ITooltip {
         private final java.util.function.Supplier<Blitter> icon;
         private final java.util.function.Supplier<List<Component>> tooltip;
 
@@ -1289,10 +1266,8 @@ public class PatternAccessPanel extends ModulePanel {
                 return;
             }
             int yOffset = isHovered() ? 1 : 0;
-            Blitter background = isHovered()
-                    ? EPPIcon.TERMINAL_BUTTON_HOVER
-                    : (isFocused() ? EPPIcon.TERMINAL_BUTTON_FOCUS : EPPIcon.TERMINAL_BUTTON);
-            background.dest(getX(), getY() + yOffset, MODE_BUTTON, MODE_BUTTON).zOffset(2).blit(graphics);
+            chrome.buttonBackground(isHovered(), isFocused())
+                    .dest(getX(), getY() + yOffset, MODE_BUTTON, MODE_BUTTON).zOffset(2).blit(graphics);
             icon.get().dest(getX(), getY() + yOffset, MODE_BUTTON, MODE_BUTTON).zOffset(3).blit(graphics);
         }
 
