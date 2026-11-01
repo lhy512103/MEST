@@ -61,7 +61,7 @@ public class MESTMenuHost extends WCTMenuHost
         this.networkToolkit = new SupplierInternalInventory<>(
                 new StackDependentSupplier<>(
                         this::getItemStack,
-                        stack -> createInv(player, stack, ModComponents.NETWORK_TOOLKIT_INV.get(),
+                        stack -> PersistentItemInventory.vanilla(player, stack, ModComponents.NETWORK_TOOLKIT_INV.get(),
                                 MestConfig.networkToolkitSlots())));
         this.cellWorkbench = new SupplierInternalInventory<>(
                 new StackDependentSupplier<>(

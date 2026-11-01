@@ -12,11 +12,10 @@ import appeng.items.contents.NetworkToolMenuHost;
 import appeng.menu.locator.ItemMenuHostLocator;
 import appeng.menu.locator.MenuLocators;
 import appeng.menu.slot.AppEngSlot;
-import appeng.util.inv.AppEngInternalInventory;
-import appeng.util.inv.InternalInventoryHost;
 
 import com.lhy.mest.compat.MestWtlibSupport;
 import com.lhy.mest.config.MestConfig;
+import com.lhy.mest.inventory.PersistentItemInventory;
 import com.lhy.mest.item.ItemMEST;
 import com.lhy.mest.registry.ModComponents;
 
@@ -29,9 +28,13 @@ public final class MestNetworkToolkitAccess {
      * Marks the terminal's own toolbox inventory. Screens use this to tell the terminal's slots
      * apart from a carried vanilla network tool's, which keeps AE2's own panel.
      */
-    public static final class TerminalToolboxInventory extends AppEngInternalInventory {
-        private TerminalToolboxInventory(InternalInventoryHost host, int size) {
-            super(host, size);
+    public static final class TerminalToolboxInventory extends PersistentItemInventory {
+        private TerminalToolboxInventory(Player player, ItemStack stack) {
+            super(MestConfig.networkToolkitSlots(),
+                    stack.getOrDefault(ModComponents.NETWORK_TOOLKIT_INV.get(), ItemContainerContents.EMPTY)
+                            .stream().toList(),
+                    () -> player.level().isClientSide(),
+                    contents -> stack.set(ModComponents.NETWORK_TOOLKIT_INV.get(), ItemContainerContents.fromItems(contents)));
         }
     }
 
@@ -64,11 +67,8 @@ public final class MestNetworkToolkitAccess {
         if (locator == null || stack.isEmpty()) {
             return null;
         }
-        TerminalToolboxInventory inventory = new TerminalToolboxInventory(
-                new TerminalHost(player, locator), MestConfig.networkToolkitSlots());
+        TerminalToolboxInventory inventory = new TerminalToolboxInventory(player, stack);
         inventory.setEnableClientEvents(true);
-        inventory.fromItemContainerContents(
-                stack.getOrDefault(ModComponents.NETWORK_TOOLKIT_INV.get(), ItemContainerContents.EMPTY));
         return inventory;
     }
 
@@ -81,18 +81,4 @@ public final class MestNetworkToolkitAccess {
         return MestTerminalNetworkToolHost.create(player);
     }
 
-    private record TerminalHost(Player player, ItemMenuHostLocator locator) implements InternalInventoryHost {
-        @Override
-        public void saveChangedInventory(AppEngInternalInventory inv) {
-            ItemStack stack = locator.locateItem(player);
-            if (!stack.isEmpty()) {
-                stack.set(ModComponents.NETWORK_TOOLKIT_INV.get(), inv.toItemContainerContents());
-            }
-        }
-
-        @Override
-        public boolean isClientSide() {
-            return player.level().isClientSide();
-        }
-    }
 }

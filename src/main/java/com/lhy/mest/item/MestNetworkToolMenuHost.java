@@ -3,7 +3,6 @@ package com.lhy.mest.item;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.ItemContainerContents;
 
 import appeng.api.inventories.InternalInventory;
 import appeng.api.networking.IInWorldGridNodeHost;
@@ -12,11 +11,11 @@ import appeng.items.contents.NetworkToolMenuHost;
 import appeng.items.contents.StackDependentSupplier;
 import appeng.menu.locator.ItemMenuHostLocator;
 import appeng.util.inv.AppEngInternalInventory;
-import appeng.util.inv.InternalInventoryHost;
 import appeng.util.inv.SupplierInternalInventory;
 import appeng.util.inv.filter.IAEItemFilter;
 
 import com.lhy.mest.config.MestConfig;
+import com.lhy.mest.inventory.PersistentItemInventory;
 
 /**
  * Network-tool host whose inventory size comes from config instead of AE2's hardcoded 9.
@@ -42,25 +41,12 @@ public final class MestNetworkToolMenuHost extends NetworkToolMenuHost<ItemMestN
 
     private InternalInventory createInventory(ItemStack stack) {
         boolean bound = stack.getItem() instanceof ItemMestNetworkToolkit;
-        AppEngInternalInventory inv = new AppEngInternalInventory(new InternalInventoryHost() {
-            @Override
-            public void saveChangedInventory(AppEngInternalInventory changed) {
-                if (bound) {
-                    stack.set(DataComponents.CONTAINER, changed.toItemContainerContents());
-                }
-            }
-
-            @Override
-            public boolean isClientSide() {
-                return getPlayer().level().isClientSide();
-            }
-        }, MestConfig.networkToolkitSlots());
+        AppEngInternalInventory inv = bound
+                ? PersistentItemInventory.vanilla(getPlayer(), stack, DataComponents.CONTAINER,
+                        MestConfig.networkToolkitSlots())
+                : new AppEngInternalInventory(MestConfig.networkToolkitSlots());
         inv.setEnableClientEvents(true);
         inv.setFilter(bound ? new UpgradeCardFilter() : LockedFilter.INSTANCE);
-        if (bound) {
-            inv.fromItemContainerContents(
-                    stack.getOrDefault(DataComponents.CONTAINER, ItemContainerContents.EMPTY));
-        }
         return inv;
     }
 
