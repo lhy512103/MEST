@@ -20,6 +20,7 @@ import de.mari_023.ae2wtlib.api.terminal.ItemWT;
 import de.mari_023.ae2wtlib.wct.WCTMenuHost;
 
 import com.lhy.mest.config.MestConfig;
+import com.lhy.mest.inventory.PersistentItemInventory;
 import com.lhy.mest.registry.ModComponents;
 
 /**
@@ -46,11 +47,13 @@ public class MESTMenuHost extends WCTMenuHost
         this.patternCache = new SupplierInternalInventory<>(
                 new StackDependentSupplier<>(
                         this::getItemStack,
-                        stack -> createInv(player, stack, ModComponents.PATTERN_CACHE_INV.get(), patternCacheSize())));
+                        stack -> PersistentItemInventory.large(player, stack,
+                                ModComponents.PATTERN_CACHE_INV.get(), patternCacheSize())));
         this.trash = new SupplierInternalInventory<>(
                 new StackDependentSupplier<>(
                         this::getItemStack,
-                        stack -> createInv(player, stack, ModComponents.TRASH_INV.get(), MestConfig.trashSlots())));
+                        stack -> PersistentItemInventory.large(player, stack,
+                                ModComponents.TRASH_INV.get(), MestConfig.trashSlots())));
         // Hand over a legacy terminal before its slots are built, so they show the merged toolkit.
         ToolkitBarState.migrateNow(player, getItemStack());
         this.toolkit = new SupplierInternalInventory<>(() -> ToolkitBarState.asInventory(player));

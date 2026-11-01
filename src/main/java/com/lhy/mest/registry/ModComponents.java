@@ -13,6 +13,7 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 import com.lhy.mest.MESplicedterminal;
+import com.lhy.mest.inventory.MestItemContents;
 
 /** Data components stored on the spliced terminal item. */
 public final class ModComponents {
@@ -22,16 +23,16 @@ public final class ModComponents {
     public static final DeferredRegister<DataComponentType<?>> DATA_COMPONENTS =
             DeferredRegister.create(Registries.DATA_COMPONENT_TYPE, MESplicedterminal.MODID);
 
-    /** Pattern cache inventory (36 slots, 4 rows × 9 columns). */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> PATTERN_CACHE_INV =
+    /** Pattern cache inventory; the sparse codec also reads existing vanilla container saves. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<MestItemContents>> PATTERN_CACHE_INV =
             register("pattern_cache_inv", builder -> builder
-                    .persistent(ItemContainerContents.CODEC)
-                    .networkSynchronized(ItemContainerContents.STREAM_CODEC));
+                    .persistent(MestItemContents.CODEC)
+                    .networkSynchronized(MestItemContents.STREAM_CODEC));
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> TRASH_INV =
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<MestItemContents>> TRASH_INV =
             register("trash_inv", builder -> builder
-                    .persistent(ItemContainerContents.CODEC)
-                    .networkSynchronized(ItemContainerContents.STREAM_CODEC));
+                    .persistent(MestItemContents.CODEC)
+                    .networkSynchronized(MestItemContents.STREAM_CODEC));
 
     /** Built-in network-tool upgrade inventory on the spliced terminal. */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<ItemContainerContents>> NETWORK_TOOLKIT_INV =

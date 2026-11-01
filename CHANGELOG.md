@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### English
+
+1. Fixed: Preserve all 576 cache and trash slots with compatible inventory saves.
+
+### 中文
+
+1. 修复：缓存和垃圾桶支持完整保存 576 格并兼容旧数据。
+
 ## v0.0.3.1
 
 ### English
