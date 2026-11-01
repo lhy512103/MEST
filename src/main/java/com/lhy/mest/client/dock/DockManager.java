@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -169,7 +170,11 @@ public final class DockManager {
     private Path configDir;
     private DockLayoutCodec layoutCodec;
     private LayoutPresetBank.Data presets;
+    /** Preset names, active slot and saved slot layouts change independently of the workspace. */
+    private long presetsRevision;
+    private long persistedPresetsRevision = -1;
     private LayoutPresetBank.Data editingPresets;
+    private long editingPresetsRevision;
     private List<DockWorkspace> editingUndoMark;
     private int editorInsetLeft;
     private int editorInsetTop;
@@ -281,7 +286,7 @@ public final class DockManager {
             if (loadedFromFile && !persistenceBlockedAfterLoadFailure) {
                 // layout.json is written first on every save, so it is never older than the
                 // active preset slot; keep the slot in step instead of letting it win.
-                presets = presets.withWorkspace(presets.active(), workspace);
+                captureActivePreset();
             } else {
                 workspace = presets.workspaces()[presets.active()];
             }
@@ -376,6 +381,7 @@ public final class DockManager {
         editingUndoMark = undoHistory.snapshot();
         captureActivePreset();
         editingPresets = presets == null ? null : presets.copy();
+        editingPresetsRevision = presetsRevision;
         return workspace;
     }
 
@@ -384,6 +390,7 @@ public final class DockManager {
         resetGestureState();
         if (editingLayout && editingPresets != null) {
             presets = editingPresets.copy();
+            presetsRevision = editingPresetsRevision;
             replaceWorkspace(presets.workspaces()[presets.active()], true);
         } else if (editingLayout && editingOriginal != null && !editingOriginal.equals(workspace)) {
             replaceWorkspace(editingOriginal, true);
@@ -834,7 +841,7 @@ public final class DockManager {
         if (sanitized.equals(presets.names()[slot])) {
             return;
         }
-        presets = presets.withName(slot, sanitized);
+        replacePresets(presets.withName(slot, sanitized));
         if (!editingLayout) {
             savePresetBankQuietly();
         }
@@ -853,7 +860,7 @@ public final class DockManager {
         if (slot == presets.active() && presets.workspaces()[slot].equals(workspace)) {
             return;
         }
-        presets = presets.withActive(slot);
+        replacePresets(presets.withActive(slot));
         undoHistory.clear();
         replaceWorkspace(presets.workspaces()[slot], true);
         ensureAnchoredVisible();
@@ -958,7 +965,7 @@ public final class DockManager {
 
     private LayoutShareResult applyImportedPresets(LayoutPresetBank.Data imported) throws IOException {
         backupCurrentPresets();
-        presets = imported;
+        replacePresets(imported);
         undoHistory.clear();
         replaceWorkspace(presets.workspaces()[presets.active()], true);
         ensureAnchoredVisible();
@@ -978,7 +985,7 @@ public final class DockManager {
                     Files.readString(backupFile(), StandardCharsets.UTF_8),
                     layoutCodec,
                     presets);
-            presets = restored;
+            replacePresets(restored);
             undoHistory.clear();
             replaceWorkspace(presets.workspaces()[presets.active()], true);
             ensureAnchoredVisible();
@@ -1931,16 +1938,22 @@ public final class DockManager {
         contentSnapY = false;
     }
 
-    /** Persists only a dirty workspace revision; repeated close/store hooks perform no file IO. */
+    /** Persists dirty layout and preset revisions independently; failed writes remain retryable. */
     public void save() {
-        if (persistence == null || workspace == null || editingLayout || persistedRevision == workspaceRevision
+        if (persistence == null || workspace == null || editingLayout
                 || persistenceBlockedAfterLoadFailure || gestureCanonicalWorkspace != null) {
             return;
         }
+        captureActivePreset();
+        if (persistedRevision == workspaceRevision && persistedPresetsRevision == presetsRevision) {
+            return;
+        }
         try {
-            persistence.save(workspace);
-            persistedRevision = workspaceRevision;
-            captureActivePreset();
+            // The current layout must reach disk before its copy in the active preset slot.
+            if (persistedRevision != workspaceRevision) {
+                persistence.save(workspace);
+                persistedRevision = workspaceRevision;
+            }
             savePresetBank();
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn(
@@ -2011,7 +2024,9 @@ public final class DockManager {
         LayoutPresetBank.Data fallback = LayoutPresetBank.create(current, filler, null);
         Path file = configDir.resolve(LayoutPresetBank.PRESETS_FILE);
         presets = LayoutPresetBank.load(file, layoutCodec, fallback);
-        if (!Files.isRegularFile(file)) {
+        presetsRevision = 0;
+        persistedPresetsRevision = Files.isRegularFile(file) ? presetsRevision : -1;
+        if (persistedPresetsRevision != presetsRevision) {
             savePresetBankQuietly();
         }
     }
@@ -2020,14 +2035,26 @@ public final class DockManager {
         if (presets == null || workspace == null) {
             return;
         }
-        presets = presets.withWorkspace(presets.active(), workspace);
+        replacePresets(presets.withWorkspace(presets.active(), workspace));
+    }
+
+    private void replacePresets(LayoutPresetBank.Data changed) {
+        if (presets != null && presets.active() == changed.active()
+                && Arrays.equals(presets.names(), changed.names())
+                && Arrays.equals(presets.workspaces(), changed.workspaces())) {
+            return;
+        }
+        presets = changed;
+        presetsRevision++;
     }
 
     private void savePresetBank() throws IOException {
-        if (presets == null || layoutCodec == null || configDir == null) {
+        if (presets == null || layoutCodec == null || configDir == null
+                || persistedPresetsRevision == presetsRevision) {
             return;
         }
         LayoutPresetBank.save(configDir.resolve(LayoutPresetBank.PRESETS_FILE), presets, layoutCodec);
+        persistedPresetsRevision = presetsRevision;
     }
 
     private void savePresetBankQuietly() {

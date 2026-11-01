@@ -5,27 +5,40 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import net.minecraft.network.chat.Component;
 
 import com.lhy.mest.client.dock.model.DockAxis;
+import com.lhy.mest.client.dock.model.DockInsets;
 import com.lhy.mest.client.dock.model.DockRect;
+import com.lhy.mest.client.dock.model.DockSize;
 import com.lhy.mest.client.dock.model.DockWorkspace;
 import com.lhy.mest.client.dock.model.FloatingRoot;
 import com.lhy.mest.client.dock.model.LeafNode;
+import com.lhy.mest.client.dock.model.ModuleCatalog;
 import com.lhy.mest.client.dock.model.ModuleLayoutPolicy;
+import com.lhy.mest.client.dock.model.ModuleMetrics;
 import com.lhy.mest.client.dock.model.SplitNode;
 import com.lhy.mest.client.dock.workspace.DockLayoutCodec;
 import com.lhy.mest.client.dock.workspace.DockLayoutPersistence;
+import com.lhy.mest.client.dock.workspace.LayoutPresetBank;
+import com.lhy.mest.client.dock.workspace.LegacyMigrationContext;
 
 class DockManagerTest {
+    @TempDir
+    Path configDir;
+
     @Test
     @SuppressWarnings("unchecked")
     void joinedFloatingPanelsStayJoinedForTransientAutoDismissal() throws ReflectiveOperationException {
@@ -406,6 +419,247 @@ class DockManagerTest {
         assertEquals(hidden.height, hidden.joinedRailH);
     }
 
+    @Test
+    void editorRenamePersistsWithoutChangingOrRewritingTheWorkspace() throws Exception {
+        DockManager manager = presetManager();
+        DockWorkspace original = manager.workspaceSnapshot();
+        CountingPersistence persistence = (CountingPersistence) getField(manager, "persistence");
+
+        manager.beginLayoutEditing();
+        manager.setPresetName(0, "Renamed");
+        assertEquals("First", readPresets(manager).names()[0]);
+        manager.commitLayoutEditing();
+
+        assertEquals("Renamed", readPresets(manager).names()[0]);
+        assertSame(original, manager.workspaceSnapshot());
+        assertEquals(1L, getLongField(manager, "workspaceRevision"));
+        assertEquals(0, persistence.saveCount);
+        assertEquals(getLongField(manager, "presetsRevision"),
+                getLongField(manager, "persistedPresetsRevision"));
+    }
+
+    @Test
+    void switchingBetweenIdenticalLayoutsPersistsTheActivePreset() throws Exception {
+        DockManager manager = presetManager();
+        DockWorkspace original = manager.workspaceSnapshot();
+        CountingPersistence persistence = (CountingPersistence) getField(manager, "persistence");
+
+        manager.selectPreset(1);
+        manager.save();
+
+        assertEquals(1, readPresets(manager).active());
+        assertSame(original, manager.workspaceSnapshot());
+        assertEquals(1L, getLongField(manager, "workspaceRevision"));
+        assertEquals(0, persistence.saveCount);
+        assertFalse(manager.canUndoLayout());
+    }
+
+    @Test
+    void cancellingMetadataOnlyEditingRestoresNamesActiveSlotAndCleanState() throws Exception {
+        DockManager manager = presetManager();
+        long originalRevision = getLongField(manager, "presetsRevision");
+        String originalFile = Files.readString(configDir.resolve(LayoutPresetBank.PRESETS_FILE));
+
+        manager.beginLayoutEditing();
+        manager.setPresetName(0, "Discard me");
+        manager.selectPreset(1);
+        manager.cancelLayoutEditing();
+        manager.save();
+
+        assertEquals("First", manager.presetName(0));
+        assertEquals(0, manager.activePreset());
+        assertEquals(originalRevision, getLongField(manager, "presetsRevision"));
+        assertEquals(originalRevision, getLongField(manager, "persistedPresetsRevision"));
+        assertEquals(originalFile, Files.readString(configDir.resolve(LayoutPresetBank.PRESETS_FILE)));
+        assertEquals(0, ((CountingPersistence) getField(manager, "persistence")).saveCount);
+    }
+
+    @Test
+    void cancellingEditingPreservesAnEarlierFailedPresetWriteForRetry() throws Exception {
+        DockManager manager = presetManager();
+        Path blocker = blockPresetFile();
+        manager.setPresetName(0, "Keep pending");
+        long pendingRevision = getLongField(manager, "presetsRevision");
+
+        manager.beginLayoutEditing();
+        manager.setPresetName(0, "Discard this");
+        manager.selectPreset(1);
+        manager.cancelLayoutEditing();
+        assertEquals(pendingRevision, getLongField(manager, "presetsRevision"));
+        assertTrue(pendingRevision != getLongField(manager, "persistedPresetsRevision"));
+
+        Files.delete(blocker);
+        Files.delete(blocker.getParent());
+        manager.save();
+        assertEquals("Keep pending", readPresets(manager).names()[0]);
+        assertEquals(0, readPresets(manager).active());
+        assertEquals(pendingRevision, getLongField(manager, "persistedPresetsRevision"));
+    }
+
+    @Test
+    void loadedPresetBankStartsCleanAndNoOpSavesDoNotRewriteFiles() throws Exception {
+        DockManager manager = presetManager();
+        assertEquals(getLongField(manager, "presetsRevision"),
+                getLongField(manager, "persistedPresetsRevision"));
+        Path file = configDir.resolve(LayoutPresetBank.PRESETS_FILE);
+        String originalFile = Files.readString(file);
+        // Valid JSON with extra whitespace makes an unnecessary serialization observable.
+        Files.writeString(file, originalFile + "\n\n");
+
+        manager.save();
+        manager.save();
+
+        assertEquals(originalFile + "\n\n", Files.readString(file));
+        assertEquals(0, ((CountingPersistence) getField(manager, "persistence")).saveCount);
+    }
+
+    @Test
+    void failedPresetCreationDuringLoadRemainsRetryable() throws Exception {
+        DockManager manager = presetManager();
+        Path blocker = blockPresetFile();
+        loadPresets(manager, manager.workspaceSnapshot());
+        assertTrue(getLongField(manager, "presetsRevision")
+                != getLongField(manager, "persistedPresetsRevision"));
+        Files.delete(blocker);
+        Files.delete(blocker.getParent());
+
+        manager.save();
+
+        assertTrue(Files.isRegularFile(configDir.resolve(LayoutPresetBank.PRESETS_FILE)));
+        assertEquals(manager.workspaceSnapshot(), readPresets(manager).workspaces()[0]);
+        assertEquals(getLongField(manager, "presetsRevision"),
+                getLongField(manager, "persistedPresetsRevision"));
+        assertEquals(0, ((CountingPersistence) getField(manager, "persistence")).saveCount);
+    }
+
+    @Test
+    void currentLayoutRepairsAStaleLoadedActivePresetWithoutRewritingLayout() throws Exception {
+        DockManager manager = presetManager();
+        DockWorkspace current = manager.workspaceSnapshot();
+        DockWorkspace stale = current.withRoots(List.of(root("owner", new DockRect(40, 0, 100, 80), true)));
+        LayoutPresetBank.Data bank = (LayoutPresetBank.Data) getField(manager, "presets");
+        DockLayoutCodec codec = (DockLayoutCodec) getField(manager, "layoutCodec");
+        LayoutPresetBank.save(configDir.resolve(LayoutPresetBank.PRESETS_FILE),
+                bank.withActive(1).withWorkspace(1, stale), codec);
+        loadPresets(manager, current);
+
+        // init() keeps layout.json authoritative by capturing it into the loaded active slot.
+        Method capture = DockManager.class.getDeclaredMethod("captureActivePreset");
+        capture.setAccessible(true);
+        capture.invoke(manager);
+        manager.save();
+
+        LayoutPresetBank.Data saved = readPresets(manager);
+        assertEquals(1, saved.active());
+        assertEquals(current, saved.workspaces()[1]);
+        assertEquals("Second", saved.names()[1]);
+        assertEquals(0, ((CountingPersistence) getField(manager, "persistence")).saveCount);
+    }
+
+    @Test
+    void failedPresetWriteRetriesAfterLayoutWasAlreadySaved() throws Exception {
+        DockManager manager = presetManager();
+        Path blocker = blockPresetFile();
+        DockWorkspace changed = manager.workspaceSnapshot().withRoots(
+                List.of(root("owner", new DockRect(40, 0, 100, 80), true)));
+        setField(manager, "workspace", changed);
+        setField(manager, "workspaceRevision", 2L);
+        CountingPersistence persistence = (CountingPersistence) getField(manager, "persistence");
+
+        manager.save();
+        assertEquals(1, persistence.saveCount);
+        assertEquals(2L, getLongField(manager, "persistedRevision"));
+        assertTrue(getLongField(manager, "presetsRevision")
+                != getLongField(manager, "persistedPresetsRevision"));
+        Files.delete(blocker);
+        Files.delete(blocker.getParent());
+        manager.save();
+
+        assertEquals(changed, readPresets(manager).workspaces()[0]);
+        assertEquals(1, persistence.saveCount, "retry must not rewrite the already saved layout");
+        assertEquals(getLongField(manager, "presetsRevision"),
+                getLongField(manager, "persistedPresetsRevision"));
+    }
+
+    @Test
+    void failedDirectRenameRetriesThroughSaveWithoutAnotherRename() throws Exception {
+        DockManager manager = presetManager();
+        Path blocker = blockPresetFile();
+        manager.setPresetName(0, "Retry me");
+        Files.delete(blocker);
+        Files.delete(blocker.getParent());
+
+        manager.save();
+
+        assertEquals("Retry me", readPresets(manager).names()[0]);
+        assertEquals(0, ((CountingPersistence) getField(manager, "persistence")).saveCount);
+    }
+
+    @Test
+    void layoutWriteFailureKeepsBothFilesDirtyUntilRetry() throws Exception {
+        DockManager manager = presetManager();
+        String originalPresets = Files.readString(configDir.resolve(LayoutPresetBank.PRESETS_FILE));
+        DockWorkspace changed = manager.workspaceSnapshot().withRoots(
+                List.of(root("owner", new DockRect(40, 0, 100, 80), true)));
+        setField(manager, "workspace", changed);
+        setField(manager, "workspaceRevision", 2L);
+        CountingPersistence persistence = (CountingPersistence) getField(manager, "persistence");
+        persistence.failNextSave = true;
+
+        manager.save();
+        assertEquals(1L, getLongField(manager, "persistedRevision"));
+        assertEquals(originalPresets, Files.readString(configDir.resolve(LayoutPresetBank.PRESETS_FILE)));
+        manager.save();
+
+        assertEquals(changed, persistence.savedWorkspace);
+        assertEquals(changed, readPresets(manager).workspaces()[0]);
+        assertEquals(2L, getLongField(manager, "persistedRevision"));
+    }
+
+    private DockManager presetManager() throws Exception {
+        DockWorkspace workspace = new DockWorkspace(List.of(root("owner", new DockRect(0, 0, 100, 80), true)));
+        ModuleCatalog catalog = new ModuleCatalog(Map.of("module-owner",
+                new ModuleMetrics(new DockSize(20, 20), new DockSize(100, 80))));
+        LegacyMigrationContext context = new LegacyMigrationContext(DockInsets.NONE, 0, 8, 8, 16, 800, 600);
+        DockLayoutCodec codec = new DockLayoutCodec(catalog, context);
+        DockManager manager = new DockManager();
+        setField(manager, "workspace", workspace);
+        setField(manager, "viewportWorkspace", workspace);
+        setField(manager, "workspaceRevision", 1L);
+        setField(manager, "persistedRevision", 1L);
+        setField(manager, "persistence", new CountingPersistence());
+        setField(manager, "configDir", configDir);
+        setField(manager, "layoutCodec", codec);
+        setField(manager, "persistenceCatalog", catalog);
+        setField(manager, "migrationContext", context);
+        setField(manager, "centerOnReturn", false);
+        LayoutPresetBank.save(configDir.resolve(LayoutPresetBank.PRESETS_FILE),
+                LayoutPresetBank.create(workspace, workspace, new String[]{"First", "Second", "Third"}), codec);
+        loadPresets(manager, workspace);
+        return manager;
+    }
+
+    private static void loadPresets(DockManager manager, DockWorkspace current) throws Exception {
+        Method load = DockManager.class.getDeclaredMethod("loadPresetBank", DockWorkspace.class);
+        load.setAccessible(true);
+        load.invoke(manager, current);
+    }
+
+    private LayoutPresetBank.Data readPresets(DockManager manager) throws Exception {
+        return LayoutPresetBank.read(Files.readString(configDir.resolve(LayoutPresetBank.PRESETS_FILE)),
+                (DockLayoutCodec) getField(manager, "layoutCodec"),
+                (LayoutPresetBank.Data) getField(manager, "presets"));
+    }
+
+    private Path blockPresetFile() throws IOException {
+        Path file = configDir.resolve(LayoutPresetBank.PRESETS_FILE);
+        Files.delete(file);
+        Files.createDirectory(file);
+        Path blocker = file.resolve("keep-directory-nonempty");
+        Files.writeString(blocker, "blocks atomic replacement");
+        return blocker;
+    }
+
     private static FloatingRoot root(String id, DockRect bounds, boolean visible) {
         return new FloatingRoot(
                 "root-" + id,
@@ -487,6 +741,7 @@ class DockManagerTest {
     private static final class CountingPersistence implements DockLayoutPersistence {
         private int saveCount;
         private DockWorkspace savedWorkspace;
+        private boolean failNextSave;
 
         @Override
         public Optional<DockLayoutCodec.DecodedLayout> load() {
@@ -494,8 +749,12 @@ class DockManagerTest {
         }
 
         @Override
-        public void save(DockWorkspace workspace) {
+        public void save(DockWorkspace workspace) throws IOException {
             saveCount++;
+            if (failNextSave) {
+                failNextSave = false;
+                throw new IOException("simulated layout write failure");
+            }
             savedWorkspace = workspace;
         }
     }
