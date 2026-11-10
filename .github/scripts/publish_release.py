@@ -69,8 +69,14 @@ class Api:
         except urllib.error.HTTPError as error:
             if error.code == 404 and missing_ok:
                 return None
-            # Do not print response bodies/headers: errors must never expose publishing credentials.
-            raise PublishError(f"{method} publishing API returned HTTP {error.code}") from None
+            # A bounded, token-redacted error message is needed to diagnose validation failures.
+            detail = error.read(8192).decode("utf-8", errors="replace")
+            for key, value in self.headers.items():
+                if key.lower() in {"authorization", "x-api-token"}:
+                    detail = detail.replace(value, "[REDACTED]")
+                    detail = detail.replace(value.removeprefix("Bearer "), "[REDACTED]")
+            detail = " ".join(detail.split())[:1500]
+            raise PublishError(f"{method} publishing API returned HTTP {error.code}: {detail}") from None
         if len(payload) > MAX_DOWNLOAD:
             raise PublishError("Publishing response exceeds size limit")
         if raw:
@@ -181,6 +187,17 @@ def select_jar(release, release_assets, expected):
     return matches[0]
 
 
+def curseforge_version_ids(cf, minecraft_version):
+    versions = cf.request("GET", "/game/versions")
+    result = []
+    for name in (minecraft_version, "NeoForge", "Client", "Server"):
+        matches = [version["id"] for version in versions if version.get("name") == name]
+        if len(matches) != 1 or not isinstance(matches[0], int):
+            raise PublishError(f"CurseForge version must resolve uniquely: {name}")
+        result.append(matches[0])
+    return result
+
+
 def sync_curseforge(gh, cf, root, tag, project_id, minecraft_version):
     if not str(project_id).isdigit() or int(project_id) < 1:
         raise PublishError("CURSEFORGE_PROJECT_ID must be a positive project number")
@@ -217,7 +234,7 @@ def sync_curseforge(gh, cf, root, tag, project_id, minecraft_version):
             "changelog": release["body"], "changelogType": "markdown",
             "displayName": f"ME Spliced Terminal {metadata['version']}",
             "releaseType": metadata["release_type"],
-            "gameVersionNames": [minecraft_version, "NeoForge", "Client", "Server"],
+            "gameVersions": curseforge_version_ids(cf, minecraft_version),
             "relations": {"projects": [
                 {"slug": "applied-energistics-2", "projectID": "223794", "type": "requiredDependency"},
                 {"slug": "applied-energistics-2-wireless-terminals", "projectID": "459929", "type": "requiredDependency"}]}}

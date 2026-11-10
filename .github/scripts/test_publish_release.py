@@ -78,7 +78,8 @@ class PublishingTests(unittest.TestCase):
     def test_cf_upload_contains_real_jar_and_release_text(self):
         gh, cf = Mock(), Mock()
         gh.request.side_effect = [self.release, self.jar.read_bytes()]
-        cf.request.return_value = {'id': 99}
+        cf.request.side_effect = [[{'id': i, 'name': name} for i, name in
+                                   enumerate(('1.21.1', 'NeoForge', 'Client', 'Server'), 1)], {'id': 99}]
         with patch.object(pub, 'assets', return_value=[self.asset]), patch.object(pub, 'replace_asset') as receipt:
             pub.sync_curseforge(gh, cf, '/repos/owner/repo', 'v0.0.3.1', '1715792', '1.21.1')
         call = cf.request.call_args
@@ -111,7 +112,8 @@ class PublishingTests(unittest.TestCase):
     def test_changed_release_text_updates_existing_file_after_jar_check(self):
         gh, cf = Mock(), Mock()
         gh.request.side_effect = [self.release, self.jar.read_bytes(), json.dumps(self.receipt('old')).encode()]
-        cf.request.return_value = {'id': 99}
+        cf.request.side_effect = [[{'id': i, 'name': name} for i, name in
+                                   enumerate(('1.21.1', 'NeoForge', 'Client', 'Server'), 1)], {'id': 99}]
         with patch.object(pub, 'assets', return_value=[self.asset, {'id': 3, 'name': pub.LEDGER_NAME}]), \
                 patch.object(pub, 'replace_asset'):
             pub.sync_curseforge(gh, cf, '/repos/owner/repo', 'v0.0.3.1', '1715792', '1.21.1')
@@ -133,6 +135,13 @@ class PublishingTests(unittest.TestCase):
         self.assertIsNone(redirect.get_header('Authorization'))
         with self.assertRaises(pub.PublishError):
             pub.SafeRedirect().redirect_request(request, None, 302, 'Found', {}, 'http://example.com/a')
+
+    def test_unknown_cf_version_fails_before_upload(self):
+        cf = Mock()
+        cf.request.return_value = []
+        with self.assertRaises(pub.PublishError):
+            pub.curseforge_version_ids(cf, '1.21.1')
+        cf.request.assert_called_once_with('GET', '/game/versions')
 
     def test_cf_requires_positive_project_id(self):
         gh, cf = Mock(), Mock()
