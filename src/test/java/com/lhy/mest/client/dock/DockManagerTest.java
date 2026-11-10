@@ -698,6 +698,7 @@ class DockManagerTest {
         setField(manager, "persistence", new CountingPersistence());
         setField(manager, "configDir", configDir);
         setField(manager, "layoutCodec", codec);
+        setField(manager, "layoutSharing", new com.lhy.mest.client.dock.workspace.LayoutSharingService(configDir, codec));
         setField(manager, "persistenceCatalog", catalog);
         setField(manager, "migrationContext", context);
         setField(manager, "centerOnReturn", false);

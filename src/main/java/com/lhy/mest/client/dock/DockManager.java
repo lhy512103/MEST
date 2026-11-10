@@ -57,10 +57,10 @@ import com.lhy.mest.client.dock.model.SplitNode;
 import com.lhy.mest.client.dock.workspace.AtomicFileDockLayoutStore;
 import com.lhy.mest.client.dock.workspace.DockLayoutCodec;
 import com.lhy.mest.client.dock.workspace.DockLayoutDto;
-import com.lhy.mest.client.dock.workspace.DockLayoutFormatException;
 import com.lhy.mest.client.dock.workspace.DockLayoutPersistence;
 import com.lhy.mest.client.dock.workspace.DockWorkspaceDefaults;
 import com.lhy.mest.client.dock.workspace.LayoutPresetBank;
+import com.lhy.mest.client.dock.workspace.LayoutSharingService;
 import com.lhy.mest.client.dock.workspace.LegacyMigrationContext;
 import com.lhy.mest.client.panel.PatternAccessPanel;
 
@@ -171,6 +171,7 @@ public final class DockManager {
     private Path preferencesPath;
     private Path configDir;
     private DockLayoutCodec layoutCodec;
+    private LayoutSharingService layoutSharing;
     private LayoutPresetBank.Data presets;
     /** Preset names, active slot and saved slot layouts change independently of the workspace. */
     private long presetsRevision;
@@ -246,6 +247,7 @@ public final class DockManager {
         var codec = new DockLayoutCodec(persistenceCatalog, migrationContext, this::fitCompositeRootsToShell);
         layoutCodec = codec;
         configDir = FMLPaths.CONFIGDIR.get().resolve(MESplicedterminal.MODID);
+        layoutSharing = new LayoutSharingService(configDir, codec);
         Path path = configDir.resolve("layout.json");
         preferencesPath = configDir.resolve("preferences.json");
         loadPreferences();
@@ -873,16 +875,15 @@ public final class DockManager {
     }
 
     public boolean hasLayoutBackup() {
-        return configDir != null && Files.isRegularFile(backupFile());
+        return layoutSharing != null && layoutSharing.hasBackup();
     }
 
     public Path shareFolder() {
-        return configDir == null ? null : configDir.resolve("share");
+        return layoutSharing == null ? null : layoutSharing.shareFolder();
     }
 
     public Path shareZipFile() {
-        Path share = shareFolder();
-        return share == null ? null : share.resolve(LayoutPresetBank.SHARE_ZIP_FILE);
+        return layoutSharing == null ? null : layoutSharing.shareZipFile();
     }
 
     public record LayoutShareResult(boolean ok, Component message, Path reveal) {
@@ -901,21 +902,8 @@ public final class DockManager {
         }
         captureActivePreset();
         Path share = shareFolder();
-        Path zipFile = shareZipFile();
         try {
-            Files.createDirectories(share);
-            Files.deleteIfExists(share.resolve(LayoutPresetBank.SHARE_LAYOUT_FILE));
-            Files.deleteIfExists(share.resolve(LayoutPresetBank.SHARE_PRESETS_FILE));
-            for (int index = 0; index < LayoutPresetBank.SLOT_COUNT; index++) {
-                Path slotDir = share.resolve(LayoutPresetBank.shareSlotFolder(index));
-                Files.createDirectories(slotDir);
-                LayoutPresetBank.writeAtomic(
-                        slotDir.resolve(LayoutPresetBank.SHARE_LAYOUT_FILE),
-                        LayoutPresetBank.encodeSlot(
-                                presets.workspaces()[index], presets.names()[index], layoutCodec));
-                Files.deleteIfExists(slotDir.resolve(LayoutPresetBank.SHARE_NAME_FILE));
-            }
-            LayoutPresetBank.zipShareSlots(share, zipFile);
+            layoutSharing.exportLayouts(presets);
             return LayoutShareResult.ok(
                     Component.translatable(
                             "gui.mesplicedterminal.layout_export.ok",
@@ -932,21 +920,14 @@ public final class DockManager {
             return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_import.fail"));
         }
         try {
-            LayoutPresetBank.Data imported = importFromShareFolders();
-            if (imported == null) {
-                Path zipFile = shareZipFile();
-                if (zipFile != null && Files.isRegularFile(zipFile)) {
-                    imported = LayoutPresetBank.readShareZip(zipFile, layoutCodec, presets);
-                }
+            var imported = layoutSharing.importLayouts(presets, this::readImportClipboard);
+            if (imported.readFailure() != null) {
+                MESplicedterminal.LOGGER.warn("Failed to read shared terminal layout", imported.readFailure());
             }
-            if (imported == null) {
-                String json = readImportJson();
-                if (json == null || json.isBlank()) {
-                    return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_import.missing"));
-                }
-                imported = LayoutPresetBank.read(json, layoutCodec, presets);
+            if (imported.data() == null) {
+                return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_import.missing"));
             }
-            return applyImportedPresets(imported);
+            return applyImportedPresets(imported.data());
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn("Failed to import terminal layout", e);
             return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_import.fail"));
@@ -958,7 +939,7 @@ public final class DockManager {
             return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_import.fail"));
         }
         try {
-            return applyImportedPresets(LayoutPresetBank.readShareZip(zipFile, layoutCodec, presets));
+            return applyImportedPresets(layoutSharing.importZip(zipFile, presets));
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn("Failed to import terminal layout from {}", zipFile, e);
             return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_import.fail"));
@@ -983,10 +964,7 @@ public final class DockManager {
             return LayoutShareResult.fail(Component.translatable("gui.mesplicedterminal.layout_backup.missing"));
         }
         try {
-            LayoutPresetBank.Data restored = LayoutPresetBank.read(
-                    com.lhy.mest.client.dock.workspace.BoundedLayoutInput.readJson(backupFile()),
-                    layoutCodec,
-                    presets);
+            LayoutPresetBank.Data restored = layoutSharing.restoreBackup(presets);
             replacePresets(restored);
             undoHistory.clear();
             replaceWorkspace(presets.workspaces()[presets.active()], true);
@@ -2088,68 +2066,13 @@ public final class DockManager {
             return;
         }
         captureActivePreset();
-        // Replace only after the new snapshot is fully written; never destroy the last good backup first.
-        LayoutPresetBank.save(backupFile(), presets, layoutCodec);
+        layoutSharing.backup(presets);
     }
 
-    private Path backupFile() {
-        return configDir.resolve("backup").resolve(LayoutPresetBank.PRESETS_FILE);
-    }
-
-    private LayoutPresetBank.Data importFromShareFolders() throws IOException, DockLayoutFormatException {
-        Path share = configDir.resolve("share");
-        if (!Files.isDirectory(share)) {
-            return null;
-        }
-        LayoutPresetBank.Data data = presets.copy();
-        boolean any = false;
-        for (int index = 0; index < LayoutPresetBank.SLOT_COUNT; index++) {
-            Path slotDir = share.resolve(LayoutPresetBank.shareSlotFolder(index));
-            Path layoutFile = slotDir.resolve(LayoutPresetBank.SHARE_LAYOUT_FILE);
-            if (!Files.isRegularFile(layoutFile)) {
-                continue;
-            }
-            any = true;
-            LayoutPresetBank.SlotDocument document = LayoutPresetBank.decodeSlot(
-                    com.lhy.mest.client.dock.workspace.BoundedLayoutInput.readJson(layoutFile,
-                            com.lhy.mest.client.dock.workspace.BoundedLayoutInput.MAX_LAYOUT_BYTES), layoutCodec);
-            data = data.withWorkspace(index, document.workspace());
-            String name = document.name();
-            Path nameFile = slotDir.resolve(LayoutPresetBank.SHARE_NAME_FILE);
-            if (name.isBlank() && Files.isRegularFile(nameFile)) {
-                name = LayoutPresetBank.sanitizeName(com.lhy.mest.client.dock.workspace.BoundedLayoutInput.readJson(nameFile, 4096));
-            }
-            data = data.withName(index, name);
-        }
-        return any ? data : null;
-    }
-
-    private String readImportJson() {
+    private String readImportClipboard() {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft != null) {
-            String clipboard = minecraft.keyboardHandler.getClipboard();
-            if (clipboard != null && !clipboard.isBlank()) {
-                try {
-                    LayoutPresetBank.read(clipboard, layoutCodec, presets);
-                    return clipboard;
-                } catch (IOException | RuntimeException ignored) {
-                    // Fall through to share files.
-                }
-            }
-        }
-        Path share = configDir.resolve("share");
-        Path presetsFile = share.resolve(LayoutPresetBank.SHARE_PRESETS_FILE);
-        Path layoutFile = share.resolve(LayoutPresetBank.SHARE_LAYOUT_FILE);
-        try {
-            if (Files.isRegularFile(presetsFile)) {
-                return com.lhy.mest.client.dock.workspace.BoundedLayoutInput.readJson(presetsFile);
-            }
-            if (Files.isRegularFile(layoutFile)) {
-                return com.lhy.mest.client.dock.workspace.BoundedLayoutInput.readJson(layoutFile,
-                            com.lhy.mest.client.dock.workspace.BoundedLayoutInput.MAX_LAYOUT_BYTES);
-            }
-        } catch (IOException e) {
-            MESplicedterminal.LOGGER.warn("Failed to read shared terminal layout", e);
+            return minecraft.keyboardHandler.getClipboard();
         }
         return null;
     }
