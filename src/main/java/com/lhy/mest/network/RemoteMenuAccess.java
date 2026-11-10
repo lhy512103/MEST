@@ -3,37 +3,26 @@ package com.lhy.mest.network;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-
-import org.jetbrains.annotations.Nullable;
+import java.util.function.BooleanSupplier;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.MenuProvider;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.phys.BlockHitResult;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
-import com.lhy.mest.MESplicedterminal;
 import appeng.api.networking.IGrid;
 
+import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.compat.MestWtlibSupport;
 
-/**
- * Keeps a machine menu opened from the spliced terminal valid while the player is using it
- * remotely (vanilla {@code stillValid} would close it for distance).
- *
- * <p>Re-verifies the target block and periodically checks for a linked spliced terminal.
- * Losing either revokes the remote keep-alive; normal menu validity can still allow local use.
- * This does not prove that a failed {@code stillValid} was caused only by distance, nor that the
- * carried terminal is connected to the original grid.
- */
+/** Server-owned, fail-closed remote menu sessions. Only the bound distance test is exempted. */
 @EventBusSubscriber(modid = MESplicedterminal.MODID)
 public final class RemoteMenuAccess {
     private static final Map<UUID, Session> SESSIONS = new HashMap<>();
@@ -41,61 +30,65 @@ public final class RemoteMenuAccess {
     private RemoteMenuAccess() {
     }
 
-    public static boolean open(ServerPlayer player, MenuProvider provider, ServerLevel level, BlockPos pos,
-            IGrid originalGrid) {
-        if (originalGrid == null) {
+    public static boolean open(ServerPlayer player, ServerLevel level, BlockPos pos,
+            BlockHitResult hit, IGrid originalGrid) {
+        if (originalGrid == null || player.level() != level || !level.isLoaded(pos)) {
+            return false;
+        }
+        BlockEntity target = level.getBlockEntity(pos);
+        if (target == null) {
+            return false;
+        }
+        Block block = level.getBlockState(pos).getBlock();
+        if (!MestWtlibSupport.hasLinkedTerminal(player, originalGrid)
+                || !RemoteMenuPermission.mayUse(player, level, pos, target, hit)
+                || level.getBlockState(pos).getBlock() != block) {
             return false;
         }
         var previousMenu = player.containerMenu;
-        var openedId = player.openMenu(provider, pos);
-        if (openedId.isEmpty() || player.containerMenu.containerId != openedId.getAsInt()) {
+        // Never call MenuProvider directly: the actual block's authorization/opening path must run.
+        level.getBlockState(pos).useWithoutItem(level, player, hit);
+        var opened = player.containerMenu;
+        if (opened == previousMenu || opened == player.inventoryMenu) {
             return false;
         }
-        return trackOpenedMenu(player, previousMenu, level, pos, originalGrid);
-    }
-
-    public static boolean trackOpenedMenu(ServerPlayer player, AbstractContainerMenu previousMenu,
-            ServerLevel level, BlockPos pos, IGrid originalGrid) {
-        if (player.containerMenu == previousMenu || player.containerMenu == player.inventoryMenu) {
+        Session session = new Session(opened, level, pos.immutable(), block, target, hit, originalGrid);
+        SESSIONS.put(player.getUUID(), session);
+        if (!stillValid(player, opened, () -> opened.stillValid(player))) {
+            player.closeContainer();
             return false;
         }
-        if (originalGrid == null) {
-            return false;
-        }
-        track(player, level, pos, originalGrid);
         return true;
     }
 
-    public static boolean keepsMenuValid(ServerPlayer player, AbstractContainerMenu menu) {
+    /** Called at BOTH vanilla server validity call sites; never ORs away custom menu rejection. */
+    public static boolean stillValid(ServerPlayer player, AbstractContainerMenu menu, BooleanSupplier original) {
         Session session = SESSIONS.get(player.getUUID());
         if (session == null || session.menu != menu || menu != player.containerMenu) {
-            if (session != null) {
+            if (session != null && session.menu != player.containerMenu) {
                 SESSIONS.remove(player.getUUID());
             }
+            return original.getAsBoolean();
+        }
+        // Keep revoked sessions until close, so subsequent local checks cannot resurrect access.
+        return session.validity.evaluate(() -> authorized(player, session), original,
+                () -> RemoteMenuDistanceScope.evaluate(player, session.level, menu, session.pos.asLong(), original));
+    }
+
+    private static boolean authorized(ServerPlayer player, Session session) {
+        ServerLevel level = session.level;
+        BlockPos pos = session.pos;
+        if (!RemoteMenuValidityPolicy.sameTarget(player.level(), level, level.isLoaded(pos),
+                session.blockEntity, level.isLoaded(pos) ? level.getBlockEntity(pos) : null,
+                session.blockEntity.isRemoved()) || level.getBlockState(pos).getBlock() != session.block) {
             return false;
         }
-        ServerLevel level = player.server.getLevel(session.dimension);
-        if (level == null || !level.isLoaded(session.pos)) {
-            SESSIONS.remove(player.getUUID());
-            return false;
-        }
-        var state = level.getBlockState(session.pos);
-        if (state.isAir() || state.getBlock() != session.block) {
-            SESSIONS.remove(player.getUUID());
-            return false;
-        }
-        if (session.blockEntity != null
-                && (session.blockEntity.isRemoved()
-                || level.getBlockEntity(session.pos) != session.blockEntity)) {
-            SESSIONS.remove(player.getUUID());
-            return false;
-        }
-        if (!session.linkCheck.isLinked(player.serverLevel().getGameTime(),
-                () -> MestWtlibSupport.hasLinkedTerminal(player, session.grid))) {
-            SESSIONS.remove(player.getUUID());
-            return false;
-        }
-        return true;
+        // No lease cache: changing grid, losing the terminal, or losing permission revokes immediately.
+        return MestWtlibSupport.hasLinkedTerminal(player, session.grid)
+                && RemoteMenuPermission.mayUse(player, level, pos, session.blockEntity, session.hit)
+                && player.level() == level && level.isLoaded(pos)
+                && level.getBlockEntity(pos) == session.blockEntity && !session.blockEntity.isRemoved()
+                && level.getBlockState(pos).getBlock() == session.block;
     }
 
     public static void clear(ServerPlayer player, AbstractContainerMenu menu) {
@@ -119,33 +112,24 @@ public final class RemoteMenuAccess {
         }
     }
 
-    private static void track(ServerPlayer player, ServerLevel level, BlockPos pos, IGrid grid) {
-        SESSIONS.put(player.getUUID(), new Session(
-                player.containerMenu,
-                level.dimension(),
-                pos.immutable(),
-                level.getBlockState(pos).getBlock(),
-                level.getBlockEntity(pos),
-                grid));
-    }
-
     private static final class Session {
         private final AbstractContainerMenu menu;
-        private final ResourceKey<Level> dimension;
+        private final ServerLevel level;
         private final BlockPos pos;
         private final Block block;
-        @Nullable
         private final BlockEntity blockEntity;
+        private final BlockHitResult hit;
         private final IGrid grid;
-        private final RemoteMenuLinkCheck linkCheck = new RemoteMenuLinkCheck();
+        private final RemoteMenuValidityPolicy validity = new RemoteMenuValidityPolicy();
 
-        private Session(AbstractContainerMenu menu, ResourceKey<Level> dimension, BlockPos pos, Block block,
-                @Nullable BlockEntity blockEntity, IGrid grid) {
+        private Session(AbstractContainerMenu menu, ServerLevel level, BlockPos pos, Block block,
+                BlockEntity blockEntity, BlockHitResult hit, IGrid grid) {
             this.menu = menu;
-            this.dimension = dimension;
+            this.level = level;
             this.pos = pos;
             this.block = block;
             this.blockEntity = blockEntity;
+            this.hit = hit;
             this.grid = grid;
         }
     }

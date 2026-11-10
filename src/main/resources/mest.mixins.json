@@ -5,6 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "RemoteMenuMixin",
+    "RemoteMenuPlayerMixin",
+    "RemoteMenuPacketMixin",
     "ToolkitInventoryMixin",
     "ToolkitPlayerMixin",
     "ToolkitMenuLocatorsMixin",

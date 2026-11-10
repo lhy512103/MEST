@@ -14,6 +14,8 @@
 8. Fixed: Reject oversized layout imports before they exhaust memory.
 9. Fixed: Preserve previous backups and damaged presets when recovery or saving fails.
 10. Fixed: Save terminal preferences without truncating the previous file on failure.
+11. Fixed: Remote machine menus now respect protection, locks and custom validity checks.
+12. Removed: Unverified cross-dimension and unsupported machine remote access.
 
 ### 中文
 
@@ -27,6 +29,8 @@
 8. 修复：拒绝超大布局导入，避免异常文件耗尽内存。
 9. 修复：恢复或保存失败时保留旧备份与损坏预设原件。
 10. 修复：界面偏好保存失败时不再截断原文件。
+11. 修复：远程机器菜单遵守领地保护、锁定与自定义有效性检查。
+12. 移除：未经授权验证的跨维度及未适配机器远程访问。
 
 ## v0.0.3.1
 

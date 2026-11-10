@@ -31,6 +31,12 @@ modules you can move, resize and splice together however you like.
 | Panel hotkeys | Key combos that toggle modules or switch layout presets |
 | Provider picker | ExtendedAE Plus upload target selection (only with that mod) |
 
+Remote machine opening is limited to the same dimension and verified containers: vanilla single
+chests, barrels, furnaces, blast furnaces and smokers. Double chests, trapped chests and unadapted
+machines are refused. A machine block entity may opt in through `RemoteMenuAuthorizer`, which must
+recheck all non-distance permissions without side effects; protection events and the menu's own
+validity checks still apply. Moving items through the ME network is not restricted by this rule.
+
 ### Layout
 
 - Every window is a tree of splits. Drag a panel onto another panel's edge to splice them, drag a
@@ -154,6 +160,10 @@ ME 拼接终端（MEST）是运行在 NeoForge 1.21.1 上的 AE2 / AE2WTLib 无�
 | 无线设置 | 选取方块、补货、磁铁、工具包相关开关 |
 | 面板快捷键 | 用组合键开关模块、切换布局预设 |
 | 供应器选择 | ExtendedAE Plus 上传目标选择（仅在装了该模组时出现） |
+
+远程打开机器仅限同维度且已验证的容器：原版单箱、木桶、熔炉、高炉和烟熏炉；双箱、陷阱箱及未适配机器暂不支持。
+机器方块实体可实现 `RemoteMenuAuthorizer` 显式适配，但必须无副作用地重新检查全部非距离权限；领地保护事件和菜单自身
+的有效性检查仍然生效。通过 ME 网络存取物品不受这项限制影响。
 
 ### 布局
 
