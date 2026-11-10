@@ -21,6 +21,7 @@ import net.neoforged.fml.ModList;
 import com.glodblock.github.extendedae.client.button.EPPIcon;
 
 import com.lhy.mest.client.MestGuiIcons;
+import com.lhy.mest.client.panel.PanelLifecycleController.Participant;
 import com.lhy.mest.client.dock.model.DockAxis;
 import com.lhy.mest.client.dock.model.DockRect;
 import com.lhy.mest.client.dock.model.LayoutProjection;
@@ -36,8 +37,14 @@ import com.lhy.mest.client.dock.model.ModuleDefaults;
  *
  * <p>The docking engine is intentionally decoupled from concrete modules: subclasses only implement
  * content rendering, slot layout and a stable {@link #id()} used for layout persistence.
+ *
+ * <p>Optional extension hooks are inherited from {@link Participant}; subclasses may directly
+ * override them without an adapter. {@code onClientTick()} runs for every opened panel, including
+ * hidden ones, from the screen's client tick, never from rendering. Use
+ * {@code onPanelVisibilityChanged(boolean)} to suspend hidden work and {@code onPanelClosed()} to
+ * release subscriptions. These hooks do not replace built-in panel frame updates or search input.
  */
-public abstract class ModulePanel {
+public abstract class ModulePanel implements Participant {
     public static final int TITLE_BAR_HEIGHT = 17;
     public static final int CONTENT_PADDING = 7;
     public static final int RESIZE_HANDLE = 10;

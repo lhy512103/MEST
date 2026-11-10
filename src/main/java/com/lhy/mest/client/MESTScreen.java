@@ -120,6 +120,8 @@ import com.lhy.mest.terminal.ToolkitSlot;
  */
 public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerminalCapable {
     private final DockManager dock = new DockManager();
+    private final com.lhy.mest.client.panel.PanelLifecycleController panelLifecycle =
+            new com.lhy.mest.client.panel.PanelLifecycleController();
     private final List<SettingToggleButton<?>> meSettingButtons = new ArrayList<>();
     private final PanelSideBar meSideBar = new PanelSideBar();
     private final PanelSideBar moreSettingsBar = new PanelSideBar();
@@ -504,6 +506,35 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 && !AEConfig.instance().isUseExternalSearch()) {
             meListPanel.setSearchFocused(true);
         }
+        openPanelLifecycles();
+    }
+
+    private void openPanelLifecycles() {
+        try {
+            for (ModulePanel panel : dock.panels()) {
+                panelLifecycle.attach(panel, dock.isEffectivelyVisible(panel));
+            }
+        } catch (RuntimeException | Error failure) {
+            try {
+                panelLifecycle.close();
+            } catch (RuntimeException | Error cleanup) {
+                if (cleanup != failure) failure.addSuppressed(cleanup);
+            }
+            throw failure;
+        }
+    }
+
+    private void syncPanelLifecycleVisibility() {
+        for (ModulePanel panel : dock.panels()) {
+            panelLifecycle.setVisible(panel, dock.isEffectivelyVisible(panel));
+        }
+    }
+
+    @Override
+    public void containerTick() {
+        super.containerTick();
+        syncPanelLifecycleVisibility();
+        panelLifecycle.clientTick();
     }
 
     private Component layoutLockMessage() {
@@ -534,6 +565,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     @Override
     protected void updateBeforeRender() {
         super.updateBeforeRender();
+        syncPanelLifecycleVisibility();
         refreshLayoutActions();
         syncUtilityHost();
         if (meListPanel != null && dock.isEffectivelyVisible(meListPanel)) {
@@ -1806,6 +1838,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         // The global toolbar is not owned by any floating root. Do not focus an arbitrary panel
         // underneath it when the toolbar happens to overlap the workspace.
         if (isMouseOverToolbarWidget(mx, my)) {
+            panelLifecycle.clearFocus();
             if (meListPanel != null) {
                 meListPanel.setSearchFocused(false);
             }
@@ -1836,6 +1869,12 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     private boolean mouseClickedInWorkspace(double mx, double my, int button) {
         ModulePanel target = dock.topLeafAt(mx, my);
+        syncPanelLifecycleVisibility();
+        panelLifecycle.focusFromMouse(target);
+        if (target != meListPanel && meListPanel != null) meListPanel.setSearchFocused(false);
+        if (target != patternAccessPanel && patternAccessPanel != null) patternAccessPanel.setSearchFocused(false);
+        if (target != providerSelectPanel && providerSelectPanel != null) providerSelectPanel.setSearchFocused(false);
+        if (target != drivePanel && drivePanel != null) drivePanel.setSearchFocused(false);
         if (target != hotkeysPanel && hotkeysPanel != null) {
             hotkeysPanel.cancelCapture();
         }
@@ -2529,6 +2568,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean charTyped(char character, int modifiers) {
+        syncPanelLifecycleVisibility();
         if (meListPanel != null && meListPanel.searchCharTyped(character, modifiers)) {
             return true;
         }
@@ -2553,11 +2593,22 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (providerSelectPanel != null && providerSelectPanel.searchCharTyped(character, modifiers)) {
             return true;
         }
+        if (panelLifecycle.charTyped(character, modifiers)) {
+            return true;
+        }
         return super.charTyped(character, modifiers);
     }
 
     @Override
+    public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
+        syncPanelLifecycleVisibility();
+        return panelLifecycle.keyReleased(keyCode, scanCode, modifiers)
+                || super.keyReleased(keyCode, scanCode, modifiers);
+    }
+
+    @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        syncPanelLifecycleVisibility();
         if (hotkeysPanel != null && hotkeysPanel.isCapturing()) {
             return hotkeysPanel.captureKey(keyCode, modifiers);
         }
@@ -2659,6 +2710,9 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         if (hotkey != null && runHotkey(hotkey)) {
             return true;
         }
+        if (panelLifecycle.keyPressed(keyCode, scanCode, modifiers)) {
+            return true;
+        }
         boolean handled = super.keyPressed(keyCode, scanCode, modifiers);
         if (!handled) {
             return checkForTerminalKeys(keyCode, scanCode);
@@ -2728,6 +2782,14 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public void removed() {
+        try {
+            panelLifecycle.close();
+        } finally {
+            removePanelScreenState();
+        }
+    }
+
+    private void removePanelScreenState() {
         if (meListPanel != null) {
             // AE2 MEStorageScreen.removed() calls storeState() so the next constructor
             // (craft-amount return, terminal reopen) sees the search that was on screen,

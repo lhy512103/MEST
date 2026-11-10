@@ -127,6 +127,13 @@ it is not visible. AE2 quick-move treats add-on slots as terminal-side slots, so
 `mayPlace` if the slots should not receive shift-clicks. The layout keeps working when an add-on
 is removed or added: unknown modules are dropped and new ones get a default window.
 
+Panels may override `onPanelOpened`, `onPanelClosed`, `onPanelVisibilityChanged`, `onClientTick`,
+`onPanelKeyPressed`, `onPanelKeyReleased` and `onPanelCharTyped`. Resize does not reopen the same
+instance; leaving the terminal closes it, and returning from the layout editor reopens it. Client ticks
+are independent of rendering and include hidden panels, so pause subscriptions in the visibility hook.
+Only an explicitly mouse-focused, visible panel receives unconsumed keyboard input; existing searches
+and terminal hotkeys keep priority. All hooks are optional, so existing modules need no changes.
+
 ### Building and verification
 
 ```powershell
@@ -242,6 +249,11 @@ modBus.addListener((RegisterMestModulesEvent event) ->
 面板在 `layoutSlots()` 里用 `placeSlot` 摆放槽位，不可见时用 `hideSlot` 隐藏。AE2 的 Shift 快速移动会把附加模块的
 槽位当作终端侧槽位；如果不希望这些槽位接收 Shift 点击，请在 `mayPlace` 里拒绝。附加模组被移除或新增时布局照常可用：
 不存在的模块会被丢弃，新模块会分配一个默认窗口。
+
+面板可重写 `onPanelOpened`、`onPanelClosed`、`onPanelVisibilityChanged`、`onClientTick`、
+`onPanelKeyPressed`、`onPanelKeyReleased` 和 `onPanelCharTyped`。窗口缩放不会重复打开同一个实例；离开终端会关闭，
+从布局编辑器返回后会重新打开。客户端 tick 独立于渲染，也会通知隐藏面板，因此应在可见性回调中暂停后台订阅。
+只有鼠标明确选中且可见的面板才接收尚未处理的键盘输入，已有搜索框与终端快捷键保持优先；这些回调均可选，旧扩展无需修改。
 
 ### 构建与验证
 
