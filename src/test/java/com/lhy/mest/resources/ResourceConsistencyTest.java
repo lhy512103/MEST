@@ -23,6 +23,22 @@ class ResourceConsistencyTest {
     private static final Path MOD_DATA = RESOURCES.resolve(Path.of("data", "mesplicedterminal"));
 
     @Test
+    void publishedNeoForgeFloorIsIndependentOfDevelopmentVersion() throws IOException {
+        var properties = new java.util.Properties();
+        try (var reader = Files.newBufferedReader(Path.of("gradle.properties"))) {
+            properties.load(reader);
+        }
+        String range = properties.getProperty("neo_version_range");
+        assertEquals("[21.1.238,21.2)", range);
+        String template = Files.readString(Path.of("src/main/templates/META-INF/neoforge.mods.toml"));
+        assertTrue(template.contains("versionRange=\"${neo_version_range}\""));
+        assertFalse(template.contains("${neo_version}"));
+        String generated = Files.readString(Path.of("build/resources/main/META-INF/neoforge.mods.toml"));
+        assertTrue(generated.contains("versionRange=\"" + range + "\""));
+        assertFalse(generated.contains("${neo_version_range}"));
+    }
+
+    @Test
     void allResourceJsonDocumentsParse() throws IOException {
         try (var files = Files.walk(RESOURCES)) {
             for (Path path : files.filter(file -> file.toString().endsWith(".json")).toList()) {

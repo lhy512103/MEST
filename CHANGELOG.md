@@ -21,7 +21,7 @@
 15. Fixed: Hidden trash panels no longer receive Shift-clicked items or allow hidden-slot interaction.
 16. Fixed: Terminal keyboard handling no longer loads ExtendedAE Plus screens when the addon is absent.
 17. Added: Extension panels can handle visibility, client updates, focused input and resource cleanup.
-18. Changed: NeoForge 21.1.265 or newer is now required on Minecraft 1.21.1.
+18. Fixed: Keep NeoForge 21.1.238 as the minimum supported version when updating development dependencies.
 
 ### 中文
 
@@ -42,7 +42,7 @@
 15. 修复：隐藏垃圾面板不再接收 Shift 点击物品，并禁止隐藏槽位交互。
 16. 修复：未安装 ExtendedAE Plus 时，终端按键不再加载其可选界面类。
 17. 新增：扩展面板可处理可见性、客户端更新、聚焦输入与资源释放。
-18. 调整：Minecraft 1.21.1 现需使用 NeoForge 21.1.265 或更高版本。
+18. 修复：更新开发依赖时仍保留 NeoForge 21.1.238 的最低版本支持。
 
 ## v0.0.3.1
 

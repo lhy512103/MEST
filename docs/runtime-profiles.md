@@ -1,6 +1,6 @@
 # Development runtime profiles
 
-These profiles select development-launch dependencies, not what is compiled or packaged into MEST. The current configuration targets Java 21, Minecraft 1.21.1 and NeoForge 21.1.265. Versions remain in `gradle.properties`; the profile does not modify that file.
+These profiles select development-launch dependencies, not what is compiled or packaged into MEST. The current configuration targets Java 21, Minecraft 1.21.1 and NeoForge 21.1.265. Versions remain in `gradle.properties`; the profile does not modify that file. `neo_version` selects the development toolchain only; `neo_version_range=[21.1.238,21.2)` independently controls the published loader requirement. Verify the lower bound with `./gradlew build -Pneo_version=21.1.238 -PmestRuntimeProfile=minimal`; other installed mods may impose stricter requirements.
 
 ## Selection and defaults
 
@@ -65,6 +65,6 @@ On Linux/macOS replace `.\gradlew.bat` with `./gradlew`. Resolve dependency repo
 
 `checkRuntimeProfiles` runs as part of `check`/`build`. It asserts the three exact minimal shared-runtime declarations, excludes compile-only configuration inheritance, checks that minimal runtime configurations do not declare optional compile-only APIs, checks full compatibility targets, and compares exact client-local dependency sets against JEI/EMI/UI selections (including the explicit EMI shortcut). It snapshots declarations as task inputs without resolving artifacts.
 
-CI runs both this task and **build with the same matrix flags**: four full viewer combinations and four minimal combinations, with the minimal-none row also checking the no-viewer default. Artifact names distinguish all rows.
+CI runs both this task and **build with the same matrix flags**: four full viewer combinations and four minimal combinations, with the minimal-none row also checking the no-viewer default. A ninth build verifies the published NeoForge minimum (21.1.238) with the minimal profile. Artifact names distinguish all rows.
 
 **Declaration checks and compilation are not a game startup test.** They cannot prove the resolved transitive graph, loader optional-class safety, mod metadata compatibility, mixin behavior, GUI rendering, world loading or dedicated-server startup. Inspect resolved dependencies and the loader mod list, then launch isolated disposable worlds to verify those properties. Full keeps its existing third-party dependencies and may expose pre-existing upstream incompatibilities. Record the actual versions, commands and observed results in the release checklist rather than treating these instructions as a compatibility guarantee.

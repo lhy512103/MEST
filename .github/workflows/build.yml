@@ -33,6 +33,8 @@ jobs:
           - { name: full-emi-only, flags: "-PmestRuntimeProfile=full -PmestRunJei=false -PmestRunEmi=true" }
           # No viewer flags: also verify minimal's no-viewer default.
           - { name: minimal-none, flags: "-PmestRuntimeProfile=minimal" }
+          # Keep the published minimum independent from the default development toolchain.
+          - { name: minimum-neoforge, flags: "-PmestRuntimeProfile=minimal -Pneo_version=21.1.238" }
           - { name: minimal-jei-only, flags: "-PmestRuntimeProfile=minimal -PmestRunJei=true -PmestRunEmi=false" }
           - { name: minimal-emi-only, flags: "-PmestRuntimeProfile=minimal -PmestRunJei=false -PmestRunEmi=true" }
           - { name: minimal-jei-emi, flags: "-PmestRuntimeProfile=minimal -PmestRunJei=true -PmestRunEmi=true" }
