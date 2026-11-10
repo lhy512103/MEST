@@ -26,7 +26,7 @@ class TrashVisibilityWiringTest {
 
     @Test
     void effectiveVisibilityRatherThanLeafPolicyControlsTheServerFlag() throws IOException {
-        String screen = Files.readString(JAVA.resolve("client/MESTScreen.java"));
+        String screen = Files.readString(JAVA.resolve("client/MESTScreen.java")).replace("\r\n", "\n");
         String sync = method(screen, "private void syncTrashOpen()");
         assertTrue(sync.contains("trashPanel != null && dock.isEffectivelyVisible(trashPanel)"));
         assertTrue(sync.contains("getMenu().isTrashOpen() != open"));
@@ -36,15 +36,21 @@ class TrashVisibilityWiringTest {
 
     @Test
     void presetsGroupsDismissalAndSameFrameSlotPacketsSynchronize() throws IOException {
-        String screen = Files.readString(JAVA.resolve("client/MESTScreen.java"));
+        String screen = Files.readString(JAVA.resolve("client/MESTScreen.java")).replace("\r\n", "\n");
         for (String signature : new String[] {
-                "protected void init()", "private void updateBeforeRenderTimed()",
+                "protected void init()",
                 "private void toggleCombinedModule(int group)", "private void toggleModule(ModulePanel panel)",
                 "private void dismissUnpinnedFloating(ModulePanel panel)",
                 "protected void slotClicked(Slot slot, int slotIdx, int mouseButton, ClickType clickType)",
                 "private void handleGridInventoryEntryMouseClick(GridInventoryEntry entry, int mouseButton, ClickType clickType)" }) {
             assertTrue(method(screen, signature).contains("syncTrashOpen()"), signature);
         }
+        String render = method(screen, "protected void updateBeforeRender()");
+        // Optional local instrumentation may delegate the same update body to a timed wrapper.
+        if (render.contains("updateBeforeRenderTimed()")) {
+            render = method(screen, "private void updateBeforeRenderTimed()");
+        }
+        assertTrue(render.contains("syncTrashOpen()"), "render update must synchronize trash visibility");
         String hotkey = method(screen, "public boolean runHotkey(String id)");
         assertTrue(hotkey.contains("dock.cyclePreset();\n            syncTrashOpen();"));
         assertTrue(hotkey.contains("dock.selectPreset(preset);\n            syncTrashOpen();"));
