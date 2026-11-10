@@ -616,6 +616,74 @@ class DockManagerTest {
         assertEquals(2L, getLongField(manager, "persistedRevision"));
     }
 
+    @Test
+    void corruptPresetLoadPreservesOriginalBeforeSubsequentRename() throws Exception {
+        DockManager manager = presetManager();
+        Path file = configDir.resolve(LayoutPresetBank.PRESETS_FILE);
+        Files.writeString(file, "broken original presets");
+        loadPresets(manager, manager.workspaceSnapshot());
+        manager.setPresetName(0, "Recovered");
+        assertEquals("Recovered", readPresets(manager).names()[0]);
+        try (var paths = Files.list(configDir)) {
+            var quarantined = paths.filter(path -> path.getFileName().toString().startsWith("presets.json.corrupt.")).toList();
+            assertEquals(1, quarantined.size());
+            assertEquals("broken original presets", Files.readString(quarantined.getFirst()));
+        }
+    }
+
+    @Test
+    void blockedPresetPersistenceCannotBeBypassedByRenameOrSave() throws Exception {
+        DockManager manager = presetManager();
+        Path file = configDir.resolve(LayoutPresetBank.PRESETS_FILE);
+        String original = Files.readString(file);
+        setField(manager, "presetPersistenceBlockedAfterLoadFailure", true);
+        manager.setPresetName(0, "Not authorized to overwrite");
+        manager.save();
+        assertEquals(original, Files.readString(file));
+        assertTrue(getLongField(manager, "presetsRevision") != getLongField(manager, "persistedPresetsRevision"));
+    }
+
+    @Test
+    void backupFailurePreservesThePreviousSnapshotAndOtherFiles() throws Exception {
+        DockManager manager = presetManager();
+        Path backup = configDir.resolve("backup").resolve(LayoutPresetBank.PRESETS_FILE);
+        Files.createDirectories(backup.getParent());
+        Files.writeString(backup, "previous recoverable snapshot");
+        Path unrelated = backup.getParent().resolve("manual-copy.json");
+        Files.writeString(unrelated, "manual backup");
+        LayoutPresetBank.Data bank = (LayoutPresetBank.Data) getField(manager, "presets");
+        // A malformed inactive slot fails serialization after captureActivePreset has succeeded.
+        DockWorkspace invalid = new DockWorkspace(List.of(root("unknown", new DockRect(0, 0, 100, 80), true)));
+        setField(manager, "presets", bank.withWorkspace(1, invalid));
+        Method backupMethod = DockManager.class.getDeclaredMethod("backupCurrentPresets");
+        backupMethod.setAccessible(true);
+
+        org.junit.jupiter.api.Assertions.assertThrows(java.lang.reflect.InvocationTargetException.class,
+                () -> backupMethod.invoke(manager));
+
+        assertEquals("previous recoverable snapshot", Files.readString(backup));
+        assertEquals("manual backup", Files.readString(unrelated));
+    }
+
+    @Test
+    void successfulBackupReplacesOnlyTheSnapshot() throws Exception {
+        DockManager manager = presetManager();
+        Path backup = configDir.resolve("backup").resolve(LayoutPresetBank.PRESETS_FILE);
+        Files.createDirectories(backup.getParent());
+        Files.writeString(backup, "old snapshot");
+        Path unrelated = backup.getParent().resolve("manual-copy.json");
+        Files.writeString(unrelated, "manual backup");
+        Method backupMethod = DockManager.class.getDeclaredMethod("backupCurrentPresets");
+        backupMethod.setAccessible(true);
+        backupMethod.invoke(manager);
+
+        LayoutPresetBank.Data restored = LayoutPresetBank.read(Files.readString(backup),
+                (DockLayoutCodec) getField(manager, "layoutCodec"),
+                (LayoutPresetBank.Data) getField(manager, "presets"));
+        assertEquals(manager.workspaceSnapshot(), restored.workspaces()[0]);
+        assertEquals("manual backup", Files.readString(unrelated));
+    }
+
     private DockManager presetManager() throws Exception {
         DockWorkspace workspace = new DockWorkspace(List.of(root("owner", new DockRect(0, 0, 100, 80), true)));
         ModuleCatalog catalog = new ModuleCatalog(Map.of("module-owner",

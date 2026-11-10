@@ -87,6 +87,7 @@ public final class DockLayoutCodec {
         if (json == null || json.isBlank()) {
             throw new DockLayoutFormatException("layout document is empty");
         }
+        BoundedLayoutInput.checkJson(json, BoundedLayoutInput.MAX_LAYOUT_BYTES);
         try {
             JsonElement parsed = JsonParser.parseString(json);
             if (!parsed.isJsonObject()) {

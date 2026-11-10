@@ -11,6 +11,9 @@
 5. Fixed: Load recipe advancements from the correct Minecraft 1.21.1 directory.
 6. Optimized: Update AE2 Lightning Tech to 2.1.3 and Thunderbolt Core to 2.0.3.
 7. Optimized: Update ExtendedAE Plus to 1.6.4.1, ExtendedAE to 2.2.43 and JEI to 19.70.0.469.
+8. Fixed: Reject oversized layout imports before they exhaust memory.
+9. Fixed: Preserve previous backups and damaged presets when recovery or saving fails.
+10. Fixed: Save terminal preferences without truncating the previous file on failure.
 
 ### 中文
 
@@ -21,6 +24,9 @@
 5. 修复：配方解锁进度使用 Minecraft 1.21.1 的正确资源目录。
 6. 优化：闪电科技升级至 2.1.3，前置 Thunderbolt Core 升级至 2.0.3。
 7. 优化：ExtendedAE Plus 升级至 1.6.4.1，ExtendedAE 升级至 2.2.43，JEI 升级至 19.70.0.469。
+8. 修复：拒绝超大布局导入，避免异常文件耗尽内存。
+9. 修复：恢复或保存失败时保留旧备份与损坏预设原件。
+10. 修复：界面偏好保存失败时不再截断原文件。
 
 ## v0.0.3.1
 

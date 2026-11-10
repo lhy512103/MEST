@@ -1,5 +1,6 @@
 package com.lhy.mest.client.dock.workspace;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -116,22 +117,50 @@ public final class LayoutPresetBank {
         return new Data(0, names, workspaces);
     }
 
-    public static Data load(Path file, DockLayoutCodec codec, Data fallback) {
+    public record LoadResult(Data data, boolean loaded, Path quarantinedPath) {
+    }
+
+    @FunctionalInterface
+    interface Quarantine {
+        Path move(Path file) throws IOException;
+    }
+
+    public static Data load(Path file, DockLayoutCodec codec, Data fallback) throws IOException {
+        return loadWithRecovery(file, codec, fallback).data();
+    }
+
+    public static LoadResult loadWithRecovery(Path file, DockLayoutCodec codec, Data fallback) throws IOException {
+        return loadWithRecovery(file, codec, fallback, LayoutPresetBank::quarantine);
+    }
+
+    static LoadResult loadWithRecovery(Path file, DockLayoutCodec codec, Data fallback, Quarantine quarantine)
+            throws IOException {
         if (file == null || !Files.isRegularFile(file)) {
-            return fallback;
+            return new LoadResult(fallback, false, null);
         }
         try {
-            Data loaded = read(Files.readString(file, StandardCharsets.UTF_8), codec, fallback);
-            return loaded == null ? fallback : loaded;
-        } catch (IOException | RuntimeException e) {
-            return fallback;
+            return new LoadResult(read(BoundedLayoutInput.readJson(file), codec, fallback), true, null);
+        } catch (DockLayoutFormatException | java.nio.charset.MalformedInputException | RuntimeException e) {
+            // A failed move propagates: callers must not overwrite an original that was not preserved.
+            return new LoadResult(fallback, false, quarantine.move(file));
         }
+    }
+
+    private static Path quarantine(Path file) throws IOException {
+        Path target = file.resolveSibling(file.getFileName() + ".corrupt." + java.util.UUID.randomUUID());
+        try {
+            Files.move(file, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(file, target);
+        }
+        return target;
     }
 
     public static Data read(String json, DockLayoutCodec codec, Data fallback) throws DockLayoutFormatException {
         if (json == null || json.isBlank()) {
             throw new DockLayoutFormatException("preset document is empty");
         }
+        BoundedLayoutInput.checkJson(json, BoundedLayoutInput.MAX_JSON_BYTES);
         JsonElement parsed;
         try {
             parsed = JsonParser.parseString(json);
@@ -190,10 +219,29 @@ public final class LayoutPresetBank {
             throws IOException, DockLayoutFormatException {
         Data data = fallback.copy();
         boolean any = false;
+        // Snapshot with an actual read limit, not a racy Files.size pre-check. This also
+        // bounds compressed bytes and ZIP metadata before ZipInputStream sees them.
+        byte[] archive = BoundedLayoutInput.readBytes(zipFile, BoundedLayoutInput.MAX_ZIP_BYTES);
         try (ZipInputStream zip = new ZipInputStream(
-                Files.newInputStream(zipFile), StandardCharsets.UTF_8)) {
+                new ByteArrayInputStream(archive), StandardCharsets.UTF_8)) {
             ZipEntry entry;
+            int entries = 0;
+            int totalBytes = 0;
             while ((entry = zip.getNextEntry()) != null) {
+                if (++entries > BoundedLayoutInput.MAX_ZIP_ENTRIES) {
+                    throw new DockLayoutFormatException("layout zip exceeds entry count limit "
+                            + BoundedLayoutInput.MAX_ZIP_ENTRIES);
+                }
+                int limit = Math.min(BoundedLayoutInput.MAX_ZIP_ENTRY_BYTES,
+                        BoundedLayoutInput.MAX_ZIP_TOTAL_BYTES - totalBytes);
+                if (entry.getSize() > limit) {
+                    throw new DockLayoutFormatException("layout zip exceeds entry or total byte limit");
+                }
+                // Consume ALL entries explicitly, even directories/unknown/unsafe names.
+                // Otherwise getNextEntry implicitly drains ignored entries without a budget.
+                // On failure, close the archive directly; never closeEntry or advance it.
+                byte[] bytes = BoundedLayoutInput.readBytes(zip, limit);
+                totalBytes += bytes.length;
                 if (entry.isDirectory()) {
                     continue;
                 }
@@ -215,7 +263,6 @@ public final class LayoutPresetBank {
                     continue;
                 }
                 String file = name.substring(slash + 1);
-                byte[] bytes = zip.readAllBytes();
                 if (SHARE_LAYOUT_FILE.equals(file)) {
                     SlotDocument document = decodeSlot(new String(bytes, StandardCharsets.UTF_8), codec);
                     data = data.withWorkspace(slot, document.workspace());
@@ -274,7 +321,14 @@ public final class LayoutPresetBank {
         Path temporary = Files.createTempFile(parent, prefix, ".tmp");
         boolean moved = false;
         try {
-            Files.writeString(temporary, json, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
+            try (var channel = java.nio.channels.FileChannel.open(temporary,
+                    StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                var bytes = java.nio.ByteBuffer.wrap(json.getBytes(StandardCharsets.UTF_8));
+                while (bytes.hasRemaining()) {
+                    channel.write(bytes);
+                }
+                channel.force(true);
+            }
             try {
                 Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException e) {
@@ -327,18 +381,22 @@ public final class LayoutPresetBank {
 
     private static Data readBank(JsonObject object, DockLayoutCodec codec, Data fallback)
             throws DockLayoutFormatException {
+        if (object.has("version") && object.get("version").getAsInt() != FILE_VERSION) {
+            throw new DockLayoutFormatException("unsupported preset version");
+        }
         int active = object.has("active") ? object.get("active").getAsInt() : 0;
         JsonArray presets = object.getAsJsonArray("presets");
-        if (presets == null) {
-            throw new DockLayoutFormatException("presets must be an array");
+        if (presets == null || presets.isEmpty() || presets.size() > SLOT_COUNT) {
+            throw new DockLayoutFormatException("presets must contain one to three layouts");
         }
         String[] names = Arrays.copyOf(fallback.names(), SLOT_COUNT);
         DockWorkspace[] workspaces = Arrays.copyOf(fallback.workspaces(), SLOT_COUNT);
         int count = Math.min(SLOT_COUNT, presets.size());
         for (int index = 0; index < count; index++) {
             JsonElement element = presets.get(index);
-            if (!element.isJsonObject()) {
-                continue;
+            if (!element.isJsonObject() || !element.getAsJsonObject().has("layout")
+                    || !element.getAsJsonObject().get("layout").isJsonObject()) {
+                throw new DockLayoutFormatException("preset must contain a layout object");
             }
             JsonObject preset = element.getAsJsonObject();
             if (preset.has("name")) {

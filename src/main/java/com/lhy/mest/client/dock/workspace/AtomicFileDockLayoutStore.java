@@ -39,7 +39,7 @@ public final class AtomicFileDockLayoutStore implements DockLayoutPersistence {
             return Optional.empty();
         }
         try {
-            return Optional.of(codec.decode(Files.readString(path, StandardCharsets.UTF_8)));
+            return Optional.of(codec.decode(BoundedLayoutInput.readJson(path, BoundedLayoutInput.MAX_LAYOUT_BYTES)));
         } catch (DockLayoutFormatException | MalformedInputException | RuntimeException e) {
             /*
              * A malformed document must never be silently replaced by defaults at the same path:

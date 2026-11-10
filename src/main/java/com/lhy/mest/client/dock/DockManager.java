@@ -141,6 +141,8 @@ public final class DockManager {
      * recoverable copy at that original path.
      */
     private boolean persistenceBlockedAfterLoadFailure;
+    /** Do not overwrite presets if reading or preserving the original failed. */
+    private boolean presetPersistenceBlockedAfterLoadFailure;
     private int structureVersion;
     private int screenWidth;
     private int screenHeight;
@@ -982,7 +984,7 @@ public final class DockManager {
         }
         try {
             LayoutPresetBank.Data restored = LayoutPresetBank.read(
-                    Files.readString(backupFile(), StandardCharsets.UTF_8),
+                    com.lhy.mest.client.dock.workspace.BoundedLayoutInput.readJson(backupFile()),
                     layoutCodec,
                     presets);
             replacePresets(restored);
@@ -2013,7 +2015,7 @@ public final class DockManager {
             object.addProperty("pullItemsRecipeButton", pullItemsRecipeButton);
             object.add("moreSettingsOrder", toStringArray(moreSettingsOrder));
             PatternAccessPanel.writePreferences(object);
-            Files.writeString(preferencesPath, object.toString(), StandardCharsets.UTF_8);
+            LayoutPresetBank.writeAtomic(preferencesPath, object.toString());
         } catch (IOException | RuntimeException e) {
             MESplicedterminal.LOGGER.warn("Failed to write terminal layout preferences", e);
         }
@@ -2023,11 +2025,24 @@ public final class DockManager {
         DockWorkspace filler = DockWorkspaceDefaults.create(persistenceCatalog, migrationContext, this::fitCompositeRootsToShell);
         LayoutPresetBank.Data fallback = LayoutPresetBank.create(current, filler, null);
         Path file = configDir.resolve(LayoutPresetBank.PRESETS_FILE);
-        presets = LayoutPresetBank.load(file, layoutCodec, fallback);
+        presetPersistenceBlockedAfterLoadFailure = false;
         presetsRevision = 0;
-        persistedPresetsRevision = Files.isRegularFile(file) ? presetsRevision : -1;
-        if (persistedPresetsRevision != presetsRevision) {
-            savePresetBankQuietly();
+        persistedPresetsRevision = -1;
+        try {
+            var loaded = LayoutPresetBank.loadWithRecovery(file, layoutCodec, fallback);
+            presets = loaded.data();
+            if (loaded.quarantinedPath() != null) {
+                MESplicedterminal.LOGGER.warn("Preserved corrupt terminal presets at {}", loaded.quarantinedPath());
+            }
+            if (loaded.loaded()) {
+                persistedPresetsRevision = presetsRevision;
+            } else {
+                savePresetBankQuietly();
+            }
+        } catch (IOException | RuntimeException e) {
+            presets = fallback;
+            presetPersistenceBlockedAfterLoadFailure = true;
+            MESplicedterminal.LOGGER.warn("Cannot safely load terminal presets; writes disabled until reopen", e);
         }
     }
 
@@ -2053,6 +2068,9 @@ public final class DockManager {
                 || persistedPresetsRevision == presetsRevision) {
             return;
         }
+        if (presetPersistenceBlockedAfterLoadFailure) {
+            throw new IOException("Preset writes are blocked because the original could not be safely loaded");
+        }
         LayoutPresetBank.save(configDir.resolve(LayoutPresetBank.PRESETS_FILE), presets, layoutCodec);
         persistedPresetsRevision = presetsRevision;
     }
@@ -2070,9 +2088,7 @@ public final class DockManager {
             return;
         }
         captureActivePreset();
-        Path backupDir = configDir.resolve("backup");
-        LayoutPresetBank.clearDirectory(backupDir);
-        Files.createDirectories(backupDir);
+        // Replace only after the new snapshot is fully written; never destroy the last good backup first.
         LayoutPresetBank.save(backupFile(), presets, layoutCodec);
     }
 
@@ -2095,12 +2111,13 @@ public final class DockManager {
             }
             any = true;
             LayoutPresetBank.SlotDocument document = LayoutPresetBank.decodeSlot(
-                    Files.readString(layoutFile, StandardCharsets.UTF_8), layoutCodec);
+                    com.lhy.mest.client.dock.workspace.BoundedLayoutInput.readJson(layoutFile,
+                            com.lhy.mest.client.dock.workspace.BoundedLayoutInput.MAX_LAYOUT_BYTES), layoutCodec);
             data = data.withWorkspace(index, document.workspace());
             String name = document.name();
             Path nameFile = slotDir.resolve(LayoutPresetBank.SHARE_NAME_FILE);
             if (name.isBlank() && Files.isRegularFile(nameFile)) {
-                name = LayoutPresetBank.sanitizeName(Files.readString(nameFile, StandardCharsets.UTF_8));
+                name = LayoutPresetBank.sanitizeName(com.lhy.mest.client.dock.workspace.BoundedLayoutInput.readJson(nameFile, 4096));
             }
             data = data.withName(index, name);
         }
@@ -2125,10 +2142,11 @@ public final class DockManager {
         Path layoutFile = share.resolve(LayoutPresetBank.SHARE_LAYOUT_FILE);
         try {
             if (Files.isRegularFile(presetsFile)) {
-                return Files.readString(presetsFile, StandardCharsets.UTF_8);
+                return com.lhy.mest.client.dock.workspace.BoundedLayoutInput.readJson(presetsFile);
             }
             if (Files.isRegularFile(layoutFile)) {
-                return Files.readString(layoutFile, StandardCharsets.UTF_8);
+                return com.lhy.mest.client.dock.workspace.BoundedLayoutInput.readJson(layoutFile,
+                            com.lhy.mest.client.dock.workspace.BoundedLayoutInput.MAX_LAYOUT_BYTES);
             }
         } catch (IOException e) {
             MESplicedterminal.LOGGER.warn("Failed to read shared terminal layout", e);
