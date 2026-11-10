@@ -1,0 +1,95 @@
+name: Release and CurseForge
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag (must match mod_version and a Changelog section)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Shared with release-text synchronization: never upload the same version concurrently.
+concurrency:
+  group: publish-${{ github.repository }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name != 'push' || github.event.deleted == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Validate release version, notes and publishing tests
+        run: |
+          python -m unittest discover -s .github/scripts -p 'test_*.py' -v
+          python .github/scripts/release_metadata.py prepare --tag "$RELEASE_TAG" --properties gradle.properties --changelog CHANGELOG.md --output-dir build/release
+      - name: Build and test the tagged commit
+        run: |
+          chmod +x gradlew
+          ./gradlew clean build -PmestRuntimeProfile=minimal --no-daemon --stacktrace
+          # clean removes the prepared directory, so regenerate exactly the same version notes.
+          python .github/scripts/release_metadata.py prepare --tag "$RELEASE_TAG" --properties gradle.properties --changelog CHANGELOG.md --output-dir build/release
+      - name: Verify and stage the actual mod JAR
+        id: artifact
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, '.github/scripts')
+          from release_metadata import verify_jar
+          metadata = json.loads(Path('build/release/metadata.json').read_text(encoding='utf-8'))
+          jar = Path('build/libs') / metadata['expected_jar']
+          artifact = verify_jar(jar, metadata)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write(f'jar={jar.as_posix()}\n')
+              out.write(f'minecraft_version={metadata["minecraft_version"]}\n')
+          Path('build/release/artifact.json').write_text(json.dumps(artifact, indent=2), encoding='utf-8')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.artifact.outputs.jar }}
+            build/release/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish GitHub Release only after JAR upload is confirmed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python .github/scripts/publish_release.py github --metadata build/release/metadata.json --jar '${{ steps.artifact.outputs.jar }}' --notes build/release/release-notes.md --commit "$(git rev-parse HEAD)"
+      # GITHUB_TOKEN-created releases do not trigger another release workflow, so synchronize here too.
+      - name: Upload the Release JAR and Release text to CurseForge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+          CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          MINECRAFT_VERSION: ${{ steps.artifact.outputs.minecraft_version }}
+        run: |
+          python .github/scripts/publish_release.py curseforge --tag "$RELEASE_TAG" --project-id "$CURSEFORGE_PROJECT_ID" --minecraft-version "$MINECRAFT_VERSION"

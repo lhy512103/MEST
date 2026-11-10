@@ -151,6 +151,8 @@ and hotkey rules; they do not replace the [in-game release checklist](docs/relea
 Use `-PmestRuntimeProfile=minimal` for an isolated core-only development runtime with viewers off by
 default; the full profile remains the default. See [runtime profiles](docs/runtime-profiles.md) for
 separate game directories, viewer switches and the eight-combination verification matrix.
+Version tags publish a verified JAR and that version's Changelog to GitHub Releases, then synchronize
+the attached JAR and Release text to CurseForge; see [automatic publishing](docs/automatic-publishing.md).
 
 ---
 
@@ -274,3 +276,5 @@ modBus.addListener((RegisterMestModulesEvent event) ->
 自动化测试覆盖布局模型与编解码、存储、数据包编解码、供应器同步状态、工具包与快捷键规则，但不能代替游戏内验证，
 详见[发布验证清单](docs/release-checklist.md)。使用 `-PmestRuntimeProfile=minimal` 可启动隔离的最小核心环境，默认不带配方查看器；
 默认完整兼容环境保持不变。独立存档目录、查看器开关和八组合检查命令见[运行配置说明](docs/runtime-profiles.md)。
+版本 tag 会将经过校验的 JAR 与对应版本 Changelog 发布到 GitHub Release，再将附件和 Release 正文同步到 CurseForge；
+配置、触发方式与失败恢复见[自动发布说明](docs/automatic-publishing.md)。

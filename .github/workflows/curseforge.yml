@@ -1,0 +1,42 @@
+name: Sync Release to CurseForge
+
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing public Release tag with its versioned mod JAR attached'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-${{ github.repository }}-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Use maintained publishing code, not arbitrary code from an old release attachment/tag.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify the attached JAR before synchronizing the Release text
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+          CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          MINECRAFT_VERSION: ${{ vars.CURSEFORGE_MINECRAFT_VERSION || '1.21.1' }}
+        run: |
+          python .github/scripts/publish_release.py curseforge --tag "$RELEASE_TAG" --project-id "$CURSEFORGE_PROJECT_ID" --minecraft-version "$MINECRAFT_VERSION"

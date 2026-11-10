@@ -12,6 +12,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate publishing safeguards without publishing
+        run: python -m unittest discover -s .github/scripts -p 'test_*.py' -v
+
   build:
     strategy:
       fail-fast: false
