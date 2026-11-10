@@ -1391,6 +1391,9 @@ public class MESTMenu extends CraftingTermMenu {
         if (patternAccessSession != null) {
             patternAccessSession.serverTick();
         }
+        if (driveCellSession != null && getPlayer() instanceof ServerPlayer player) {
+            driveCellSession.serverTick(player);
+        }
         if (isServerSide()) {
             tryFillBlankPattern();
         }

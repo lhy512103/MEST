@@ -78,6 +78,14 @@ Slot counts (pattern cache, trash, toolkit, network toolkit) are a server config
 clients so both sides build the same menu. It lives per world in
 `serverconfig/mesplicedterminal-server.toml`; put a copy in `defaultconfigs/` to preset new worlds.
 
+### Drive search
+
+Drive searches keep the latest query and scan cells over multiple server ticks rather than rebuilding
+the whole list for each keystroke. Large networks may take longer to show a complete result; topology
+and capacity totals are cached briefly. Item transfers still validate the live cell before changing it.
+For diagnosis, the server JVM option `-Dmest.driveSearch.metrics=true` logs scan counts and timings.
+The per-tick time budget is soft: a third-party cell's own inventory enumeration cannot be interrupted.
+
 ### JEI and EMI
 
 Recipe transfer targets the last focused crafting or encoding module. Crafting recipes use AE2's
@@ -192,6 +200,12 @@ ME 拼接终端（MEST）是运行在 NeoForge 1.21.1 上的 AE2 / AE2WTLib 无�
 
 样板缓存、垃圾桶、工具包、网络工具包的槽位数属于服务端配置，会同步给客户端，保证两端菜单一致。配置按存档保存在
 `serverconfig/mesplicedterminal-server.toml`；放一份到 `defaultconfigs/` 可作为新存档的默认值。
+
+### 驱动器搜索
+
+驱动器搜索只保留最新查询，并分多个服务端 tick 扫描，不再每次输入都重建全部列表。大型网络的完整结果可能稍后显示，
+网络结构与容量统计会短暂缓存；实际取放元件前仍会重新核验当前槽位。排查性能时可在服务器 JVM 参数中加入
+`-Dmest.driveSearch.metrics=true`，记录扫描量和耗时。每 tick 的时间预算是软限制，无法中断第三方元件自身的库存枚举。
 
 ### JEI 与 EMI
 

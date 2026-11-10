@@ -68,7 +68,23 @@ public final class DriveCellSession {
     private int windowStart = -1;
     private int totalSlots;
     private boolean truncated;
-    private long lastRequestTick = -1;
+    private final DriveSearchScheduler scheduler = new DriveSearchScheduler(MIN_REQUEST_TICKS);
+    private static final int CELLS_PER_TICK = 16;
+    private static final int KEYS_PER_TICK = 256;
+    private static final long CACHE_TICKS = 100;
+    private static final long SEARCH_REFRESH_TICKS = 40;
+    private static final long SOFT_NANOS_PER_TICK = 2_000_000;
+    private static final boolean METRICS = Boolean.getBoolean("mest.driveSearch.metrics");
+    private static final System.Logger LOGGER = System.getLogger(DriveCellSession.class.getName());
+    private Scan topology;
+    private IGrid topologyGrid;
+    private long topologyTick = Long.MIN_VALUE;
+    private long statsTick = Long.MIN_VALUE;
+    private long searchTick = Long.MIN_VALUE;
+    private boolean searchDirty = true;
+    private SnapshotJob job;
+    private long metricTicks, metricCells, metricKeys, metricSnapshots, metricDiscoveries, metricNanos;
+    private long metricEnumerations, metricEnumerationNanos, metricMaxTickNanos;
     private List<Drive> hosts = List.of();
     private List<SlotRef> references = List.of();
     private List<DriveCellListPacket.Group> previousGroups = List.of();
@@ -84,91 +100,227 @@ public final class DriveCellSession {
         this.menu = menu;
     }
 
+    /** Packet entry point: no grid traversal, cell reads or packet construction here. */
     public void request(ServerPlayer player, int requestedStart) {
         if (requestedStart < 0) {
             clear();
-            return;
+        } else if (scheduler.request(requestedStart)) {
+            job = null;
         }
+    }
+
+    public void serverTick(ServerPlayer player) {
         long tick = player.level().getGameTime();
-        if (lastRequestTick >= 0 && tick - lastRequestTick < MIN_REQUEST_TICKS) {
-            return;
-        }
-        lastRequestTick = tick;
-        IGrid current = connectedGrid(player);
-        if (current == null) {
-            if (grid != null || windowStart != 0 || totalSlots != 0 || truncated
-                    || !hosts.isEmpty() || !previousGroups.isEmpty() || !previousRows.isEmpty()) {
-                grid = null;
-                publish(player, 0, 0, false, List.of(), List.of(), List.of(), List.of(), List.of(), -1);
+        if (!scheduler.tick(tick) || scheduler.requestedStart() < 0) return;
+        long began = System.nanoTime();
+        try {
+            IGrid current = connectedGrid(player);
+            if (current != topologyGrid) {
+                topology = null;
+                topologyGrid = current;
+                job = null;
+                searchDirty = true;
+                scheduler.invalidate();
             }
-            return;
-        }
-        Scan scan = discover(current);
-        List<Drive> drives = scan.drives();
-        int count = 0;
-        List<DriveCellListPacket.Group> groups = new ArrayList<>(drives.size());
-        for (Drive drive : drives) {
-            count += drive.slots();
-            Component label = drive.block() instanceof Nameable nameable && nameable.getCustomName() != null
-                    ? nameable.getCustomName()
-                    : drive.block().getBlockState().getBlock().getName();
-            String where = drive.block().getBlockPos().toShortString();
-            if (drive.block().getLevel().dimension() != player.level().dimension()) {
-                where += " @" + drive.block().getLevel().dimension().location();
+            if (current == null) {
+                if (grid != null || windowStart != 0 || previousSearchId != searchId) {
+                    grid = null;
+                    publish(player, 0, 0, false, List.of(), List.of(), List.of(), List.of(), List.of(), -1);
+                }
+                return;
             }
-            boolean editable = drive.block() instanceof IPriorityHost;
-            int priority = editable ? ((IPriorityHost) drive.block()).getPriority() : 0;
-            long usedBytes = 0;
-            long totalBytes = 0;
-            for (int slot = 0; slot < drive.slots(); slot++) {
-                if (drive.host().getOriginalCellInventory(slot) instanceof BasicCellInventory cell) {
-                    usedBytes += Math.max(0, cell.getUsedBytes());
-                    totalBytes += Math.max(0, cell.getTotalBytes());
+            if (query.isEmpty() && grid == current && windowStart >= 0
+                    && (previousSearchId != searchId || !previousMatches.isEmpty())) {
+                // Clear search feedback on the next tick, without waiting for a statistics sweep.
+                publish(player, windowStart, totalSlots, truncated, hosts, previousGroups,
+                        references, previousRows, List.of(), previousEditing);
+            }
+            if (job == null && scheduler.start(tick)) {
+                if (topology == null || expired(tick, topologyTick, CACHE_TICKS)) {
+                    Scan next = discover(current);
+                    metricDiscoveries++;
+                    if (topology == null || !sameHosts(topology.drives(), next.drives())) {
+                        statsTick = Long.MIN_VALUE;
+                        searchDirty = true;
+                    }
+                    topology = next;
+                    topologyTick = tick;
+                }
+                job = new SnapshotJob(current, topology, scheduler.requestedStart(), tick);
+            }
+            if (job != null && job.advance(player, began + SOFT_NANOS_PER_TICK)) {
+                SnapshotJob completed = job;
+                job = null;
+                if (completed.generation == scheduler.generation() && connectedGrid(player) == completed.current) {
+                    completed.finish(player, tick);
                 }
             }
-            groups.add(new DriveCellListPacket.Group(label, Component.literal(where),
-                    drive.block().getBlockState().getBlock().asItem(), drive.slots(), priority,
-                    editable, drive.host().isPowered(), usedBytes, totalBytes));
-        }
-        int start = Math.min(requestedStart, count);
-        int end = (int) Math.min((long) count, (long) start + DriveCellListPacket.MAX_ROWS);
-        List<SlotRef> nextRefs = new ArrayList<>(end - start);
-        List<DriveCellListPacket.Row> rows = new ArrayList<>(end - start);
-        int budget = MAX_WINDOW_STACK_BYTES;
-        int index = 0;
-        for (int driveIndex = 0; driveIndex < drives.size() && index < end; driveIndex++) {
-            Drive drive = drives.get(driveIndex);
-            for (int slot = 0; slot < drive.slots() && index < end; slot++, index++) {
-                if (index < start) {
-                    continue;
+        } finally {
+            if (METRICS) {
+                long elapsed = System.nanoTime() - began;
+                metricNanos += elapsed;
+                metricMaxTickNanos = Math.max(metricMaxTickNanos, elapsed);
+                if (++metricTicks % 200 == 0) {
+                    LOGGER.log(System.Logger.Level.INFO,
+                            "DriveSearch menu={0} ticks={1} cells={2} keys={3} enumerations={4} enumerationNs={5} snapshots={6} topologyScans={7} totalNs={8} maxTickNs={9}",
+                            menu.containerId, metricTicks, metricCells, metricKeys, metricEnumerations,
+                            metricEnumerationNanos, metricSnapshots, metricDiscoveries, metricNanos, metricMaxTickNanos);
                 }
-                ItemStack stack = drive.inventory().getStackInSlot(slot).copy();
-                nextRefs.add(new SlotRef(drive, slot, stack));
-                ItemStack shown = ItemStack.EMPTY;
-                if (!stack.isEmpty()) {
-                    int size = encodedSize(player, stack);
-                    if (size <= MAX_STACK_BYTES && size <= budget) {
-                        budget -= size;
-                        shown = stack;
-                    } else {
-                        shown = new ItemStack(stack.getItem());
+            }
+        }
+    }
+
+    private static boolean expired(long now, long before, long interval) {
+        return before == Long.MIN_VALUE || now < before || now - before >= interval;
+    }
+
+    /** A snapshot is assembled privately; only the current generation may publish it. */
+    private final class SnapshotJob {
+        final IGrid current;
+        final Scan scan;
+        final long generation = scheduler.generation();
+        final int start, end, count;
+        final boolean statistics, searching;
+        final long[] used, capacity;
+        final List<SlotRef> refs = new ArrayList<>();
+        final List<DriveCellListPacket.Row> rows = new ArrayList<>();
+        final List<Integer> matches = new ArrayList<>();
+        java.util.Iterator<it.unimi.dsi.fastutil.objects.Object2LongMap.Entry<AEKey>> keys;
+        int driveIndex, slot, index, stackBudget = MAX_WINDOW_STACK_BYTES;
+
+        SnapshotJob(IGrid current, Scan scan, int requestedStart, long tick) {
+            this.current = current;
+            this.scan = scan;
+            count = scan.drives().stream().mapToInt(Drive::slots).sum();
+            start = Math.min(requestedStart, count);
+            end = (int) Math.min((long) count, (long) start + DriveCellListPacket.MAX_ROWS);
+            statistics = expired(tick, statsTick, CACHE_TICKS) || !sameHosts(hosts, scan.drives());
+            searching = !query.isEmpty() && (searchDirty || expired(tick, searchTick, SEARCH_REFRESH_TICKS));
+            used = new long[scan.drives().size()];
+            capacity = new long[used.length];
+            if (!statistics) {
+                for (int i = 0; i < used.length; i++) {
+                    used[i] = previousGroups.get(i).usedBytes();
+                    capacity[i] = previousGroups.get(i).totalBytes();
+                }
+            }
+            if (!searching && !query.isEmpty()) matches.addAll(previousMatches);
+        }
+
+        boolean advance(ServerPlayer player, long deadline) {
+            var budget = new DriveSearchBudget(CELLS_PER_TICK, KEYS_PER_TICK);
+            while (driveIndex < scan.drives().size()) {
+                if (System.nanoTime() >= deadline) return false;
+                Drive drive = scan.drives().get(driveIndex);
+                if (!statistics && !searching) {
+                    if (index >= end) return true;
+                    if (index < start) {
+                        // Skip cached topology arithmetically, not by probing every off-screen slot.
+                        int skipped = Math.min(start - index, drive.slots() - slot);
+                        index += skipped;
+                        slot += skipped;
+                        if (slot == drive.slots()) {
+                            slot = 0;
+                            driveIndex++;
+                        }
+                        continue;
                     }
                 }
-                rows.add(row(drive, driveIndex, slot, shown));
+                // Recheck live identity before touching cached topology. No chunk loads.
+                if (!drive.node().isActive() || drive.node().getGrid() != current || !live(drive.block())
+                        || drive.inventory().getSlots() < drive.slots()) {
+                    topology = null;
+                    scheduler.invalidate();
+                    return true; // The generation guard discards this incomplete result.
+                }
+                if (keys != null) {
+                    while (keys.hasNext()) {
+                        if (System.nanoTime() >= deadline || !budget.key()) return false;
+                        metricKeys++;
+                        if (matches(keys.next().getKey())) {
+                            matches.add(index);
+                            break;
+                        }
+                    }
+                    keys = null;
+                    nextSlot(drive);
+                    continue;
+                }
+                boolean visible = index >= start && index < end;
+                if (!budget.cell()) return false;
+                metricCells++;
+                StorageCell cell = drive.host().getOriginalCellInventory(slot);
+                if (statistics && cell instanceof BasicCellInventory basic) {
+                    used[driveIndex] += Math.max(0, basic.getUsedBytes());
+                    capacity[driveIndex] += Math.max(0, basic.getTotalBytes());
+                }
+                if (visible) {
+                    ItemStack stack = drive.inventory().getStackInSlot(slot).copy();
+                    refs.add(new SlotRef(drive, slot, stack));
+                    ItemStack shown = stack;
+                    if (!stack.isEmpty()) {
+                        int bytes = encodedSize(player, stack);
+                        if (bytes <= MAX_STACK_BYTES && bytes <= stackBudget) stackBudget -= bytes;
+                        else shown = new ItemStack(stack.getItem());
+                    }
+                    rows.add(row(drive, driveIndex, slot, shown));
+                }
+                if (searching && cell != null) {
+                    // AE2 returns an owned counter. Iterate it directly: keySet() eagerly copies ALL keys.
+                    // Enumeration itself is third-party synchronous code and cannot be preempted.
+                    long began = METRICS ? System.nanoTime() : 0;
+                    keys = cell.getAvailableStacks().iterator();
+                    metricEnumerations++;
+                    if (METRICS) metricEnumerationNanos += System.nanoTime() - began;
+                } else {
+                    nextSlot(drive);
+                }
+            }
+            return true;
+        }
+
+        private void nextSlot(Drive drive) {
+            index++;
+            if (++slot == drive.slots()) {
+                slot = 0;
+                driveIndex++;
             }
         }
-        List<Integer> matches = matches(drives);
-        int editing = editingIndex(drives);
-        if (grid != current || windowStart != start || totalSlots != count || truncated != scan.truncated()
-                || !sameHosts(hosts, drives) || !previousGroups.equals(groups)
-                || !sameRows(previousRows, rows) || !sameSlots(references, nextRefs)
-                || previousSearchId != searchId || !previousMatches.equals(matches)
-                || previousEditing != editing) {
-            grid = current;
-            publish(player, start, count, scan.truncated(), drives, groups, nextRefs, rows, matches, editing);
-        } else {
-            // Update the full stack action guard without sending redundant icons or cell contents.
-            references = List.copyOf(nextRefs);
+
+        void finish(ServerPlayer player, long tick) {
+            List<Drive> drives = scan.drives();
+            List<DriveCellListPacket.Group> groups = new ArrayList<>(drives.size());
+            for (int i = 0; i < drives.size(); i++) {
+                Drive drive = drives.get(i);
+                String where = drive.block().getBlockPos().toShortString();
+                if (drive.block().getLevel().dimension() != player.level().dimension()) {
+                    where += " @" + drive.block().getLevel().dimension().location();
+                }
+                boolean editable = drive.block() instanceof IPriorityHost;
+                int priority = editable ? ((IPriorityHost) drive.block()).getPriority() : 0;
+                Component label = drive.block() instanceof Nameable nameable && nameable.getCustomName() != null
+                        ? nameable.getCustomName()
+                        : drive.block().getBlockState().getBlock().getName();
+                groups.add(new DriveCellListPacket.Group(label, Component.literal(where),
+                        drive.block().getBlockState().getBlock().asItem(), drive.slots(), priority,
+                        editable, drive.host().isPowered(), used[i], capacity[i]));
+            }
+            if (statistics) statsTick = tick;
+            if (searching || query.isEmpty()) {
+                searchTick = tick;
+                searchDirty = false;
+            }
+            metricSnapshots++;
+            int editing = editingIndex(drives);
+            if (grid != current || windowStart != start || totalSlots != count || truncated != scan.truncated()
+                    || !sameHosts(hosts, drives) || !previousGroups.equals(groups)
+                    || !sameRows(previousRows, rows) || !sameSlots(references, refs)
+                    || previousSearchId != searchId || !previousMatches.equals(matches) || previousEditing != editing) {
+                grid = current;
+                publish(player, start, count, scan.truncated(), drives, groups, refs, rows, matches, editing);
+            } else {
+                references = List.copyOf(refs);
+            }
         }
     }
 
@@ -185,37 +337,28 @@ public final class DriveCellSession {
     }
 
     public void search(ServerPlayer player, int id, String text, List<AEKey> keys) {
+        String normalized = text.strip().toLowerCase(Locale.ROOT);
+        Set<AEKey> normalizedKeys = normalized.isEmpty() ? Set.of() : new HashSet<>(keys);
+        boolean changed = !query.equals(normalized) || !searchKeys.equals(normalizedKeys);
+        boolean newId = searchId != id;
         searchId = id;
-        query = text.strip().toLowerCase(Locale.ROOT);
-        searchKeys = query.isEmpty() ? Set.of() : new HashSet<>(keys);
-        if (windowStart >= 0) {
-            lastRequestTick = -1;
-            request(player, windowStart);
+        if (changed) {
+            query = normalized;
+            searchKeys = normalizedKeys;
+            scheduler.invalidate();
+            job = null;
+            searchDirty = true;
+        } else if (newId) {
+            // An identical query may reuse its work, but only the latest request id is published.
+            scheduler.request(scheduler.requestedStart());
         }
     }
 
-    /** Absolute slot indices, ascending, of cells holding any key matching the current search. */
-    private List<Integer> matches(List<Drive> drives) {
-        if (query.isEmpty()) {
-            return List.of();
-        }
-        var result = new ArrayList<Integer>();
-        int index = 0;
-        for (Drive drive : drives) {
-            for (int slot = 0; slot < drive.slots(); slot++, index++) {
-                StorageCell cell = drive.host().getOriginalCellInventory(slot);
-                if (cell == null) {
-                    continue;
-                }
-                for (AEKey key : cell.getAvailableStacks().keySet()) {
-                    if (matches(key)) {
-                        result.add(index);
-                        break;
-                    }
-                }
-            }
-        }
-        return result;
+    private void invalidateContent() {
+        scheduler.invalidate();
+        job = null;
+        searchDirty = true;
+        statsTick = Long.MIN_VALUE;
     }
 
     private boolean matches(AEKey key) {
@@ -250,14 +393,14 @@ public final class DriveCellSession {
                     ref.expected(), drive.inventory().getStackInSlot(ref.slot()))) {
                 toggleEdit(player, drive, ref.slot());
             }
-            lastRequestTick = -1;
-            request(player, windowStart);
+            invalidateContent();
+            request(player, scheduler.requestedStart());
             return;
         }
         if (!active(drive) || ref.slot() >= drive.inventory().getSlots()
                 || !ItemStack.matches(ref.expected(), drive.inventory().getStackInSlot(ref.slot()))) {
-            lastRequestTick = -1;
-            request(player, windowStart);
+            invalidateContent();
+            request(player, scheduler.requestedStart());
             return;
         }
         IItemHandler inventory = drive.inventory();
@@ -271,8 +414,8 @@ public final class DriveCellSession {
         }
         if (changed) {
             menu.broadcastChanges();
-            lastRequestTick = -1;
-            request(player, windowStart);
+            invalidateContent();
+            request(player, scheduler.requestedStart());
         }
     }
 
@@ -398,8 +541,8 @@ public final class DriveCellSession {
             }
         }
         if (inserted > 0) {
-            lastRequestTick = -1;
-            request(player, windowStart);
+            invalidateContent();
+            request(player, scheduler.requestedStart());
         }
         return inserted;
     }
@@ -555,6 +698,7 @@ public final class DriveCellSession {
         }
         for (int i = 0; i < a.size(); i++) {
             if (a.get(i).block() != b.get(i).block() || a.get(i).node() != b.get(i).node()
+                    || a.get(i).host() != b.get(i).host() || a.get(i).slots() != b.get(i).slots()
                     || a.get(i).inventory() != b.get(i).inventory()) {
                 return false;
             }
@@ -602,7 +746,12 @@ public final class DriveCellSession {
         previousRows = List.of();
         totalSlots = 0;
         truncated = false;
-        lastRequestTick = -1;
+        scheduler.clear();
+        job = null;
+        topology = null;
+        topologyGrid = null;
+        topologyTick = statsTick = searchTick = Long.MIN_VALUE;
+        searchDirty = true;
         searchId = 0;
         query = "";
         searchKeys = Set.of();
