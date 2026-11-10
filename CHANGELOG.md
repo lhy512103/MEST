@@ -18,6 +18,7 @@
 12. Removed: Unverified cross-dimension and unsupported machine remote access.
 13. Optimized: Coalesce drive searches and scan cells in batches to reduce large-network stalls.
 14. Fixed: Support the store-held-item hotkey while preserving the wireless crafting terminal's priority.
+15. Fixed: Hidden trash panels no longer receive Shift-clicked items or allow hidden-slot interaction.
 
 ### 中文
 
@@ -35,6 +36,7 @@
 12. 移除：未经授权验证的跨维度及未适配机器远程访问。
 13. 优化：合并驱动器搜索并分批扫描，减少大型网络的卡顿。
 14. 修复：支持存入手持物品快捷键，并保留无线合成终端的处理优先级。
+15. 修复：隐藏垃圾面板不再接收 Shift 点击物品，并禁止隐藏槽位交互。
 
 ## v0.0.3.1
 

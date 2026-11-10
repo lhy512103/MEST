@@ -266,7 +266,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             return;
         }
         dock.revealModule(trashPanel);
-        getMenu().openTrashMenu();
+        syncTrashOpen();
     }
 
     public void closeTrash() {
@@ -306,8 +306,16 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             return;
         }
         dock.hideModule(panel);
+        syncTrashOpen();
         if (panel == toolkitPanel) {
             syncToolkitOpen();
+        }
+    }
+
+    private void syncTrashOpen() {
+        boolean open = trashPanel != null && dock.isEffectivelyVisible(trashPanel);
+        if (getMenu().isTrashOpen() != open) {
+            getMenu().setTrashOpen(open);
         }
     }
 
@@ -463,9 +471,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
                 toggleModuleFromHotkey(requested);
             }
         }
-        if (trashPanel != null && dock.isEffectivelyVisible(trashPanel) && !getMenu().isTrashOpen()) {
-            getMenu().openTrashMenu();
-        }
+        syncTrashOpen();
         dock.relayoutAllSlots();
         if (patternAccessPanel != null) {
             patternAccessPanel.rebindSearchField(this);
@@ -490,6 +496,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         attachMeSideBar();
         attachExtraSlotColumns();
         syncToolkitOpen();
+        syncTrashOpen();
         syncExternalModGuiMetrics();
         refreshRecipeTransferAvailability();
         if (firstOpen && meListPanel != null && searchField != null
@@ -544,6 +551,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             wirelessSettingsPanel.reloadFromStack();
         }
         syncToolkitOpen();
+        syncTrashOpen();
         if (patternAccessPanel != null && dock.isEffectivelyVisible(patternAccessPanel)) {
             patternAccessPanel.tick();
         }
@@ -1549,6 +1557,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         }
         if (HotkeyActions.CYCLE_PRESET.equals(id)) {
             dock.cyclePreset();
+            syncTrashOpen();
             return true;
         }
         int combined = HotkeyActions.groupIndex(id);
@@ -1561,6 +1570,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         int preset = HotkeyActions.presetIndex(id);
         if (preset >= 0 && preset < dock.presetCount()) {
             dock.selectPreset(preset);
+            syncTrashOpen();
             return true;
         }
         return false;
@@ -1627,6 +1637,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         attachMeSideBar();
         attachExtraSlotColumns();
         syncToolkitOpen();
+        syncTrashOpen();
     }
 
     private void toggleModule(ModulePanel panel) {
@@ -1644,6 +1655,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
         attachMeSideBar();
         attachExtraSlotColumns();
         syncToolkitOpen();
+        syncTrashOpen();
     }
 
     private static Component moduleToggleMessage(ModulePanel panel, boolean visible) {
@@ -1781,6 +1793,16 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
+        // Queue the visibility action before any slot packet, including clicks between renders.
+        syncTrashOpen();
+        try {
+            return mouseClickedWithTrashSync(mx, my, button);
+        } finally {
+            syncTrashOpen();
+        }
+    }
+
+    private boolean mouseClickedWithTrashSync(double mx, double my, int button) {
         // The global toolbar is not owned by any floating root. Do not focus an arbitrary panel
         // underneath it when the toolbar happens to overlap the workspace.
         if (isMouseOverToolbarWidget(mx, my)) {
@@ -2108,6 +2130,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
             return true;
         }
         boolean handled = dock.mouseReleased(mx, my, button) || super.mouseReleased(mx, my, button);
+        syncTrashOpen();
         syncResizeCursor(mx, my);
         return handled;
     }
@@ -2224,6 +2247,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
      */
     @Override
     protected void slotClicked(Slot slot, int slotIdx, int mouseButton, ClickType clickType) {
+        syncTrashOpen();
         if (slot instanceof RepoSlot repoSlot) {
             handleGridInventoryEntryMouseClick(repoSlot.getEntry(), mouseButton, clickType);
             return;
@@ -2253,6 +2277,7 @@ public class MESTScreen extends AEBaseScreen<MESTMenu> implements IUniversalTerm
     }
 
     private void handleGridInventoryEntryMouseClick(GridInventoryEntry entry, int mouseButton, ClickType clickType) {
+        syncTrashOpen();
         var menu = getMenu();
 
         // Preserve AE2's container strategy path for fluids and other keys backed by a portable

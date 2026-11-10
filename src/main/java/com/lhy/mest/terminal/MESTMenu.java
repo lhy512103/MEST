@@ -104,6 +104,7 @@ public class MESTMenu extends CraftingTermMenu {
     private static final String ACTION_MAGNET_MENU = "magnetMenu";
     private static final String ACTION_TRASH_MENU = "trash";
     private static final String ACTION_CLOSE_TRASH = "closeTrash";
+    private static final String ACTION_SET_TRASH_OPEN = "mestSetTrashOpen";
     private static final String ACTION_SET_TOOLKIT_OPEN = "mestSetToolkitOpen";
     private static final String ACTION_SET_USELESS_PATTERN = "mestSetUselessPattern";
     private static final String ACTION_WORKBENCH_OPEN = "mestWorkbenchOpen";
@@ -230,6 +231,7 @@ public class MESTMenu extends CraftingTermMenu {
         registerClientAction(ACTION_MAGNET_MENU, this::openMagnetMenu);
         registerClientAction(ACTION_TRASH_MENU, this::openTrashMenu);
         registerClientAction(ACTION_CLOSE_TRASH, this::closeTrash);
+        registerClientAction(ACTION_SET_TRASH_OPEN, Boolean.class, this::setTrashOpen);
         registerClientAction(ACTION_SET_TOOLKIT_OPEN, Boolean.class, this::setToolkitOpen);
         registerClientAction(ACTION_SET_USELESS_PATTERN, String.class, this::setUselessPattern);
         registerClientAction(ACTION_WORKBENCH_OPEN, Boolean.class, this::setWorkbenchOpen);
@@ -393,16 +395,21 @@ public class MESTMenu extends CraftingTermMenu {
     }
 
     public void openTrashMenu() {
+        setTrashOpen(true);
+    }
+
+    /** Layout visibility changes must not delete the contents of the trash buffer. */
+    public void setTrashOpen(boolean open) {
         if (isClientSide()) {
-            sendClientAction(ACTION_TRASH_MENU);
-            return;
+            sendClientAction(ACTION_SET_TRASH_OPEN, open);
         }
-        trashOpen = true;
+        trashOpen = open;
     }
 
     public void closeTrash() {
         if (isClientSide()) {
             sendClientAction(ACTION_CLOSE_TRASH);
+            trashOpen = false;
             return;
         }
         host.clearTrash();
@@ -1001,7 +1008,7 @@ public class MESTMenu extends CraftingTermMenu {
     private void addTrashSlots() {
         InternalInventory inventory = host.getTrashInventory();
         for (int slot = 0; slot < inventory.size(); slot++) {
-            addSlot(new AppEngSlot(inventory, slot), AE2wtlibSlotSemantics.TRASH);
+            addSlot(new TrashSlot(inventory, slot, this::isTrashOpen), AE2wtlibSlotSemantics.TRASH);
         }
     }
 
