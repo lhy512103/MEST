@@ -191,7 +191,11 @@ def curseforge_version_ids(cf, minecraft_version):
     versions = cf.request("GET", "/game/versions")
     result = []
     for name in (minecraft_version, "NeoForge", "Client", "Server"):
-        matches = [version["id"] for version in versions if version.get("name") == name]
+        # CF lists identical names for Java, Bedrock and other version families.
+        # Minecraft Java 1.21 uses type 77784; loader/environment types are separate.
+        family = 77784 if name == minecraft_version and minecraft_version.startswith('1.21.') else None
+        matches = [version["id"] for version in versions if version.get("name") == name
+                   and (family is None or str(version.get("gameVersionTypeID")) == str(family))]
         matches = list(dict.fromkeys(str(value) for value in matches))
         if len(matches) != 1 or not matches[0].isdigit() or int(matches[0]) <= 0:
             raise PublishError(f"CurseForge version must resolve uniquely: {name}; matched IDs={matches}")

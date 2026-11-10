@@ -78,7 +78,7 @@ class PublishingTests(unittest.TestCase):
     def test_cf_upload_contains_real_jar_and_release_text(self):
         gh, cf = Mock(), Mock()
         gh.request.side_effect = [self.release, self.jar.read_bytes()]
-        cf.request.side_effect = [[{'id': i, 'name': name} for i, name in
+        cf.request.side_effect = [[{'id': i, 'name': name, 'gameVersionTypeID': 77784 if name == '1.21.1' else 0} for i, name in
                                    enumerate(('1.21.1', 'NeoForge', 'Client', 'Server'), 1)], {'id': 99}]
         with patch.object(pub, 'assets', return_value=[self.asset]), patch.object(pub, 'replace_asset') as receipt:
             pub.sync_curseforge(gh, cf, '/repos/owner/repo', 'v0.0.3.1', '1715792', '1.21.1')
@@ -112,7 +112,7 @@ class PublishingTests(unittest.TestCase):
     def test_changed_release_text_updates_existing_file_after_jar_check(self):
         gh, cf = Mock(), Mock()
         gh.request.side_effect = [self.release, self.jar.read_bytes(), json.dumps(self.receipt('old')).encode()]
-        cf.request.side_effect = [[{'id': i, 'name': name} for i, name in
+        cf.request.side_effect = [[{'id': i, 'name': name, 'gameVersionTypeID': 77784 if name == '1.21.1' else 0} for i, name in
                                    enumerate(('1.21.1', 'NeoForge', 'Client', 'Server'), 1)], {'id': 99}]
         with patch.object(pub, 'assets', return_value=[self.asset, {'id': 3, 'name': pub.LEDGER_NAME}]), \
                 patch.object(pub, 'replace_asset'):
@@ -138,8 +138,9 @@ class PublishingTests(unittest.TestCase):
 
     def test_cf_version_directory_accepts_numeric_strings(self):
         cf = Mock()
-        cf.request.return_value = [{'id': str(i), 'name': name} for i, name in
+        cf.request.return_value = [{'id': str(i), 'name': name, 'gameVersionTypeID': 77784 if name == '1.21.1' else 0} for i, name in
                                    enumerate(('1.21.1', 'NeoForge', 'Client', 'Server'), 1)]
+        cf.request.return_value.append({'id': '999', 'name': '1.21.1', 'gameVersionTypeID': 99999})
         self.assertEqual([1, 2, 3, 4], pub.curseforge_version_ids(cf, '1.21.1'))
 
     def test_unknown_cf_version_fails_before_upload(self):
