@@ -67,7 +67,11 @@ public class PatternEncodingPanel extends ModulePanel {
     private static final int ENCODED_SLOT_Y = 47;
     private static final int STONECUTTING_COLS = 4;
     private static final int STONECUTTING_ROWS = 2;
-    private static final int SLOT_OUTLINE = 0xFFF2F2F2;
+    private static final Blitter TERMINAL = Blitter.texture("guis/pattern.png", 256, 256);
+    private static final Blitter ENCODING_BACKGROUND = TERMINAL.copy().src(7, 85, 126, 68);
+    private static final Blitter BLANK_PATTERN_BACKGROUND = TERMINAL.copy().src(146, 85, 18, 18);
+    private static final Blitter ENCODED_PATTERN_BACKGROUND = TERMINAL.copy().src(143, 129, 24, 24);
+    private static final Blitter ENCODED_PATTERN_CONNECTION = TERMINAL.copy().src(132, 136, 11, 10);
     private static final Blitter MODES = Blitter.texture("guis/pattern_modes.png", 256, 256);
     private static final Blitter STONE_SLOT = MODES.copy().src(124, 140, 20, 22);
     private static final Blitter STONE_SLOT_SELECTED = MODES.copy().src(124, 162, 20, 22);
@@ -366,6 +370,7 @@ public class PatternEncodingPanel extends ModulePanel {
         drawTabRail(g);
         int bgX = contentLeft();
         int bgY = contentTop();
+        ENCODING_BACKGROUND.dest(bgX - 1, bgY - 1).blit(g);
         modeBackground(menu.getPatternEncodingMode()).dest(bgX, bgY).blit(g);
         highlightFluidSubstitutionSlots(g, mouseX, mouseY);
 
@@ -379,8 +384,14 @@ public class PatternEncodingPanel extends ModulePanel {
         }
 
         int patternX = patternSlotScreenX();
-        drawTerminalPatternSlot(g, patternX, bgY);
-        drawTerminalPatternSlot(g, patternX, bgY + ENCODED_SLOT_Y);
+        BLANK_PATTERN_BACKGROUND.dest(patternX - 1, bgY - 1).blit(g);
+        int connectionX = bgX + MODE_W;
+        int encodedX = patternX - 4;
+        if (encodedX > connectionX) {
+            ENCODED_PATTERN_CONNECTION.dest(connectionX, bgY + ENCODED_SLOT_Y + 3,
+                    encodedX - connectionX, 10).blit(g);
+        }
+        ENCODED_PATTERN_BACKGROUND.dest(encodedX, bgY + ENCODED_SLOT_Y - 4).blit(g);
 
         for (AbstractWidget widget : widgets) {
             widget.render(g, mouseX, mouseY, partialTicks);
@@ -451,24 +462,6 @@ public class PatternEncodingPanel extends ModulePanel {
             scrollbar.setScroll(stonecuttingScroll);
             scrollbar.render(g, bgX + 109, bgY + 11, 8, 44, maxStonecuttingScroll());
         }
-    }
-
-    /**
-     * AE2's pattern terminal bakes these recesses into {@code pattern.png}. Generated panel chrome
-     * has none, so draw {@link Icon#SLOT_BACKGROUND} with a white rim inset 1px into the 18x18 well.
-     */
-    private static void drawTerminalPatternSlot(GuiGraphics g, int itemX, int itemY) {
-        int px = itemX - 1;
-        int py = itemY - 1;
-        ModulePanel.drawSlot(g, px, py);
-        int x0 = px + 1;
-        int y0 = py + 1;
-        int x1 = px + SLOT - 2;
-        int y1 = py + SLOT - 2;
-        g.hLine(x0, x1, y0, SLOT_OUTLINE);
-        g.hLine(x0, x1, y1, SLOT_OUTLINE);
-        g.vLine(x0, y0, y1, SLOT_OUTLINE);
-        g.vLine(x1, y0, y1, SLOT_OUTLINE);
     }
 
     public ITooltip hoveredTooltip(int mouseX, int mouseY) {
