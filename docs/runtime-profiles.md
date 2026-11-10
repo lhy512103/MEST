@@ -1,6 +1,6 @@
 # Development runtime profiles
 
-These profiles select development-launch dependencies, not what is compiled or packaged into MEST. The current configuration targets Java 21, Minecraft 1.21.1 and NeoForge 21.1.238. Versions remain in `gradle.properties`; the profile does not modify that file.
+These profiles select development-launch dependencies, not what is compiled or packaged into MEST. The current configuration targets Java 21, Minecraft 1.21.1 and NeoForge 21.1.265. Versions remain in `gradle.properties`; the profile does not modify that file.
 
 ## Selection and defaults
 
