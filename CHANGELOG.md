@@ -17,6 +17,7 @@
 11. Fixed: Remote machine menus now respect protection, locks and custom validity checks.
 12. Removed: Unverified cross-dimension and unsupported machine remote access.
 13. Optimized: Coalesce drive searches and scan cells in batches to reduce large-network stalls.
+14. Fixed: Support the store-held-item hotkey while preserving the wireless crafting terminal's priority.
 
 ### 中文
 
@@ -33,6 +34,7 @@
 11. 修复：远程机器菜单遵守领地保护、锁定与自定义有效性检查。
 12. 移除：未经授权验证的跨维度及未适配机器远程访问。
 13. 优化：合并驱动器搜索并分批扫描，减少大型网络的卡顿。
+14. 修复：支持存入手持物品快捷键，并保留无线合成终端的处理优先级。
 
 ## v0.0.3.1
 

@@ -8,6 +8,7 @@ import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 
 import appeng.api.features.GridLinkables;
+import appeng.api.features.HotkeyAction;
 import appeng.api.upgrades.Upgrades;
 import appeng.core.localization.GuiText;
 import appeng.items.materials.EnergyCardItem;
@@ -21,6 +22,7 @@ import de.mari_023.ae2wtlib.api.registration.AddTerminalEvent;
 
 import com.lhy.mest.MESplicedterminal;
 import com.lhy.mest.compat.MestAddonUpgrades;
+import com.lhy.mest.compat.MestStowHotkey;
 import com.lhy.mest.registry.ModItems;
 
 /**
@@ -84,6 +86,8 @@ public final class MestTerminal {
                 Upgrades.add(magnet, item, 1, group);
             }
             MestAddonUpgrades.register();
+            // AE2 prepends actions. MestStowHotkey yields to a live WTLib crafting terminal.
+            HotkeyAction.register(new MestStowHotkey(), MestStowHotkey.HOTKEY_ID);
             MenuLocators.register(
                     ToolkitItemLocator.class,
                     ToolkitItemLocator::writeToPacket,
