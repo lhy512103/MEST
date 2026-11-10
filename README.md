@@ -25,6 +25,8 @@ modules you can move, resize and splice together however you like.
 | Pattern encoding | Crafting, processing, smithing and stonecutting modes, substitutions, processing amount editor, output cycling and scaling |
 | Pattern access | Pattern providers grouped like ExtendedAE, with direct slot exchange and remote opening of the machine next to a provider |
 | Pattern cache, trash, inventory | Extra pattern storage, a trash bin and your own inventory |
+| Drives | Connected storage drives, cell status, content search and quick cell transfers |
+| Cell workbench | Partition and upgrade a local cell or edit a selected drive cell in place |
 | Toolkit | Unstackable tools with remembered slots; drives the extended hotbar |
 | Network toolkit | Upgrade cards for the terminal's built-in network tool |
 | Wireless settings | Pick block, restock, magnet and toolkit options |
@@ -145,7 +147,10 @@ and terminal hotkeys keep priority. All hooks are optional, so existing modules 
 `-PmestRunJei=false` and `-PmestRunEmi=true` change the viewer set, and
 `checkViewerLaunchClasspaths` checks the declared combinations without starting the game.
 Automated tests cover the layout model and codec, storage, packet codecs, provider state, toolkit
-and hotkey rules; they do not replace in-game checks, see `docs/compatibility-verification.md`.
+and hotkey rules; they do not replace the [in-game release checklist](docs/release-checklist.md).
+Use `-PmestRuntimeProfile=minimal` for an isolated core-only development runtime with viewers off by
+default; the full profile remains the default. See [runtime profiles](docs/runtime-profiles.md) for
+separate game directories, viewer switches and the eight-combination verification matrix.
 
 ---
 
@@ -170,6 +175,8 @@ ME 拼接终端（MEST）是运行在 NeoForge 1.21.1 上的 AE2 / AE2WTLib 无�
 | 样板编码 | 合成、处理、锻造、切石四种模式，替代、处理数量编辑、输出轮换与倍率缩放 |
 | 样板管理 | 按 ExtendedAE 方式分组的样板供应器，可直接交换槽位，并远程打开供应器旁的机器 |
 | 样板缓存、垃圾桶、背包 | 额外的样板存放区、垃圾桶和玩家背包 |
+| 驱动器 | 查看联网驱动器与元件状态，搜索内容并快捷取放元件 |
+| 元件工作台 | 配置本地元件的分区与升级卡，或直接编辑选中的驱动器元件 |
 | 工具包 | 只放不可堆叠物品，支持记忆槽，驱动扩展快捷栏 |
 | 网络工具包 | 终端自带网络工具的升级卡槽 |
 | 无线设置 | 选取方块、补货、磁铁、工具包相关开关 |
@@ -265,4 +272,5 @@ modBus.addListener((RegisterMestModulesEvent event) ->
 `runClient` 启动带 JEI 的开发客户端，`runClientEmi` 启动带 EMI 的同一客户端。`-PmestRunJei=false`、
 `-PmestRunEmi=true` 可切换配方查看器组合，`checkViewerLaunchClasspaths` 不启动游戏即可检查各组合的声明。
 自动化测试覆盖布局模型与编解码、存储、数据包编解码、供应器同步状态、工具包与快捷键规则，但不能代替游戏内验证，
-详见 `docs/compatibility-verification.md`。
+详见[发布验证清单](docs/release-checklist.md)。使用 `-PmestRuntimeProfile=minimal` 可启动隔离的最小核心环境，默认不带配方查看器；
+默认完整兼容环境保持不变。独立存档目录、查看器开关和八组合检查命令见[运行配置说明](docs/runtime-profiles.md)。
