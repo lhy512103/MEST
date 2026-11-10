@@ -136,6 +136,12 @@ class PublishingTests(unittest.TestCase):
         with self.assertRaises(pub.PublishError):
             pub.SafeRedirect().redirect_request(request, None, 302, 'Found', {}, 'http://example.com/a')
 
+    def test_cf_version_directory_accepts_numeric_strings(self):
+        cf = Mock()
+        cf.request.return_value = [{'id': str(i), 'name': name} for i, name in
+                                   enumerate(('1.21.1', 'NeoForge', 'Client', 'Server'), 1)]
+        self.assertEqual([1, 2, 3, 4], pub.curseforge_version_ids(cf, '1.21.1'))
+
     def test_unknown_cf_version_fails_before_upload(self):
         cf = Mock()
         cf.request.return_value = []

@@ -192,9 +192,10 @@ def curseforge_version_ids(cf, minecraft_version):
     result = []
     for name in (minecraft_version, "NeoForge", "Client", "Server"):
         matches = [version["id"] for version in versions if version.get("name") == name]
-        if len(matches) != 1 or not isinstance(matches[0], int):
-            raise PublishError(f"CurseForge version must resolve uniquely: {name}")
-        result.append(matches[0])
+        matches = list(dict.fromkeys(str(value) for value in matches))
+        if len(matches) != 1 or not matches[0].isdigit() or int(matches[0]) <= 0:
+            raise PublishError(f"CurseForge version must resolve uniquely: {name}; matched IDs={matches}")
+        result.append(int(matches[0]))
     return result
 
 
