@@ -241,8 +241,8 @@ def sync_curseforge(gh, cf, root, tag, project_id, minecraft_version):
             "releaseType": metadata["release_type"],
             "gameVersions": curseforge_version_ids(cf, minecraft_version),
             "relations": {"projects": [
-                {"slug": "applied-energistics-2", "projectID": "223794", "type": "requiredDependency"},
-                {"slug": "applied-energistics-2-wireless-terminals", "projectID": "459929", "type": "requiredDependency"}]}}
+                {"slug": "applied-energistics-2", "projectID": 223794, "type": "requiredDependency"},
+                {"slug": "applied-energistics-2-wireless-terminals", "projectID": 459929, "type": "requiredDependency"}]}}
         if record:
             file_id = record.get("file_id")
             if not isinstance(file_id, int) or file_id < 1:

@@ -85,6 +85,9 @@ class PublishingTests(unittest.TestCase):
         call = cf.request.call_args
         self.assertEqual('/projects/1715792/upload-file', call.args[1])
         self.assertIn(b'name="file"', call.kwargs['data'])
+        self.assertIn(b'"projectID": 223794', call.kwargs['data'])
+        self.assertIn(b'"projectID": 459929', call.kwargs['data'])
+        self.assertNotIn(b'"projectID": "', call.kwargs['data'])
         self.assertIn(self.jar.read_bytes(), call.kwargs['data'])
         self.assertIn('修复：测试。'.encode(), call.kwargs['data'])
         self.assertEqual(pub.LEDGER_NAME, receipt.call_args.args[3])
