@@ -38,10 +38,9 @@ public final class MestWtlibClientEvents {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onFillSearch(ScreenEvent.KeyPressed.Pre event) {
-        if (!PlusScreenSupport.loaded() || !ModList.get().isLoaded("jei")) {
-            return;
-        }
-        if (!(event.getScreen() instanceof MESTScreen screen)) {
+        // This listener also receives other AE2WTLib screens; leave them entirely alone.
+        if (!(event.getScreen() instanceof MESTScreen screen)
+                || !PlusScreenSupport.loaded() || !ModList.get().isLoaded("jei")) {
             return;
         }
         if (PlusScreenSupport.fillSearchFromHoveredIngredient(
