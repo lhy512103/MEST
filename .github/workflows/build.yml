@@ -16,11 +16,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        viewer:
-          - { name: jei-only, flags: "-PmestRunJei=true -PmestRunEmi=false" }
-          - { name: jei-emi, flags: "-PmestRunJei=true -PmestRunEmi=true" }
-          - { name: none, flags: "-PmestRunJei=false -PmestRunEmi=false" }
-          - { name: emi-only, flags: "-PmestRunJei=false -PmestRunEmi=true" }
+        runtime:
+          - { name: full-jei-only, flags: "-PmestRuntimeProfile=full -PmestRunJei=true -PmestRunEmi=false" }
+          - { name: full-jei-emi, flags: "-PmestRuntimeProfile=full -PmestRunJei=true -PmestRunEmi=true" }
+          - { name: full-none, flags: "-PmestRuntimeProfile=full -PmestRunJei=false -PmestRunEmi=false" }
+          - { name: full-emi-only, flags: "-PmestRuntimeProfile=full -PmestRunJei=false -PmestRunEmi=true" }
+          # No viewer flags: also verify minimal's no-viewer default.
+          - { name: minimal-none, flags: "-PmestRuntimeProfile=minimal" }
+          - { name: minimal-jei-only, flags: "-PmestRuntimeProfile=minimal -PmestRunJei=true -PmestRunEmi=false" }
+          - { name: minimal-emi-only, flags: "-PmestRuntimeProfile=minimal -PmestRunJei=false -PmestRunEmi=true" }
+          - { name: minimal-jei-emi, flags: "-PmestRuntimeProfile=minimal -PmestRunJei=true -PmestRunEmi=true" }
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -43,17 +48,17 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Check viewer launch declarations (${{ matrix.viewer.name }})
-        run: ./gradlew checkViewerLaunchClasspaths ${{ matrix.viewer.flags }} --no-daemon --stacktrace
+      - name: Check runtime declarations (${{ matrix.runtime.name }})
+        run: ./gradlew checkRuntimeProfiles ${{ matrix.runtime.flags }} --no-daemon --stacktrace
 
-      - name: Build with Gradle
-        run: ./gradlew build --no-daemon --stacktrace
+      - name: Build with selected runtime (${{ matrix.runtime.name }})
+        run: ./gradlew build ${{ matrix.runtime.flags }} --no-daemon --stacktrace
 
       - name: Upload build artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mesplicedterminal-${{ github.sha }}-${{ matrix.viewer.name }}
+          name: mesplicedterminal-${{ github.sha }}-${{ matrix.runtime.name }}
           path: |
             build/libs/*.jar
             build/reports/tests/test/**

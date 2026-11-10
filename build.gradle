@@ -116,6 +116,19 @@ base {
     archivesName = mod_id
 }
 
+// Runtime profiles affect development launches only; compile-time integration APIs stay available.
+ext.mestRuntimeProfile = providers.gradleProperty('mestRuntimeProfile').getOrElse('full')
+if (!(mestRuntimeProfile in ['minimal', 'full'])) {
+    throw new GradleException('mestRuntimeProfile must be minimal or full')
+}
+ext.mestMinimalRuntime = mestRuntimeProfile == 'minimal'
+ext.mestRunJei = providers.gradleProperty('mestRunJei').map { it.toBoolean() }.getOrElse(!mestMinimalRuntime)
+ext.mestRunEmi = providers.gradleProperty('mestRunEmi').map { it.toBoolean() }.getOrElse(false)
+ext.mestRunMui = providers.gradleProperty('mestRunMui').map { it.toBoolean() }.getOrElse(!mestMinimalRuntime)
+if (mestMinimalRuntime && mestRunMui) {
+    throw new GradleException('Modern UI is not part of minimal; use -PmestRuntimeProfile=full -PmestRunMui=true')
+}
+
 // Sets up a dependency configuration called 'localRuntime'.
 // This configuration should be used instead of 'runtimeOnly' to declare
 // a dependency that will be present for runtime testing but that is
@@ -137,11 +150,14 @@ configurations {
 sourceSets {
     clientRuntime {
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
-        runtimeClasspath += output + compileClasspath + sourceSets.main.runtimeClasspath + configurations.clientLocalRuntime
+        // Never add compileClasspath here: optional compileOnly APIs are not launch mods.
+        runtimeClasspath = files(output, configurations.clientRuntimeRuntimeClasspath,
+                sourceSets.main.runtimeClasspath, configurations.clientLocalRuntime)
     }
     clientRuntimeEmi {
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
-        runtimeClasspath += output + compileClasspath + sourceSets.main.runtimeClasspath + configurations.clientLocalRuntimeEmi
+        runtimeClasspath = files(output, configurations.clientRuntimeEmiRuntimeClasspath,
+                sourceSets.main.runtimeClasspath, configurations.clientLocalRuntimeEmi)
     }
 }
 
@@ -170,7 +186,7 @@ neoForge {
             sourceSet = sourceSets.clientRuntime
 
             // Keep client and server runtime data separate.
-            gameDirectory = project.file('run/client')
+            gameDirectory = project.file(mestMinimalRuntime ? 'run/minimal/client' : 'run/client')
 
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
@@ -181,7 +197,7 @@ neoForge {
         clientEmi {
             client()
             sourceSet = sourceSets.clientRuntimeEmi
-            gameDirectory = project.file('run/client')
+            gameDirectory = project.file(mestMinimalRuntime ? 'run/minimal/client' : 'run/client')
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
@@ -190,7 +206,7 @@ neoForge {
             programArgument '--nogui'
 
             // Keep client and server runtime data separate.
-            gameDirectory = project.file('run/server')
+            gameDirectory = project.file(mestMinimalRuntime ? 'run/minimal/server' : 'run/server')
 
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
@@ -244,42 +260,80 @@ neoForge {
 // Mod dependencies are declared in a separate file for readability.
 apply from: "$rootDir/dependencies.gradle"
 
-// Verify the optional viewer launch matrix without resolving the full mod graph. This checks the
-// declarations that feed the two client run source sets; actual artifact compatibility still needs
-// a client launch (see docs/compatibility-verification.md).
-tasks.register("checkViewerLaunchClasspaths") {
-    group = "verification"
-    description = "Checks JEI/EMI declarations for the client launch classpath matrix."
-    def clientDependencies = configurations.named("clientLocalRuntime").map { configuration ->
-        configuration.allDependencies.collect { dependency ->
-            "${dependency.group}:${dependency.name}".toString()
-        } as Set
-    }
-    def clientEmiDependencies = configurations.named("clientLocalRuntimeEmi").map { configuration ->
-        configuration.allDependencies.collect { dependency ->
-            "${dependency.group}:${dependency.name}".toString()
-        } as Set
-    }
-    inputs.property("clientDependencies", clientDependencies)
-    inputs.property("clientEmiDependencies", clientEmiDependencies)
-    def expectedJei = providers.gradleProperty("mestRunJei").map { it.toBoolean() }.getOrElse(true)
-    def expectedEmi = providers.gradleProperty("mestRunEmi").map { it.toBoolean() }.getOrElse(false)
-    def jeiApi = "mezz.jei:jei-${minecraft_version}-neoforge-api".toString()
-    doLast {
-        def client = clientDependencies.get()
-        def clientEmi = clientEmiDependencies.get()
-        def hasJei = { Set values -> values.any { it.startsWith("mezz.jei:jei-") } }
-        def hasEmi = { Set values -> values.contains("dev.emi:emi-neoforge") }
+// Declaration-only verification: no artifact resolution or game launch. Snapshot plain values
+// as task inputs so execution never captures Project/Configuration/SourceSet (configuration cache).
+tasks.register('checkRuntimeProfiles') {
+    group = 'verification'
+    description = 'Checks minimal core isolation and full/client viewer declarations for the selected profile.'
+    inputs.property('profile', mestRuntimeProfile)
+    inputs.property('jei', mestRunJei)
+    inputs.property('emi', mestRunEmi)
+    inputs.property('mui', mestRunMui)
+    inputs.property('minecraftVersion', minecraft_version)
+    def runtimeConfigurations = ['localRuntime', 'clientLocalRuntime', 'clientLocalRuntimeEmi',
+                                 'runtimeClasspath', 'clientRuntimeRuntimeClasspath', 'clientRuntimeEmiRuntimeClasspath']
+    inputs.property('declarations', (runtimeConfigurations + ['compileOnly']).collectEntries { name ->
+        [(name): configurations.getByName(name).allDependencies.collect {
+            "${it.group}:${it.name}".toString()
+        }.unique().sort()]
+    })
+    inputs.property('hierarchies', runtimeConfigurations.collectEntries { name ->
+        [(name): configurations.getByName(name).hierarchy.collect { it.name }.sort()]
+    })
+    doLast { task ->
+        def values = task.inputs.properties
+        def minimal = values.profile == 'minimal'
+        def declared = values.declarations
+        def core = ['org.appliedenergistics:appliedenergistics2', 'org.appliedenergistics:guideme',
+                    'de.mari_023:ae2wtlib'] as Set
+        def shared = declared.localRuntime as Set
+        assert shared.containsAll(core) : 'Both profiles must declare AE2, GuideME and AE2WTLib'
+        assert !shared.any { it.startsWith('mezz.jei:') || it.startsWith('dev.emi:') } : 'Viewers must be client-only'
+        if (minimal) {
+            assert shared == core : "Minimal shared runtime contains extras: ${shared - core}"
+            assert !values.mui : 'Minimal must not enable Modern UI'
+            def compileOnlyExtras = (declared.compileOnly as Set) - core
+            ['runtimeClasspath', 'clientRuntimeRuntimeClasspath', 'clientRuntimeEmiRuntimeClasspath'].each { name ->
+                assert (declared[name] as Set).intersect(compileOnlyExtras).empty : "Compile-only API leaked into ${name}"
+            }
+        } else {
+            assert shared.containsAll(['curse.maven:advancedae-1084104', 'curse.maven:ex-pattern-provider-892005',
+                    'curse.maven:extendedae-plus-1337639', 'com.simibubi.create:create-1.21.1',
+                    'curse.maven:mekanism-268560']) : 'Full must retain optional compatibility targets'
+        }
 
-        assert hasJei(client) == expectedJei : "clientLocalRuntime JEI declaration does not match mestRunJei"
-        assert hasEmi(client) == expectedEmi : "clientLocalRuntime EMI declaration does not match mestRunEmi"
-        assert hasEmi(clientEmi) : "clientLocalRuntimeEmi must declare EMI"
-        assert hasJei(clientEmi) == expectedJei : "clientLocalRuntimeEmi JEI declaration does not match mestRunJei"
-        assert !client.contains(jeiApi) : "JEI API must remain compileOnly"
+        def expectedClient = [] as Set
+        if (values.jei) {
+            expectedClient.add("mezz.jei:jei-${values.minecraftVersion}-neoforge".toString())
+            if (!minimal) {
+                expectedClient.addAll(['curse.maven:ae2-jei-integration-1074338', 'curse.maven:just-enough-characters-250702'])
+            }
+        }
+        if (!minimal) {
+            expectedClient.addAll(['curse.maven:mouse-tweaks-60089', 'curse.maven:configured-457570',
+                    'curse.maven:searchables-858542', 'curse.maven:controlling-250398', 'curse.maven:imblocker-483760'])
+            if (values.mui) expectedClient.add('curse.maven:modern-ui-352491')
+        }
+        def expectedEmiClient = expectedClient + ['dev.emi:emi-neoforge']
+        if (values.emi) expectedClient.add('dev.emi:emi-neoforge')
+        assert (declared.clientLocalRuntime as Set) == expectedClient : 'Client declarations do not match profile/viewer flags'
+        assert (declared.clientLocalRuntimeEmi as Set) == expectedEmiClient : 'runClientEmi must add EMI, not other optional mods'
+        values.hierarchies.each { name, parents ->
+            assert !parents.any { it.toLowerCase().endsWith('compileonly') || it.toLowerCase().endsWith('compileclasspath') } :
+                    "${name} must not inherit compile-only dependencies"
+        }
+        assert !values.hierarchies.runtimeClasspath.any { it.startsWith('client') } : 'Server must not inherit client dependencies'
+        task.logger.lifecycle("Runtime declarations verified: ${values.profile}, JEI=${values.jei}, EMI=${values.emi}, UI=${values.mui}; game launch not tested")
     }
 }
 
-tasks.named("check") { dependsOn("checkViewerLaunchClasspaths") }
+// Retain the previous task name for scripts and IDE task shortcuts.
+tasks.register('checkViewerLaunchClasspaths') {
+    group = 'verification'
+    description = 'Alias for checkRuntimeProfiles.'
+    dependsOn('checkRuntimeProfiles')
+}
+tasks.named('check') { dependsOn('checkRuntimeProfiles') }
 
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
